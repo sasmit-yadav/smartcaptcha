@@ -124,16 +124,20 @@ def init_db():
                 received_at TIMESTAMP DEFAULT NOW()
             )
         """)
-        # Create indexes
-        for idx_sql in [
-            "CREATE INDEX idx_events_session ON events(session_id)",
-            "CREATE INDEX idx_events_type ON events(event_type)",
-            "CREATE INDEX idx_events_received ON events(received_at)",
-            "CREATE INDEX idx_sessions_created ON sessions(created_at)",
-            "CREATE INDEX idx_sessions_label ON sessions(label)",
-            "CREATE INDEX idx_sessions_project ON sessions(project_id)",
-        ]:
-            cursor.execute(idx_sql)
+        # Create indexes if they do not already exist
+        indexes = [
+            ("idx_events_session", "CREATE INDEX idx_events_session ON events(session_id)"),
+            ("idx_events_type", "CREATE INDEX idx_events_type ON events(event_type)"),
+            ("idx_events_received", "CREATE INDEX idx_events_received ON events(received_at)"),
+            ("idx_sessions_created", "CREATE INDEX idx_sessions_created ON sessions(created_at)"),
+            ("idx_sessions_label", "CREATE INDEX idx_sessions_label ON sessions(label)"),
+            ("idx_sessions_project", "CREATE INDEX idx_sessions_project ON sessions(project_id)"),
+        ]
+        for idx_name, idx_sql in indexes:
+            cursor.execute("SELECT to_regclass(%s)", (idx_name,))
+            exists = cursor.fetchone()[0]
+            if not exists:
+                cursor.execute(idx_sql)
         conn.commit()
         print("[DB] PostgreSQL initialized (full ML feature schema)")
     finally:

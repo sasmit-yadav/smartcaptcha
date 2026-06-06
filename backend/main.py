@@ -48,9 +48,9 @@ async def startup():
     print(f"[EcoHub API] Started on port {port} (PostgreSQL)")
 
 
-@app.get("/api/health")
+@app.api_route("/api/health", methods=["GET", "HEAD"])
 async def health():
-    return {"status": "ok", "service": "ecohub-api"}
+    return {"status": "ok"}
 
 
 @app.get("/api/stats")

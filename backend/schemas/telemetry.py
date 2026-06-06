@@ -60,7 +60,9 @@ class TelemetryEvent(BaseModel):
 class TelemetryPayload(BaseModel):
     sessionId: str = Field(..., min_length=1, max_length=100)
     meta: SessionMeta
-    events: List[TelemetryEvent] 
+    events: List[TelemetryEvent]
+    # Top-level payload timestamp in ms (SDK sends Date.now())
+    timestamp: Optional[int] = None
 
 
 class SessionStartPayload(BaseModel):

@@ -40,16 +40,19 @@ def init_db():
     conn = get_connection()
     try:
         cursor = conn.cursor()
-        # Drop old tables to recreate with full ML feature columns
-        cursor.execute("DROP TABLE IF EXISTS events CASCADE")
-        cursor.execute("DROP TABLE IF EXISTS sessions CASCADE")
-        cursor.execute("DROP TABLE IF EXISTS api_keys CASCADE")
-        cursor.execute("DROP TABLE IF EXISTS projects CASCADE")
-        cursor.execute("DROP TABLE IF EXISTS raw_events CASCADE")
+        # By default do NOT drop existing tables to avoid data loss in production.
+        # Allow explicit reset by setting RESET_DB_ON_START=1 in the environment (development only).
+        reset_db = os.getenv("RESET_DB_ON_START", "0") == "1"
+        if reset_db:
+            cursor.execute("DROP TABLE IF EXISTS events CASCADE")
+            cursor.execute("DROP TABLE IF EXISTS sessions CASCADE")
+            cursor.execute("DROP TABLE IF EXISTS api_keys CASCADE")
+            cursor.execute("DROP TABLE IF EXISTS projects CASCADE")
+            cursor.execute("DROP TABLE IF EXISTS raw_events CASCADE")
         
         # Create projects table (Phase 3.2)
         cursor.execute("""
-            CREATE TABLE projects (
+            CREATE TABLE IF NOT EXISTS projects (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 owner_id UUID NOT NULL,
                 name VARCHAR(100) NOT NULL,
@@ -59,7 +62,7 @@ def init_db():
         """)
         # Create api_keys table (Phase 3.2)
         cursor.execute("""
-            CREATE TABLE api_keys (
+            CREATE TABLE IF NOT EXISTS api_keys (
                 id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
                 project_id UUID REFERENCES projects(id),
                 key_hash VARCHAR(256) UNIQUE NOT NULL,
@@ -70,7 +73,7 @@ def init_db():
         """)
         # Create sessions table (Phase 3.2 + extended fields + event_count)
         cursor.execute("""
-            CREATE TABLE sessions (
+            CREATE TABLE IF NOT EXISTS sessions (
                 id VARCHAR(36) PRIMARY KEY,
                 project_id UUID REFERENCES projects(id),
                 device_type VARCHAR(20),
@@ -87,7 +90,7 @@ def init_db():
         """)
         # Create events table with individual ML feature columns (matches old SQLite structure)
         cursor.execute("""
-            CREATE TABLE events (
+            CREATE TABLE IF NOT EXISTS events (
                 id BIGSERIAL PRIMARY KEY,
                 session_id VARCHAR(36) NOT NULL REFERENCES sessions(id),
                 event_type VARCHAR(10) NOT NULL,

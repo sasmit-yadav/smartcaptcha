@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign Up — EcoHub</title>
+  <link rel="stylesheet" href="/styles/base.css" />
+  <style>
+    .strength-bar { height:4px; border-radius:2px; background:var(--color-border); margin-top:0.35rem; overflow:hidden; }
+    .strength-fill { height:100%; width:0; border-radius:2px; transition:width .25s, background .25s; }
+    .strength-text { font-size:0.75rem; color:var(--color-text-muted); margin-top:0.2rem; }
+  </style>
+</head>
+<body>
+  <main class="main-content">
+    <div class="auth-wrapper">
+      <div class="auth-card" style="max-width:460px;">
+        <h1>Create account</h1>
+        <p class="subtitle">Join the EcoHub community</p>
+
+        <form id="signup-form" novalidate>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+            <div class="form-group">
+              <label class="form-label" for="fname">First name</label>
+              <input class="form-input" type="text" id="fname" placeholder="Jane" required />
+              <p class="form-error">Required.</p>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="lname">Last name</label>
+              <input class="form-input" type="text" id="lname" placeholder="Doe" required />
+              <p class="form-error">Required.</p>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="email">Email address</label>
+            <input class="form-input" type="email" id="email" placeholder="you@example.com" required />
+            <p class="form-error">Enter a valid email.</p>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="password">Password</label>
+            <input class="form-input" type="password" id="password" placeholder="Min 8 characters" required />
+            <div class="strength-bar"><div class="strength-fill" id="strength-fill"></div></div>
+            <p class="strength-text" id="strength-text"></p>
+            <p class="form-error">Min 8 characters required.</p>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="confirm">Confirm password</label>
+            <input class="form-input" type="password" id="confirm" placeholder="Re-enter password" required />
+            <p class="form-error">Passwords do not match.</p>
+          </div>
+
+          <div class="form-group" style="display:flex; align-items:flex-start; gap:0.5rem;">
+            <input type="checkbox" id="terms" style="margin-top:0.3rem;" required />
+            <label for="terms" style="font-size:0.85rem; cursor:pointer;">
+              I agree to the <a href="#" onclick="event.preventDefault()">Terms of Service</a> and <a href="#" onclick="event.preventDefault()">Privacy Policy</a>
+            </label>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-full" id="submit-btn">Create Account</button>
+        </form>
+
+        <p class="divider">Already have an account?</p>
+        <a href="/login.html" class="btn btn-secondary btn-full">Sign in instead</a>
+      </div>
+    </div>
+  </main>
+
+  <script src="/smartcaptcha.min.js"></script>
+  <script>SmartCaptcha.init({apiKey:"demo-key",endpoint:"http://localhost:8000"});</script>
+  <script type="module">
+    import { initShell } from '/utils/shell.js';
+    initShell('Sign Up');
+
+    const form = document.getElementById('signup-form');
+    const passEl = document.getElementById('password');
+    const confirmEl = document.getElementById('confirm');
+    const emailEl = document.getElementById('email');
+    const fnameEl = document.getElementById('fname');
+    const lnameEl = document.getElementById('lname');
+    const termsEl = document.getElementById('terms');
+    const fill = document.getElementById('strength-fill');
+    const strengthText = document.getElementById('strength-text');
+    const btn = document.getElementById('submit-btn');
+
+    // Password strength
+    passEl.addEventListener('input', () => {
+      const v = passEl.value;
+      let score = 0;
+      if (v.length >= 8) score++;
+      if (/[A-Z]/.test(v)) score++;
+      if (/[0-9]/.test(v)) score++;
+      if (/[^A-Za-z0-9]/.test(v)) score++;
+
+      const levels = [
+        { w: '0%',   bg: 'transparent', t: '' },
+        { w: '25%',  bg: '#ef4444', t: 'Weak' },
+        { w: '50%',  bg: '#f59e0b', t: 'Fair' },
+        { w: '75%',  bg: '#22c55e', t: 'Good' },
+        { w: '100%', bg: '#16a34a', t: 'Strong' },
+      ];
+      fill.style.width = levels[score].w;
+      fill.style.background = levels[score].bg;
+      strengthText.textContent = levels[score].t;
+    });
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      let valid = true;
+      const check = (el, cond) => {
+        if (!cond) { el.classList.add('error'); valid = false; }
+        else { el.classList.remove('error'); }
+      };
+
+      check(fnameEl, fnameEl.value.trim().length > 0);
+      check(lnameEl, lnameEl.value.trim().length > 0);
+      check(emailEl, /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailEl.value));
+      check(passEl, passEl.value.length >= 8);
+      check(confirmEl, confirmEl.value === passEl.value && confirmEl.value.length > 0);
+
+      if (!termsEl.checked) {
+        alert('Please accept the terms.');
+        valid = false;
+      }
+      if (!valid) return;
+
+      btn.disabled = true;
+      btn.textContent = 'Creating account…';
+      setTimeout(() => {
+        btn.textContent = '✓ Demo account created';
+        btn.style.background = '#22c55e';
+      }, 1500);
+    });
+  </script>
+</body>
+</html>

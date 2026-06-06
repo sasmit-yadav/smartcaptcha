@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Climate Action — EcoHub</title>
+  <link rel="stylesheet" href="/styles/base.css" />
+  <style>
+    .article-layout { display:grid; grid-template-columns:200px 1fr; gap:2.5rem; max-width:960px; margin:0 auto; }
+    .toc { position:sticky; top:100px; align-self:start; }
+    .toc h4 { font-size:0.75rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--color-text-muted); margin-bottom:0.75rem; }
+    .toc ul { list-style:none; }
+    .toc li { margin-bottom:0.4rem; }
+    .toc a { font-size:0.85rem; color:var(--color-text-muted); }
+    .toc a:hover { color:var(--color-primary); }
+    .back-to-top { position:fixed; bottom:2rem; right:2rem; width:40px; height:40px; border-radius:50%; background:var(--color-primary); color:#fff; border:none; cursor:pointer; font-size:1.2rem; display:none; align-items:center; justify-content:center; box-shadow:var(--shadow-md); z-index:99; }
+    .back-to-top.show { display:flex; }
+    .comment { border-left:3px solid var(--color-border); padding:0.75rem 1rem; margin-bottom:1rem; background:var(--color-bg); border-radius:0 var(--color-radius) var(--color-radius) 0; }
+    .comment .author { font-weight:600; font-size:0.85rem; }
+    .comment .date { font-size:0.75rem; color:var(--color-text-muted); }
+    .comment p { margin-top:0.4rem; font-size:0.9rem; }
+    .like-share { display:flex; gap:1rem; margin-top:2rem; padding-top:1.5rem; border-top:1px solid var(--color-border); }
+    @media(max-width:768px) { .article-layout { grid-template-columns:1fr; } .toc { display:none; } }
+  </style>
+</head>
+<body>
+  <main class="main-content">
+    <div class="container">
+      <div class="article-layout">
+        <!-- Table of Contents -->
+        <aside class="toc">
+          <h4>Contents</h4>
+          <ul>
+            <li><a href="#intro">Introduction</a></li>
+            <li><a href="#what">Understanding Climate Change</a></li>
+            <li><a href="#signals">Key Environmental Indicators</a></li>
+            <li><a href="#ml">Data-Driven Solutions</a></li>
+            <li><a href="#fpr">Reducing Our Impact</a></li>
+            <li><a href="#conclusion">Conclusion</a></li>
+          </ul>
+        </aside>
+
+        <!-- Article content -->
+        <article class="article-wrapper">
+          <h1>Climate Change in 2026: Where We Stand and What We Can Do</h1>
+          <div class="article-meta">
+            By <strong>EcoHub Research</strong> &middot; June 2, 2026 &middot; 10 min read
+          </div>
+
+          <img class="article-hero" src="https://picsum.photos/seed/article-hero/800/360" alt="Hero" />
+
+          <section id="intro">
+            <h2>Introduction</h2>
+            <p>
+              Climate change is no longer a distant threat — it's the defining challenge of our generation.
+              Rising global temperatures, extreme weather events, and biodiversity loss are reshaping
+              communities and ecosystems worldwide. The window for meaningful action is narrowing, but
+              the tools and knowledge to make a difference have never been more accessible.
+            </p>
+            <p>
+              This article examines where we stand on climate action in 2026, explores the key environmental
+              indicators scientists are tracking, and highlights data-driven solutions that are making a
+              real-world impact. From renewable energy breakthroughs to individual actions that add up, there's
+              reason for both urgency and optimism.
+            </p>
+          </section>
+
+          <section id="what">
+            <h2>Understanding Climate Change</h2>
+            <p>
+              The Earth's average temperature has risen approximately 1.2°C since pre-industrial times, driven
+              primarily by greenhouse gas emissions from burning fossil fuels, deforestation, and industrial
+              agriculture. The consequences are visible everywhere: Arctic ice is shrinking at record rates,
+              sea levels are rising 3.6mm per year, and coral reefs face mass bleaching events.
+            </p>
+            <p>
+              But climate science has also advanced significantly. Modern satellite networks, ocean sensors,
+              and atmospheric monitoring stations provide real-time data that helps us understand patterns,
+              predict changes, and measure the effectiveness of interventions. This data-driven approach
+              is transforming how governments, businesses, and individuals respond to the crisis.
+            </p>
+            <p>
+              The Paris Agreement's goal of limiting warming to 1.5°C requires cutting global emissions by
+              45% by 2030. While challenging, renewable energy adoption is accelerating faster than most
+              projections anticipated. Solar and wind power now account for over 35% of global electricity
+              generation in many developed nations.
+            </p>
+          </section>
+
+          <section id="signals">
+            <h2>Key Environmental Indicators</h2>
+            <p>
+              Scientists track several critical indicators to measure environmental health and progress.
+              Each provides a different lens into the state of our planet:
+            </p>
+            <p>
+              <strong>Carbon dioxide levels</strong> remain the primary metric. Atmospheric CO2 hit 425 ppm
+              in 2025, far above the safe threshold of 350 ppm. However, the rate of increase is slowing
+              thanks to accelerated clean energy adoption and carbon capture technologies being deployed
+              at scale.
+            </p>
+            <p>
+              <strong>Ocean temperature and acidification</strong> affect marine ecosystems. Warmer oceans
+              disrupt fish migration patterns and intensify hurricanes. Monitoring these changes helps
+              coastal communities prepare and adapt while pushing for stronger emissions reductions.
+            </p>
+            <p>
+              <strong>Deforestation rates</strong> have dropped 18% since 2020, driven by satellite monitoring
+              that makes illegal logging harder to hide. Reforestation initiatives in Brazil, Indonesia, and
+              Central Africa are restoring critical carbon sinks.
+            </p>
+            <p>
+              <strong>Biodiversity indices</strong> track the health of ecosystems. Pollinator populations,
+              particularly bees, are a key indicator — they affect 75% of global food crops. Conservation
+              efforts and reduced pesticide use are showing early signs of recovery in several regions.
+            </p>
+          </section>
+
+          <section id="ml">
+            <h2>Data-Driven Solutions</h2>
+            <p>
+              Technology is playing an increasingly important role in fighting climate change. Machine learning
+              models analyze satellite imagery to detect deforestation in near real-time, optimize wind farm
+              placement, and predict crop yields under different climate scenarios. Smart grids use AI to
+              balance renewable energy supply with demand, reducing waste and improving efficiency.
+            </p>
+            <p>
+              Precision agriculture uses sensor data and weather models to reduce water usage by up to 30%
+              while maintaining crop yields. Urban planning tools simulate heat island effects and optimize
+              green space placement to cool cities naturally.
+            </p>
+            <p>
+              Carbon accounting platforms now allow businesses to track their emissions footprint with
+              unprecedented accuracy, identifying the highest-impact reduction opportunities. Companies
+              using these tools report 20-40% emission reductions within the first two years.
+            </p>
+          </section>
+
+          <section id="fpr">
+            <h2>Reducing Our Impact</h2>
+            <p>
+              Individual actions matter more than most people realize. Research shows that the top five
+              personal actions — reducing air travel, eating a plant-based diet, using public transit,
+              improving home insulation, and switching to renewable energy — can reduce a person's carbon
+              footprint by up to 2.5 tonnes of CO2 per year.
+            </p>
+            <p>
+              Community-level actions amplify this impact. Neighborhood solar cooperatives, community gardens,
+              and shared EV charging networks create sustainable infrastructure that benefits everyone.
+              Local policy changes — from plastic bag bans to composting mandates — build momentum for
+              broader systemic change.
+            </p>
+            <p>
+              The most impactful thing any individual can do is vote for leaders who prioritize climate action.
+              Policy changes drive the systemic transformations needed: carbon pricing, renewable energy mandates,
+              and conservation funding all require political will. Informed citizens who demand action are the
+              most powerful force for change.
+            </p>
+          </section>
+
+          <section id="conclusion">
+            <h2>Conclusion</h2>
+            <p>
+              The climate crisis is urgent, but so is the response. Renewable energy is cheaper than ever,
+              conservation efforts are showing results, and public awareness has reached an all-time high.
+              The data tells a clear story: when we act — individually and collectively — we can bend the
+              curve on emissions.
+            </p>
+            <p>
+              The road ahead requires sustained effort at every level: personal choices, community action,
+              corporate responsibility, and bold government policy. But the tools, knowledge, and momentum
+              exist. What's needed now is for each of us to do our part and hold our leaders accountable.
+            </p>
+            <p>
+              As the environmental movement reminds us: we don't need a handful of people doing sustainability
+              perfectly. We need millions doing it imperfectly. Every small action contributes to the larger
+              shift our planet needs.
+            </p>
+          </section>
+
+          <!-- Like / Share -->
+          <div class="like-share">
+            <button class="btn btn-secondary" id="like-btn">👍 Like (42)</button>
+            <button class="btn btn-secondary" onclick="alert('Share not implemented in demo.')">🔗 Share</button>
+          </div>
+
+          <!-- Comments -->
+          <h2 class="mt-4" style="margin-top:2.5rem;">Comments</h2>
+          <div class="mt-2">
+            <div class="comment">
+              <span class="author">green_living_42</span> <span class="date">2 days ago</span>
+              <p>The section on community-level actions really resonated with me. Our neighborhood started a solar co-op last year and the savings have been incredible. More people need to know this is an option.</p>
+            </div>
+            <div class="comment">
+              <span class="author">climate_data_nerd</span> <span class="date">3 days ago</span>
+              <p>Great overview. Would love to see a follow-up on how carbon capture technology is scaling. The direct air capture plants in Iceland are fascinating but still tiny compared to what's needed.</p>
+            </div>
+            <div class="comment">
+              <span class="author">sustainable_sarah</span> <span class="date">5 days ago</span>
+              <p>The voting paragraph is the most important part. Individual actions matter, but policy change is the multiplier. We need more articles that connect personal choices to systemic impact.</p>
+            </div>
+          </div>
+        </article>
+      </div>
+    </div>
+  </main>
+
+  <!-- Back to top -->
+  <button class="back-to-top" id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
+
+  <script src="/smartcaptcha.min.js"></script>
+  <script>SmartCaptcha.init({apiKey:"demo-key",endpoint:"http://localhost:8000"});</script>
+  <script type="module">
+    import { initShell } from '/utils/shell.js';
+    initShell('Article');
+
+    // Back to top visibility
+    const btt = document.getElementById('btt');
+    window.addEventListener('scroll', () => {
+      btt.classList.toggle('show', window.scrollY > 500);
+    });
+
+    // Like button
+    let likes = 42;
+    const likeBtn = document.getElementById('like-btn');
+    likeBtn.addEventListener('click', () => {
+      likes++;
+      likeBtn.textContent = `👍 Liked (${likes})`;
+      likeBtn.style.background = '#dcfce7';
+    });
+  </script>
+</body>
+</html>

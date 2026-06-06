@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: smartcaptcha-backend
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+        generateValue: true
+      - key: ALLOWED_ORIGINS
+        value: https://demo.smartcaptcha.ai,https://smartcaptcha.vercel.app

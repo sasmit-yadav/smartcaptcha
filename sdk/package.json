@@ -1,0 +1,13 @@
+{
+  "name": "@smartcaptcha/sdk",
+  "version": "0.1.0",
+  "description": "SmartCaptcha behavioral telemetry SDK",
+  "main": "dist/smartcaptcha.min.js",
+  "scripts": {
+    "build": "esbuild src/index.js --bundle --minify --outfile=dist/smartcaptcha.min.js --format=iife --global-name=SmartCaptchaModule",
+    "dev": "esbuild src/index.js --bundle --outfile=dist/smartcaptcha.js --format=iife --global-name=SmartCaptchaModule --watch"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.0"
+  }
+}

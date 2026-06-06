@@ -60,8 +60,7 @@ class TelemetryEvent(BaseModel):
 class TelemetryPayload(BaseModel):
     sessionId: str = Field(..., min_length=1, max_length=100)
     meta: SessionMeta
-    events: List[TelemetryEvent] = Field(..., min_length=1, max_length=200)
-    timestamp: int
+    events: List[TelemetryEvent] 
 
 
 class SessionStartPayload(BaseModel):

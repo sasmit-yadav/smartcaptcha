@@ -13,7 +13,7 @@ from psycopg2.extras import execute_values
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:sas%401234@localhost:5432/smartcaptcha",
+    "postgresql://postgres.xroqpyuenhowuaueiiwu:sasyrao%401234@aws-1-ap-south-1.pooler.supabase.com:6543/postgres",
 )
 
 _conn_pool = None

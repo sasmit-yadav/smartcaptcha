@@ -206,15 +206,27 @@ def insert_events_batch(session_id: str, events: list):
         rows = []
         for e in events:
             etype = e.get('type', 'unknown')
+            # Coerce coordinate-like values to integers for DB integer columns
+            def _coerce_int(val):
+                if val is None:
+                    return None
+                try:
+                    return int(round(float(val)))
+                except Exception:
+                    return None
+
+            x_val = _coerce_int(e.get('x'))
+            y_val = _coerce_int(e.get('y'))
+            scroll_y_val = _coerce_int(e.get('y')) if etype == 'sc' else None
             rows.append((
                 session_id, etype, e.get('t'),
-                e.get('x'), e.get('y'), e.get('dist'), e.get('ang'),
+                x_val, y_val, e.get('dist'), e.get('ang'),
                 e.get('vel') if etype == 'mm' else None,
                 e.get('totalDist'),
                 e.get('target'), e.get('interval'), e.get('double'),
                 e.get('tw'), e.get('th'),
                 e.get('k'), e.get('iki'), e.get('hold'),
-                e.get('y') if etype == 'sc' else None,
+                scroll_y_val,
                 e.get('vel') if etype == 'sc' else None,
                 e.get('rev'), e.get('pause'),
                 e.get('state'),

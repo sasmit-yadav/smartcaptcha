@@ -26,8 +26,9 @@ class SessionMeta(BaseModel):
 class TelemetryEvent(BaseModel):
     type: Literal['mm', 'cl', 'kd', 'ku', 'sc', 'fv', 'tc']
     t: int  # Unix timestamp ms
-    x: Optional[int] = None
-    y: Optional[int] = None
+    # Coordinates may be integers or floats depending on browser/device; accept float
+    x: Optional[float] = None
+    y: Optional[float] = None
     k: Optional[str] = None
     # Mouse extras
     dist: Optional[float] = None

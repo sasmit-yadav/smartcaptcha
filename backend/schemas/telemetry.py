@@ -2,7 +2,7 @@
 SmartCaptcha Backend — Pydantic schemas for request validation.
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List, Literal
 
 
@@ -24,6 +24,8 @@ class SessionMeta(BaseModel):
 
 
 class TelemetryEvent(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     type: Literal['mm', 'cl', 'kd', 'ku', 'sc', 'fv', 'tc']
     t: int  # Unix timestamp ms
     # Coordinates may be integers or floats depending on browser/device; accept float
@@ -38,15 +40,15 @@ class TelemetryEvent(BaseModel):
     # Click extras
     target: Optional[str] = None
     interval: Optional[int] = None
-    double: Optional[bool] = None
+    is_double: Optional[bool] = Field(None, alias='double')
     tw: Optional[int] = None  # target element width
     th: Optional[int] = None  # target element height
     # Keyboard extras
     iki: Optional[int] = None  # inter-key interval ms
     hold: Optional[int] = None  # key hold duration ms
     # Scroll extras
-    rev: Optional[bool] = None
-    pause: Optional[bool] = None
+    scroll_rev: Optional[bool] = Field(None, alias='rev')
+    scroll_pause: Optional[bool] = Field(None, alias='pause')
     # Focus extras
     state: Optional[str] = None
     # Touch extras

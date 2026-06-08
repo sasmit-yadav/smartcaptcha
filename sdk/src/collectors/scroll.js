@@ -20,26 +20,48 @@ function handler() {
   const now = Date.now();
   const y = window.scrollY;
 
-  // Pause detection
+  // Pause detection — fires when scrolling stops for > 500ms
   if (pauseTimer) clearTimeout(pauseTimer);
   pauseTimer = setTimeout(() => {
     pauseCount++;
-    pushEvent({ type: 'sc', y, t: Date.now(), vel: 0, rev: false, pause: true });
+    pushEvent({
+      type: 'sc',
+      y: window.scrollY,
+      t: Date.now(),
+      vel: 0,
+      rev: false,
+      pause: true,
+    });
   }, PAUSE_THRESHOLD_MS);
-
-  if (now - lastCapture < THROTTLE_MS) return;
 
   const dt = now - lastT;
   const dy = y - lastY;
-  const vel = dt > 0 ? Math.round(Math.abs(dy) / (dt / 1000)) : 0;
-
-  // Direction reversal
   const dir = dy > 0 ? 1 : dy < 0 ? -1 : lastDir;
   const reversal = lastDir !== 0 && dir !== lastDir && dir !== 0;
-  if (reversal) reversalCount++;
+
+  // Always capture direction reversals (even when throttled)
+  if (reversal) {
+    reversalCount++;
+    lastDir = dir;
+    lastY = y;
+    lastT = now;
+    lastCapture = now;
+    pushEvent({
+      type: 'sc',
+      y,
+      t: now,
+      vel: 0,
+      rev: true,
+      pause: false,
+    });
+    return;
+  }
+
+  if (now - lastCapture < THROTTLE_MS) return;
+
+  const vel = dt > 0 ? Math.round(Math.abs(dy) / (dt / 1000)) : 0;
   lastDir = dir;
 
-  // Max scroll depth
   const docH = document.documentElement.scrollHeight - window.innerHeight;
   const depth = docH > 0 ? Math.round((y / docH) * 100) : 0;
   if (depth > maxDepth) maxDepth = depth;
@@ -53,7 +75,7 @@ function handler() {
     y,
     t: now,
     vel,
-    rev: reversal,
+    rev: false,
     pause: false,
   });
 }

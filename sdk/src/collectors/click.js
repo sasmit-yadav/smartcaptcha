@@ -7,14 +7,16 @@
 let active = false;
 let lastClickT = 0;
 let pushEvent = null;
+const DOUBLE_CLICK_MS = 300;
 
 function handler(e) {
   const now = Date.now();
   const interval = lastClickT > 0 ? now - lastClickT : null;
+  const isDouble = interval !== null && interval < DOUBLE_CLICK_MS;
   lastClickT = now;
 
-  // Target bounding rect for click precision analysis
-  let tw = null, th = null;
+  let tw = null;
+  let th = null;
   try {
     const rect = e.target.getBoundingClientRect();
     tw = Math.round(rect.width);
@@ -28,7 +30,7 @@ function handler(e) {
     t: now,
     target: e.target.tagName,
     interval,
-    double: interval !== null && interval < 300,
+    double: isDouble,
     tw,
     th,
   });

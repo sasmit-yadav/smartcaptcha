@@ -36,6 +36,39 @@ def release_connection(conn):
     _get_pool().putconn(conn)
 
 
+def _coerce_bool(val):
+    if val is None:
+        return None
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, str):
+        return val.lower() in ('true', '1', 'yes')
+    return bool(val)
+
+
+def _event_bool(event: dict, *keys, default=None):
+    for key in keys:
+        if key in event and event[key] is not None:
+            return _coerce_bool(event[key])
+    return default
+
+
+def _migrate_events_columns(cursor):
+    """Ensure ML feature columns exist on databases created before the full schema."""
+    columns = [
+        ("is_double", "BOOLEAN"),
+        ("scroll_rev", "BOOLEAN"),
+        ("scroll_pause", "BOOLEAN"),
+        ("scroll_y", "INTEGER"),
+        ("scroll_vel", "REAL"),
+        ("click_interval", "INTEGER"),
+    ]
+    for name, col_type in columns:
+        cursor.execute(
+            f"ALTER TABLE events ADD COLUMN IF NOT EXISTS {name} {col_type}"
+        )
+
+
 def init_db():
     conn = get_connection()
     try:
@@ -138,6 +171,7 @@ def init_db():
             exists = cursor.fetchone()[0]
             if not exists:
                 cursor.execute(idx_sql)
+        _migrate_events_columns(cursor)
         conn.commit()
         print("[DB] PostgreSQL initialized (full ML feature schema)")
     finally:
@@ -206,7 +240,7 @@ def insert_events_batch(session_id: str, events: list):
         rows = []
         for e in events:
             etype = e.get('type', 'unknown')
-            # Coerce coordinate-like values to integers for DB integer columns
+
             def _coerce_int(val):
                 if val is None:
                     return None
@@ -218,17 +252,34 @@ def insert_events_batch(session_id: str, events: list):
             x_val = _coerce_int(e.get('x'))
             y_val = _coerce_int(e.get('y'))
             scroll_y_val = _coerce_int(e.get('y')) if etype == 'sc' else None
+
+            is_double_val = None
+            if etype == 'cl':
+                is_double_val = _event_bool(
+                    e, 'is_double', 'double', default=False
+                )
+
+            scroll_rev_val = None
+            scroll_pause_val = None
+            if etype == 'sc':
+                scroll_rev_val = _event_bool(
+                    e, 'scroll_rev', 'rev', default=False
+                )
+                scroll_pause_val = _event_bool(
+                    e, 'scroll_pause', 'pause', default=False
+                )
+
             rows.append((
                 session_id, etype, e.get('t'),
                 x_val, y_val, e.get('dist'), e.get('ang'),
                 e.get('vel') if etype == 'mm' else None,
                 e.get('totalDist'),
-                e.get('target'), e.get('interval'), e.get('double'),
+                e.get('target'), e.get('interval'), is_double_val,
                 e.get('tw'), e.get('th'),
                 e.get('k'), e.get('iki'), e.get('hold'),
                 scroll_y_val,
                 e.get('vel') if etype == 'sc' else None,
-                e.get('rev'), e.get('pause'),
+                scroll_rev_val, scroll_pause_val,
                 e.get('state'),
                 e.get('action'), e.get('force'), e.get('duration'),
                 e.get('gesture'), e.get('swipeDist'), e.get('swipeVel'),

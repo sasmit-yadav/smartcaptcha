@@ -32,8 +32,8 @@ async def receive_telemetry(
         except (ValueError, TypeError):
             return {"queued": False, "error": "Invalid timestamp"}
 
-    # Store events
-    events_data = [e.model_dump() for e in payload.events]
+    # Store events — use Python field names so DB columns map reliably
+    events_data = [e.model_dump(by_alias=False) for e in payload.events]
     count = insert_events_batch(payload.sessionId, events_data)
 
     return {

@@ -85,6 +85,11 @@
       setTimeout(() => {
         btn.textContent = '✓ Demo login successful';
         btn.style.background = '#22c55e';
+        // Store session and redirect
+        localStorage.setItem('demo_user', JSON.stringify({ email: emailEl.value }));
+        setTimeout(() => {
+          window.location.href = '/quiz.html';
+        }, 800);
       }, 1500);
     });
   </script>

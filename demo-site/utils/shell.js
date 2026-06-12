@@ -8,7 +8,10 @@ const PAGES = [
   { href: '/',          label: 'Home' },
   { href: '/login.html',    label: 'Login' },
   { href: '/signup.html',   label: 'Sign Up' },
-  { href: '/shop.html',     label: 'Shop' },
+  { href: '/quiz.html',     label: 'Quiz' },
+  { href: '/survey.html',   label: 'Survey' },
+  { href: '/typing-test.html', label: 'Typing Test' },
+  { href: '/memory-game.html', label: 'Memory Game' },
   { href: '/article.html',  label: 'Article' },
 ];
 
@@ -22,7 +25,7 @@ export function initShell(currentPage) {
   // ── Test banner ──
   const banner = document.createElement('div');
   banner.className = 'test-banner';
-  banner.textContent = '🌿 Welcome to EcoHub — explore sustainable living and environmental awareness.';
+  banner.textContent = '🌿 Welcome to EcoHub — Your hub for sustainable living and environmental awareness.';
   document.body.prepend(banner);
 
   // ── Navbar ──
@@ -42,7 +45,32 @@ export function initShell(currentPage) {
   const footer = document.createElement('footer');
   footer.className = 'footer';
   footer.innerHTML = `<div class="container">
-    <p>&copy; 2026 EcoHub &middot; Building a greener future together</p>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:2rem; margin-bottom:2rem;">
+      <div>
+        <h4 style="margin-bottom:0.75rem; color:var(--color-primary);">EcoHub</h4>
+        <p class="text-sm text-muted">Demonstrating sustainable living through interactive experiences.</p>
+      </div>
+      <div>
+        <h4 style="margin-bottom:0.75rem;">Quick Links</h4>
+        <ul style="list-style:none; padding:0; margin:0;">
+          <li style="margin-bottom:0.5rem;"><a href="/quiz.html" style="color:var(--color-text-muted); text-decoration:none;">Quiz</a></li>
+          <li style="margin-bottom:0.5rem;"><a href="/survey.html" style="color:var(--color-text-muted); text-decoration:none;">Survey</a></li>
+          <li style="margin-bottom:0.5rem;"><a href="/typing-test.html" style="color:var(--color-text-muted); text-decoration:none;">Typing Test</a></li>
+          <li style="margin-bottom:0.5rem;"><a href="/memory-game.html" style="color:var(--color-text-muted); text-decoration:none;">Memory Game</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4 style="margin-bottom:0.75rem;">Resources</h4>
+        <ul style="list-style:none; padding:0; margin:0;">
+          <li style="margin-bottom:0.5rem;"><a href="/article.html" style="color:var(--color-text-muted); text-decoration:none;">Articles</a></li>
+          <li style="margin-bottom:0.5rem;"><a href="/login.html" style="color:var(--color-text-muted); text-decoration:none;">Login</a></li>
+          <li style="margin-bottom:0.5rem;"><a href="/signup.html" style="color:var(--color-text-muted); text-decoration:none;">Sign Up</a></li>
+        </ul>
+      </div>
+    </div>
+    <div style="padding-top:1.5rem; border-top:1px solid var(--color-border); text-align:center;">
+      <p class="text-sm text-muted">&copy; 2026 EcoHub &middot; Building a greener future together</p>
+    </div>
   </div>`;
   document.body.appendChild(footer);
 }

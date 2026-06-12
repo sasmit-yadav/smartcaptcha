@@ -134,6 +134,15 @@
       setTimeout(() => {
         btn.textContent = '✓ Demo account created';
         btn.style.background = '#22c55e';
+        // Store session and redirect
+        localStorage.setItem('demo_user', JSON.stringify({ 
+          email: emailEl.value, 
+          firstName: fnameEl.value,
+          lastName: lnameEl.value 
+        }));
+        setTimeout(() => {
+          window.location.href = '/quiz.html';
+        }, 800);
       }, 1500);
     });
   </script>

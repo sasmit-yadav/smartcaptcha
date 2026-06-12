@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eco Survey — EcoHub</title>
+  <link rel="stylesheet" href="/styles/base.css" />
+  <style>
+    .survey-container { max-width:700px; margin:0 auto; }
+    .survey-header { text-align:center; margin-bottom:2rem; }
+    .form-section { background:var(--color-surface); border-radius:var(--color-radius); padding:2rem; border:1px solid var(--color-border); margin-bottom:1.5rem; }
+    .form-section h3 { margin-bottom:1.25rem; color:var(--color-primary); }
+    .rating-group { display:flex; gap:0.5rem; margin-top:0.5rem; flex-wrap:wrap; }
+    .rating-btn { width:45px; height:45px; border:2px solid var(--color-border); border-radius:50%; background:var(--color-bg); cursor:pointer; font-weight:600; transition:all 0.2s; }
+    .rating-btn:hover { border-color:var(--color-primary); }
+    .rating-btn.selected { background:var(--color-primary); color:#fff; border-color:var(--color-primary); }
+    .checkbox-group { display:flex; flex-direction:column; gap:0.75rem; }
+    .checkbox-item { display:flex; align-items:center; gap:0.75rem; cursor:pointer; }
+    .checkbox-item input[type="checkbox"] { width:18px; height:18px; cursor:pointer; }
+    .slider-container { margin-top:1rem; }
+    .slider-label { display:flex; justify-content:space-between; margin-bottom:0.5rem; font-size:0.9rem; }
+    .slider-value { font-weight:600; color:var(--color-primary); }
+    input[type="range"] { width:100%; height:8px; border-radius:4px; background:var(--color-border); outline:none; -webkit-appearance:none; appearance:none; }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; width:20px; height:20px; border-radius:50%; background:var(--color-primary); cursor:pointer; }
+    .textarea-input { width:100%; min-height:100px; padding:0.75rem; border:1px solid var(--color-border); border-radius:var(--color-radius); font-family:inherit; font-size:0.95rem; resize:vertical; }
+    .textarea-input:focus { outline:2px solid var(--color-primary); border-color:transparent; }
+    .success-message { text-align:center; padding:3rem; }
+    .telemetry-summary { background:var(--color-surface); padding:1.5rem; border-radius:var(--color-radius); margin-top:2rem; }
+    .telemetry-item { display:flex; justify-content:space-between; padding:0.5rem 0; border-bottom:1px solid var(--color-border); }
+    .telemetry-item:last-child { border-bottom:none; }
+  </style>
+</head>
+<body>
+  <main class="main-content">
+    <div class="container survey-container">
+      <div class="survey-header">
+        <h1>📋 Eco Lifestyle Survey</h1>
+        <p class="text-muted">Help us understand your sustainability habits and preferences</p>
+      </div>
+
+      <form id="survey-form" novalidate>
+        <!-- Section 1: Current Habits -->
+        <div class="form-section">
+          <h3>🌍 Current Eco Habits</h3>
+          
+          <div class="form-group" style="margin-bottom:1.5rem;">
+            <label class="form-label">How often do you recycle?</label>
+            <div class="rating-group" id="recycle-rating">
+              <button type="button" class="rating-btn" data-value="1">1</button>
+              <button type="button" class="rating-btn" data-value="2">2</button>
+              <button type="button" class="rating-btn" data-value="3">3</button>
+              <button type="button" class="rating-btn" data-value="4">4</button>
+              <button type="button" class="rating-btn" data-value="5">5</button>
+            </div>
+            <p class="text-sm text-muted mt-1">1 = Never, 5 = Always</p>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Which eco-friendly practices do you follow? (Select all that apply)</label>
+            <div class="checkbox-group">
+              <label class="checkbox-item"><input type="checkbox" name="practices" value="composting"> Composting food waste</label>
+              <label class="checkbox-item"><input type="checkbox" name="practices" value="reusable"> Using reusable bags/bottles</label>
+              <label class="checkbox-item"><input type="checkbox" name="practices" value="public-transit"> Using public transportation</label>
+              <label class="checkbox-item"><input type="checkbox" name="practices" value="energy-saving"> Energy-efficient appliances</label>
+              <label class="checkbox-item"><input type="checkbox" name="practices" value="local-food"> Buying local/organic food</label>
+              <label class="checkbox-item"><input type="checkbox" name="practices" value="water-saving"> Water conservation habits</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 2: Transportation -->
+        <div class="form-section">
+          <h3>🚗 Transportation Habits</h3>
+          
+          <div class="form-group" style="margin-bottom:1.5rem;">
+            <label class="form-label">Primary mode of transportation</label>
+            <select class="form-input" name="transport">
+              <option value="">Select an option</option>
+              <option value="car">Personal car</option>
+              <option value="public">Public transit</option>
+              <option value="bike">Bicycle</option>
+              <option value="walk">Walking</option>
+              <option value="carpool">Carpooling</option>
+              <option value="ev">Electric vehicle</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Weekly commute distance (miles)</label>
+            <div class="slider-container">
+              <div class="slider-label">
+                <span>0 miles</span>
+                <span class="slider-value" id="commute-value">25</span>
+                <span>100+ miles</span>
+              </div>
+              <input type="range" id="commute-slider" min="0" max="100" value="25">
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 3: Energy & Home -->
+        <div class="form-section">
+          <h3>⚡ Energy & Home</h3>
+          
+          <div class="form-group" style="margin-bottom:1.5rem;">
+            <label class="form-label">How concerned are you about your energy consumption?</label>
+            <div class="rating-group" id="energy-concern">
+              <button type="button" class="rating-btn" data-value="1">1</button>
+              <button type="button" class="rating-btn" data-value="2">2</button>
+              <button type="button" class="rating-btn" data-value="3">3</button>
+              <button type="button" class="rating-btn" data-value="4">4</button>
+              <button type="button" class="rating-btn" data-value="5">5</button>
+            </div>
+            <p class="text-sm text-muted mt-1">1 = Not concerned, 5 = Very concerned</p>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">What would motivate you to adopt more sustainable practices?</label>
+            <textarea class="textarea-input" id="motivation" placeholder="Share your thoughts..."></textarea>
+          </div>
+        </div>
+
+        <!-- Section 4: Interests -->
+        <div class="form-section">
+          <h3>💚 Interests & Goals</h3>
+          
+          <div class="form-group" style="margin-bottom:1.5rem;">
+            <label class="form-label">Which environmental topics interest you most? (Select up to 3)</label>
+            <div class="checkbox-group">
+              <label class="checkbox-item"><input type="checkbox" name="interests" value="climate"> Climate change</label>
+              <label class="checkbox-item"><input type="checkbox" name="interests" value="renewable"> Renewable energy</label>
+              <label class="checkbox-item"><input type="checkbox" name="interests" value="wildlife"> Wildlife conservation</label>
+              <label class="checkbox-item"><input type="checkbox" name="interests" value="ocean"> Ocean health</label>
+              <label class="checkbox-item"><input type="checkbox" name="interests" value="sustainable"> Sustainable living</label>
+              <label class="checkbox-item"><input type="checkbox" name="interests" value="policy"> Environmental policy</label>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">How likely are you to recommend eco-friendly practices to others?</label>
+            <div class="rating-group" id="recommend-rating">
+              <button type="button" class="rating-btn" data-value="1">1</button>
+              <button type="button" class="rating-btn" data-value="2">2</button>
+              <button type="button" class="rating-btn" data-value="3">3</button>
+              <button type="button" class="rating-btn" data-value="4">4</button>
+              <button type="button" class="rating-btn" data-value="5">5</button>
+            </div>
+            <p class="text-sm text-muted mt-1">1 = Very unlikely, 5 = Very likely</p>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-full" id="submit-btn">Submit Survey</button>
+      </form>
+
+      <div id="success-content" style="display:none;">
+        <div class="form-section success-message">
+          <h2>✅ Survey Submitted!</h2>
+          <p class="text-muted" style="margin-bottom:2rem;">Thank you for sharing your eco habits with us. Your responses help us understand sustainable living patterns.</p>
+          <div style="display:flex; gap:1rem; justify-content:center;">
+            <a href="/article.html" class="btn btn-primary">Read Article</a>
+            <a href="/quiz.html" class="btn btn-secondary">Retake Quiz</a>
+          </div>
+          <div class="telemetry-summary">
+            <h4 style="margin-bottom:1rem;">📊 Interaction Telemetry</h4>
+            <div class="telemetry-item">
+              <span>Mouse movements tracked</span>
+              <span id="mouse-count">0</span>
+            </div>
+            <div class="telemetry-item">
+              <span>Click events recorded</span>
+              <span id="click-count">0</span>
+            </div>
+            <div class="telemetry-item">
+              <span>Scroll events captured</span>
+              <span id="scroll-count">0</span>
+            </div>
+            <div class="telemetry-item">
+              <span>Form interactions</span>
+              <span id="form-count">0</span>
+            </div>
+            <div class="telemetry-item">
+              <span>Time spent on page</span>
+              <span id="time-spent">0s</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/config.js"></script>
+  <script src="/smartcaptcha.min.js"></script>
+  <script src="/autofill_detector.js"></script>
+  <script src="/sdk_shim.js"></script>
+  <script>SmartCaptcha.init({apiKey:window.SMARTCAPTCHA_CONFIG.API_KEY,endpoint:window.SMARTCAPTCHA_CONFIG.BACKEND_URL});</script>
+  <script type="module">
+    import { initShell } from '/utils/shell.js';
+    import { getSessionId, getSessionMeta } from '/utils/session.js';
+    initShell('Survey');
+
+    const telemetry = {
+      mouseMovements: [],
+      clicks: [],
+      scrolls: 0,
+      formInteractions: [],
+      startTime: Date.now()
+    };
+
+    // Track mouse movements
+    let lastMouseTime = Date.now();
+    document.addEventListener('mousemove', (e) => {
+      const now = Date.now();
+      if (now - lastMouseTime > 50) {
+        telemetry.mouseMovements.push({ x: e.clientX, y: e.clientY, time: now });
+        lastMouseTime = now;
+      }
+    });
+
+    // Track clicks
+    document.addEventListener('click', (e) => {
+      telemetry.clicks.push({ x: e.clientX, y: e.clientY, time: Date.now() });
+    });
+
+    // Track scrolls
+    document.addEventListener('scroll', () => {
+      telemetry.scrolls++;
+    });
+
+    // Track form interactions
+    const form = document.getElementById('survey-form');
+    form.addEventListener('focusin', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') {
+        telemetry.formInteractions.push({ type: 'focus', element: e.target.tagName, time: Date.now() });
+      }
+    });
+
+    form.addEventListener('input', (e) => {
+      telemetry.formInteractions.push({ type: 'input', element: e.target.tagName, time: Date.now() });
+    });
+
+    // Rating buttons
+    document.querySelectorAll('.rating-group').forEach(group => {
+      group.querySelectorAll('.rating-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          group.querySelectorAll('.rating-btn').forEach(b => b.classList.remove('selected'));
+          btn.classList.add('selected');
+          telemetry.formInteractions.push({ type: 'rating', value: btn.dataset.value, time: Date.now() });
+        });
+      });
+    });
+
+    // Slider
+    const commuteSlider = document.getElementById('commute-slider');
+    const commuteValue = document.getElementById('commute-value');
+    commuteSlider.addEventListener('input', () => {
+      commuteValue.textContent = commuteSlider.value;
+      telemetry.formInteractions.push({ type: 'slider', value: commuteSlider.value, time: Date.now() });
+    });
+
+    // Checkbox limit
+    const interestCheckboxes = document.querySelectorAll('input[name="interests"]');
+    interestCheckboxes.forEach(cb => {
+      cb.addEventListener('change', () => {
+        const checked = document.querySelectorAll('input[name="interests"]:checked');
+        if (checked.length > 3) {
+          cb.checked = false;
+          alert('Please select up to 3 interests only.');
+        }
+        telemetry.formInteractions.push({ type: 'checkbox', checked: cb.checked, time: Date.now() });
+      });
+    });
+
+    // Form submission
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true;
+      btn.textContent = 'Submitting...';
+
+      setTimeout(() => {
+        form.style.display = 'none';
+        document.getElementById('success-content').style.display = 'block';
+        
+        // Display telemetry
+        document.getElementById('mouse-count').textContent = telemetry.mouseMovements.length;
+        document.getElementById('click-count').textContent = telemetry.clicks.length;
+        document.getElementById('scroll-count').textContent = telemetry.scrolls;
+        document.getElementById('form-count').textContent = telemetry.formInteractions.length;
+        document.getElementById('time-spent').textContent = Math.floor((Date.now() - telemetry.startTime) / 1000) + 's';
+        
+        console.log('Survey telemetry:', telemetry);
+        
+        // Send telemetry to backend
+        sendTelemetryToBackend({
+          totalMouseMovements: telemetry.mouseMovements.length,
+          totalClicks: telemetry.clicks.length,
+          totalScrolls: telemetry.scrolls,
+          totalFormInteractions: telemetry.formInteractions.length,
+          timeSpent: Math.floor((Date.now() - telemetry.startTime) / 1000)
+        });
+      }, 1500);
+    });
+
+    async function sendTelemetryToBackend(data) {
+      try {
+        const sessionId = getSessionId();
+        const meta = getSessionMeta();
+        
+        // Convert telemetry events to SDK format
+        const events = telemetry.clicks.map(c => ({
+          type: 'cl',
+          t: c.time,
+          x: c.x,
+          y: c.y
+        }));
+        
+        // Add mouse movement events
+        telemetry.mouseMovements.forEach(m => {
+          events.push({
+            type: 'mm',
+            t: m.time,
+            x: m.x,
+            y: m.y
+          });
+        });
+        
+        // Add scroll events
+        for (let i = 0; i < telemetry.scrolls; i++) {
+          events.push({
+            type: 'sc',
+            t: Date.now() - (telemetry.scrolls - i) * 1000,
+            x: 0,
+            y: 0
+          });
+        }
+        
+        // Add form interaction events
+        telemetry.formInteractions.forEach(f => {
+          events.push({
+            type: f.type === 'focus' ? 'fv' : 'cl',
+            t: f.time,
+            x: 0,
+            y: 0,
+            target: f.element
+          });
+        });
+        
+        const payload = {
+          sessionId,
+          meta,
+          events,
+          timestamp: Date.now()
+        };
+        
+        const response = await fetch(`${window.SMARTCAPTCHA_CONFIG.BACKEND_URL}/api/telemetry`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': window.SMARTCAPTCHA_CONFIG.API_KEY
+          },
+          body: JSON.stringify(payload)
+        });
+        
+        console.log('Telemetry sent to backend:', await response.json());
+      } catch (error) {
+        console.error('Failed to send telemetry:', error);
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Eco Quiz — EcoHub</title>
+  <link rel="stylesheet" href="/styles/base.css" />
+  <style>
+    .quiz-container { max-width:700px; margin:0 auto; }
+    .quiz-header { text-align:center; margin-bottom:2rem; }
+    .quiz-progress { display:flex; gap:0.5rem; margin-bottom:2rem; justify-content:center; }
+    .progress-dot { width:12px; height:12px; border-radius:50%; background:var(--color-border); transition:all 0.3s; }
+    .progress-dot.active { background:var(--color-primary); transform:scale(1.2); }
+    .progress-dot.completed { background:#22c55e; }
+    .question-card { background:var(--color-surface); border-radius:var(--color-radius); padding:2rem; border:1px solid var(--color-border); }
+    .question-text { font-size:1.25rem; font-weight:600; margin-bottom:1.5rem; }
+    .options-grid { display:grid; gap:0.75rem; }
+    .option-btn { padding:1rem 1.25rem; border:2px solid var(--color-border); border-radius:var(--color-radius); background:var(--color-bg); cursor:pointer; text-align:left; font-size:1rem; transition:all 0.2s; }
+    .option-btn:hover { border-color:var(--color-primary); background:var(--color-surface); }
+    .option-btn.selected { border-color:var(--color-primary); background:#dcfce7; }
+    .quiz-footer { display:flex; justify-content:space-between; margin-top:2rem; }
+    .result-card { text-align:center; padding:3rem; }
+    .score-display { font-size:4rem; font-weight:700; color:var(--color-primary); margin:1rem 0; }
+    .result-message { font-size:1.25rem; margin-bottom:2rem; }
+    .telemetry-info { background:var(--color-surface); padding:1rem; border-radius:var(--color-radius); margin-top:2rem; font-size:0.85rem; color:var(--color-text-muted); }
+  </style>
+</head>
+<body>
+  <main class="main-content">
+    <div class="container quiz-container">
+      <div class="quiz-header">
+        <h1>🌱 Eco Knowledge Quiz</h1>
+        <p class="text-muted">Test your environmental knowledge and learn sustainable tips!</p>
+      </div>
+
+      <div class="quiz-progress" id="progress"></div>
+
+      <div id="quiz-content">
+        <div class="question-card">
+          <p class="question-text" id="question-text">Loading question...</p>
+          <div class="options-grid" id="options-grid"></div>
+        </div>
+        <div class="quiz-footer">
+          <button class="btn btn-secondary" id="prev-btn" disabled>Previous</button>
+          <button class="btn btn-primary" id="next-btn" disabled>Next</button>
+        </div>
+      </div>
+
+      <div id="result-content" style="display:none;">
+        <div class="question-card result-card">
+          <h2>Quiz Complete!</h2>
+          <div class="score-display" id="score-display">0/0</div>
+          <p class="result-message" id="result-message"></p>
+          <div style="display:flex; gap:1rem; justify-content:center;">
+            <a href="/survey.html" class="btn btn-primary">Take Survey</a>
+            <a href="/article.html" class="btn btn-secondary">Read Article</a>
+          </div>
+          <div class="telemetry-info">
+            <strong>📊 Telemetry Captured:</strong> Mouse movements, click timing, answer patterns, scroll behavior, and interaction speed have been recorded for analysis.
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/config.js"></script>
+  <script src="/smartcaptcha.min.js"></script>
+  <script src="/autofill_detector.js"></script>
+  <script src="/sdk_shim.js"></script>
+  <script>SmartCaptcha.init({apiKey:window.SMARTCAPTCHA_CONFIG.API_KEY,endpoint:window.SMARTCAPTCHA_CONFIG.BACKEND_URL});</script>
+  <script type="module">
+    import { initShell } from '/utils/shell.js';
+    import { getSessionId, getSessionMeta } from '/utils/session.js';
+    initShell('Quiz');
+
+    const QUESTIONS = [
+      {
+        question: "What is the most effective way to reduce your carbon footprint?",
+        options: ["Using LED bulbs", "Reducing meat consumption", "Recycling paper", "Using reusable bags"],
+        correct: 1
+      },
+      {
+        question: "How much of the world's plastic waste ends up in the ocean each year?",
+        options: ["1 million tons", "8 million tons", "15 million tons", "25 million tons"],
+        correct: 1
+      },
+      {
+        question: "What percentage of household water is typically used for toilet flushing?",
+        options: ["15%", "25%", "35%", "45%"],
+        correct: 2
+      },
+      {
+        question: "Which renewable energy source is currently the fastest growing globally?",
+        options: ["Hydroelectric", "Wind", "Solar", "Geothermal"],
+        correct: 2
+      },
+      {
+        question: "How long does it take for a plastic bottle to decompose in a landfill?",
+        options: ["10 years", "50 years", "450 years", "1000 years"],
+        correct: 2
+      },
+      {
+        question: "What is the primary cause of ocean acidification?",
+        options: ["Oil spills", "Plastic pollution", "CO2 absorption", "Overfishing"],
+        correct: 2
+      },
+      {
+        question: "Which transportation mode has the lowest carbon footprint per passenger mile?",
+        options: ["Car (single occupancy)", "Bus", "Train", "Bicycle"],
+        correct: 3
+      },
+      {
+        question: "What is the term for capturing and storing CO2 from the atmosphere?",
+        options: ["Carbon offsetting", "Carbon sequestration", "Carbon trading", "Carbon footprinting"],
+        correct: 1
+      }
+    ];
+
+    let currentQuestion = 0;
+    let answers = new Array(QUESTIONS.length).fill(null);
+    let telemetry = {
+      mouseMovements: [],
+      clickTimestamps: [],
+      answerTimes: [],
+      scrollEvents: 0
+    };
+
+    // Track mouse movements for telemetry
+    let lastMouseTime = Date.now();
+    document.addEventListener('mousemove', (e) => {
+      const now = Date.now();
+      if (now - lastMouseTime > 50) {
+        telemetry.mouseMovements.push({ x: e.clientX, y: e.clientY, time: now });
+        lastMouseTime = now;
+      }
+    });
+
+    // Track clicks
+    document.addEventListener('click', (e) => {
+      telemetry.clickTimestamps.push({ x: e.clientX, y: e.clientY, time: Date.now() });
+    });
+
+    // Track scroll
+    document.addEventListener('scroll', () => {
+      telemetry.scrollEvents++;
+    });
+
+    const progressEl = document.getElementById('progress');
+    const questionText = document.getElementById('question-text');
+    const optionsGrid = document.getElementById('options-grid');
+    const prevBtn = document.getElementById('prev-btn');
+    const nextBtn = document.getElementById('next-btn');
+    const quizContent = document.getElementById('quiz-content');
+    const resultContent = document.getElementById('result-content');
+
+    function renderProgress() {
+      progressEl.innerHTML = QUESTIONS.map((_, i) => 
+        `<div class="progress-dot ${i === currentQuestion ? 'active' : ''} ${answers[i] !== null ? 'completed' : ''}"></div>`
+      ).join('');
+    }
+
+    function renderQuestion() {
+      const q = QUESTIONS[currentQuestion];
+      questionText.textContent = q.question;
+      
+      const startTime = Date.now();
+      optionsGrid.innerHTML = q.options.map((opt, i) => 
+        `<button class="option-btn ${answers[currentQuestion] === i ? 'selected' : ''}" data-index="${i}">${opt}</button>`
+      ).join('');
+
+      optionsGrid.querySelectorAll('.option-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const index = parseInt(btn.dataset.index);
+          answers[currentQuestion] = index;
+          telemetry.answerTimes[currentQuestion] = Date.now() - startTime;
+          
+          optionsGrid.querySelectorAll('.option-btn').forEach(b => b.classList.remove('selected'));
+          btn.classList.add('selected');
+          nextBtn.disabled = false;
+        });
+      });
+
+      prevBtn.disabled = currentQuestion === 0;
+      nextBtn.disabled = answers[currentQuestion] === null;
+      nextBtn.textContent = currentQuestion === QUESTIONS.length - 1 ? 'Finish' : 'Next';
+      
+      renderProgress();
+    }
+
+    prevBtn.addEventListener('click', () => {
+      if (currentQuestion > 0) {
+        currentQuestion--;
+        renderQuestion();
+      }
+    });
+
+    nextBtn.addEventListener('click', () => {
+      if (currentQuestion < QUESTIONS.length - 1) {
+        currentQuestion++;
+        renderQuestion();
+      } else {
+        showResults();
+      }
+    });
+
+    function showResults() {
+      const correct = answers.reduce((sum, ans, i) => sum + (ans === QUESTIONS[i].correct ? 1 : 0), 0);
+      const percentage = (correct / QUESTIONS.length) * 100;
+      
+      quizContent.style.display = 'none';
+      resultContent.style.display = 'block';
+      
+      document.getElementById('score-display').textContent = `${correct}/${QUESTIONS.length}`;
+      
+      let message = '';
+      if (percentage >= 80) message = "🌟 Excellent! You're an eco-expert!";
+      else if (percentage >= 60) message = "👍 Good job! Keep learning!";
+      else if (percentage >= 40) message = "📚 Not bad! Room for improvement.";
+      else message = "🌱 Keep exploring! Every bit helps.";
+      
+      document.getElementById('result-message').textContent = message;
+      
+      console.log('Quiz telemetry captured:', telemetry);
+      
+      // Send telemetry to backend
+      sendTelemetryToBackend({
+        correct,
+        total: QUESTIONS.length,
+        percentage,
+        answerTimes: telemetry.answerTimes,
+        totalClicks: telemetry.clickTimestamps.length,
+        totalMouseMovements: telemetry.mouseMovements.length,
+        totalScrolls: telemetry.scrollEvents
+      });
+    }
+
+    async function sendTelemetryToBackend(data) {
+      try {
+        const sessionId = getSessionId();
+        const meta = getSessionMeta();
+        
+        // Convert telemetry events to SDK format
+        const events = telemetry.clickTimestamps.map(c => ({
+          type: 'cl',
+          t: c.time,
+          x: c.x,
+          y: c.y
+        }));
+        
+        // Add mouse movement events
+        telemetry.mouseMovements.forEach(m => {
+          events.push({
+            type: 'mm',
+            t: m.time,
+            x: m.x,
+            y: m.y
+          });
+        });
+        
+        // Add scroll events
+        for (let i = 0; i < telemetry.scrollEvents; i++) {
+          events.push({
+            type: 'sc',
+            t: Date.now() - (telemetry.scrollEvents - i) * 1000,
+            x: 0,
+            y: 0
+          });
+        }
+        
+        const payload = {
+          sessionId,
+          meta,
+          events,
+          timestamp: Date.now()
+        };
+        
+        const response = await fetch(`${window.SMARTCAPTCHA_CONFIG.BACKEND_URL}/api/telemetry`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': window.SMARTCAPTCHA_CONFIG.API_KEY
+          },
+          body: JSON.stringify(payload)
+        });
+        
+        console.log('Telemetry sent to backend:', await response.json());
+      } catch (error) {
+        console.error('Failed to send telemetry:', error);
+      }
+    }
+
+    // Initialize
+    renderProgress();
+    renderQuestion();
+  </script>
+</body>
+</html>

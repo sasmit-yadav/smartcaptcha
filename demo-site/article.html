@@ -20,11 +20,18 @@
     .comment .date { font-size:0.75rem; color:var(--color-text-muted); }
     .comment p { margin-top:0.4rem; font-size:0.9rem; }
     .like-share { display:flex; gap:1rem; margin-top:2rem; padding-top:1.5rem; border-top:1px solid var(--color-border); }
+    .highlight-box { background:#dcfce7; border-left:4px solid #16a34a; padding:1rem 1.25rem; margin:1.5rem 0; border-radius:0 var(--color-radius) var(--color-radius) 0; }
+    .highlight-box:hover { background:#d1fae5; transition:background 0.2s; }
+    .interactive-tip { cursor:pointer; position:relative; }
+    .interactive-tip::after { content:'👆'; position:absolute; right:-20px; top:0; opacity:0; transition:opacity 0.2s; }
+    .interactive-tip:hover::after { opacity:1; }
+    .reading-progress { position:fixed; top:0; left:0; height:3px; background:var(--color-primary); width:0%; z-index:1000; transition:width 0.1s; }
     @media(max-width:768px) { .article-layout { grid-template-columns:1fr; } .toc { display:none; } }
   </style>
 </head>
 <body>
   <main class="main-content">
+    <div class="reading-progress" id="reading-progress"></div>
     <div class="container">
       <div class="article-layout">
         <!-- Table of Contents -->
@@ -57,6 +64,9 @@
               communities and ecosystems worldwide. The window for meaningful action is narrowing, but
               the tools and knowledge to make a difference have never been more accessible.
             </p>
+            <div class="highlight-box interactive-tip" onclick="this.style.background='#bbf7d0'">
+              <strong>💡 Did you know?</strong> The average global temperature has already risen 1.2°C since pre-industrial times. Every fraction of a degree matters.
+            </div>
             <p>
               This article examines where we stand on climate action in 2026, explores the key environmental
               indicators scientists are tracking, and highlights data-driven solutions that are making a
@@ -73,6 +83,9 @@
               agriculture. The consequences are visible everywhere: Arctic ice is shrinking at record rates,
               sea levels are rising 3.6mm per year, and coral reefs face mass bleaching events.
             </p>
+            <div class="highlight-box interactive-tip" onclick="this.style.background='#bbf7d0'">
+              <strong>🌊 Key Stat:</strong> Sea levels are rising at 3.6mm per year — equivalent to covering a football field with 3.6mm of water annually.
+            </div>
             <p>
               But climate science has also advanced significantly. Modern satellite networks, ocean sensors,
               and atmospheric monitoring stations provide real-time data that helps us understand patterns,
@@ -99,6 +112,9 @@
               thanks to accelerated clean energy adoption and carbon capture technologies being deployed
               at scale.
             </p>
+            <div class="highlight-box interactive-tip" onclick="this.style.background='#bbf7d0'">
+              <strong>📈 CO2 Alert:</strong> 425 ppm is 75 ppm above the safe threshold of 350 ppm. Every ppm matters for our climate future.
+            </div>
             <p>
               <strong>Ocean temperature and acidification</strong> affect marine ecosystems. Warmer oceans
               disrupt fish migration patterns and intensify hurricanes. Monitoring these changes helps
@@ -124,6 +140,9 @@
               placement, and predict crop yields under different climate scenarios. Smart grids use AI to
               balance renewable energy supply with demand, reducing waste and improving efficiency.
             </p>
+            <div class="highlight-box interactive-tip" onclick="this.style.background='#bbf7d0'">
+              <strong>🤖 AI Impact:</strong> Smart grids using AI can reduce energy waste by up to 15% through real-time load balancing.
+            </div>
             <p>
               Precision agriculture uses sensor data and weather models to reduce water usage by up to 30%
               while maintaining crop yields. Urban planning tools simulate heat island effects and optimize
@@ -144,6 +163,9 @@
               improving home insulation, and switching to renewable energy — can reduce a person's carbon
               footprint by up to 2.5 tonnes of CO2 per year.
             </p>
+            <div class="highlight-box interactive-tip" onclick="this.style.background='#bbf7d0'">
+              <strong>🌱 Personal Impact:</strong> 2.5 tonnes of CO2 reduction per year is equivalent to taking 1.5 cars off the road annually.
+            </div>
             <p>
               Community-level actions amplify this impact. Neighborhood solar cooperatives, community gardens,
               and shared EV charging networks create sustainable infrastructure that benefits everyone.
@@ -181,6 +203,7 @@
           <!-- Like / Share -->
           <div class="like-share">
             <button class="btn btn-secondary" id="like-btn">👍 Like (42)</button>
+            <button class="btn btn-secondary" id="bookmark-btn">🔖 Bookmark</button>
             <button class="btn btn-secondary" onclick="alert('Share not implemented in demo.')">🔗 Share</button>
           </div>
 
@@ -190,15 +213,25 @@
             <div class="comment">
               <span class="author">green_living_42</span> <span class="date">2 days ago</span>
               <p>The section on community-level actions really resonated with me. Our neighborhood started a solar co-op last year and the savings have been incredible. More people need to know this is an option.</p>
+              <button class="btn btn-secondary text-sm" style="padding:0.25rem 0.5rem; margin-top:0.5rem; font-size:0.8rem;" onclick="this.textContent='✓ Liked'; this.style.background='#dcfce7';">👍 Helpful</button>
             </div>
             <div class="comment">
               <span class="author">climate_data_nerd</span> <span class="date">3 days ago</span>
               <p>Great overview. Would love to see a follow-up on how carbon capture technology is scaling. The direct air capture plants in Iceland are fascinating but still tiny compared to what's needed.</p>
+              <button class="btn btn-secondary text-sm" style="padding:0.25rem 0.5rem; margin-top:0.5rem; font-size:0.8rem;" onclick="this.textContent='✓ Liked'; this.style.background='#dcfce7';">👍 Helpful</button>
             </div>
             <div class="comment">
               <span class="author">sustainable_sarah</span> <span class="date">5 days ago</span>
               <p>The voting paragraph is the most important part. Individual actions matter, but policy change is the multiplier. We need more articles that connect personal choices to systemic impact.</p>
+              <button class="btn btn-secondary text-sm" style="padding:0.25rem 0.5rem; margin-top:0.5rem; font-size:0.8rem;" onclick="this.textContent='✓ Liked'; this.style.background='#dcfce7';">👍 Helpful</button>
             </div>
+          </div>
+
+          <!-- Add Comment -->
+          <div class="card" style="padding:1.5rem; margin-top:2rem;">
+            <h3 style="margin-bottom:1rem;">Add a Comment</h3>
+            <textarea class="textarea-input" id="comment-input" placeholder="Share your thoughts..." style="width:100%; min-height:80px; padding:0.75rem; border:1px solid var(--color-border); border-radius:var(--color-radius); font-family:inherit; margin-bottom:1rem;"></textarea>
+            <button class="btn btn-primary" id="comment-submit">Post Comment</button>
           </div>
         </article>
       </div>
@@ -215,7 +248,65 @@
   <script>SmartCaptcha.init({apiKey:window.SMARTCAPTCHA_CONFIG.API_KEY,endpoint:window.SMARTCAPTCHA_CONFIG.BACKEND_URL});</script>
   <script type="module">
     import { initShell } from '/utils/shell.js';
+    import { getSessionId, getSessionMeta } from '/utils/session.js';
     initShell('Article');
+
+    // Telemetry tracking
+    const telemetry = {
+      mouseMovements: [],
+      clicks: [],
+      scrolls: 0,
+      highlightClicks: 0,
+      readingTime: Date.now(),
+      sectionsRead: new Set()
+    };
+
+    // Track mouse movements
+    let lastMouseTime = Date.now();
+    document.addEventListener('mousemove', (e) => {
+      const now = Date.now();
+      if (now - lastMouseTime > 50) {
+        telemetry.mouseMovements.push({ x: e.clientX, y: e.clientY, time: now });
+        lastMouseTime = now;
+      }
+    });
+
+    // Track clicks
+    document.addEventListener('click', (e) => {
+      telemetry.clicks.push({ x: e.clientX, y: e.clientY, time: Date.now() });
+    });
+
+    // Track scrolls
+    document.addEventListener('scroll', () => {
+      telemetry.scrolls++;
+    });
+
+    // Track highlight box clicks
+    document.querySelectorAll('.highlight-box').forEach(box => {
+      box.addEventListener('click', () => {
+        telemetry.highlightClicks++;
+      });
+    });
+
+    // Track section reading (using Intersection Observer)
+    const sections = document.querySelectorAll('section');
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          telemetry.sectionsRead.add(entry.target.id);
+        }
+      });
+    }, { threshold: 0.5 });
+    sections.forEach(section => observer.observe(section));
+
+    // Reading progress bar
+    const progressBar = document.getElementById('reading-progress');
+    window.addEventListener('scroll', () => {
+      const scrollTop = window.scrollY;
+      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+      const progress = (scrollTop / docHeight) * 100;
+      progressBar.style.width = progress + '%';
+    });
 
     // Back to top visibility
     const btt = document.getElementById('btt');
@@ -230,7 +321,106 @@
       likes++;
       likeBtn.textContent = `👍 Liked (${likes})`;
       likeBtn.style.background = '#dcfce7';
+      telemetry.clicks.push({ type: 'like', time: Date.now() });
     });
+
+    // Bookmark button
+    const bookmarkBtn = document.getElementById('bookmark-btn');
+    let bookmarked = false;
+    bookmarkBtn.addEventListener('click', () => {
+      bookmarked = !bookmarked;
+      bookmarkBtn.textContent = bookmarked ? '🔖 Bookmarked' : '🔖 Bookmark';
+      bookmarkBtn.style.background = bookmarked ? '#dcfce7' : '';
+      telemetry.clicks.push({ type: 'bookmark', action: bookmarked, time: Date.now() });
+    });
+
+    // Comment submission
+    const commentInput = document.getElementById('comment-input');
+    const commentSubmit = document.getElementById('comment-submit');
+    commentSubmit.addEventListener('click', () => {
+      if (commentInput.value.trim()) {
+        commentSubmit.textContent = '✓ Posted!';
+        commentSubmit.style.background = '#22c55e';
+        commentInput.value = '';
+        telemetry.clicks.push({ type: 'comment', time: Date.now() });
+        setTimeout(() => {
+          commentSubmit.textContent = 'Post Comment';
+          commentSubmit.style.background = '';
+        }, 2000);
+      }
+    });
+
+    // Log telemetry on page unload
+    window.addEventListener('beforeunload', () => {
+      telemetry.readingTime = Date.now() - telemetry.readingTime;
+      console.log('Article telemetry:', telemetry);
+      
+      // Send telemetry to backend
+      sendTelemetryToBackend({
+        readingTime: telemetry.readingTime,
+        totalMouseMovements: telemetry.mouseMovements.length,
+        totalClicks: telemetry.clicks.length,
+        totalScrolls: telemetry.scrolls,
+        highlightClicks: telemetry.highlightClicks,
+        sectionsRead: Array.from(telemetry.sectionsRead)
+      });
+    });
+
+    async function sendTelemetryToBackend(data) {
+      try {
+        const sessionId = getSessionId();
+        const meta = getSessionMeta();
+        
+        // Convert telemetry events to SDK format
+        const events = telemetry.clicks.map(c => ({
+          type: 'cl',
+          t: c.time || Date.now(),
+          x: c.x || 0,
+          y: c.y || 0,
+          target: c.type || 'unknown'
+        }));
+        
+        // Add mouse movement events
+        telemetry.mouseMovements.forEach(m => {
+          events.push({
+            type: 'mm',
+            t: m.time,
+            x: m.x,
+            y: m.y
+          });
+        });
+        
+        // Add scroll events
+        for (let i = 0; i < telemetry.scrolls; i++) {
+          events.push({
+            type: 'sc',
+            t: Date.now() - (telemetry.scrolls - i) * 1000,
+            x: 0,
+            y: 0
+          });
+        }
+        
+        const payload = {
+          sessionId,
+          meta,
+          events,
+          timestamp: Date.now()
+        };
+        
+        const response = await fetch(`${window.SMARTCAPTCHA_CONFIG.BACKEND_URL}/api/telemetry`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': window.SMARTCAPTCHA_CONFIG.API_KEY
+          },
+          body: JSON.stringify(payload)
+        });
+        
+        console.log('Telemetry sent to backend:', await response.json());
+      } catch (error) {
+        console.error('Failed to send telemetry:', error);
+      }
+    }
   </script>
 </body>
 </html>

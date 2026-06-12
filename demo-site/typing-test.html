@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Typing Test — EcoHub</title>
+  <link rel="stylesheet" href="/styles/base.css" />
+  <style>
+    .typing-container { max-width:800px; margin:0 auto; }
+    .typing-header { text-align:center; margin-bottom:2rem; }
+    .text-display { background:var(--color-surface); padding:2rem; border-radius:var(--color-radius); border:1px solid var(--color-border); font-family:'Courier New', monospace; font-size:1.2rem; line-height:1.8; margin-bottom:2rem; position:relative; }
+    .text-display .correct { color:#22c55e; }
+    .text-display .incorrect { color:#ef4444; text-decoration:underline; }
+    .text-display .current { background:#fef08a; animation:blink 1s infinite; }
+    @keyframes blink { 50% { background:transparent; } }
+    .text-display .pending { color:var(--color-text-muted); }
+    .typing-input { width:100%; padding:1rem; font-size:1.1rem; border:2px solid var(--color-border); border-radius:var(--color-radius); font-family:'Courier New', monospace; margin-bottom:1.5rem; }
+    .typing-input:focus { outline:2px solid var(--color-primary); border-color:transparent; }
+    .stats-bar { display:grid; grid-template-columns:repeat(4,1fr); gap:1rem; margin-bottom:2rem; }
+    .stat-card { background:var(--color-surface); padding:1.5rem; border-radius:var(--color-radius); border:1px solid var(--color-border); text-align:center; }
+    .stat-value { font-size:2rem; font-weight:700; color:var(--color-primary); }
+    .stat-label { font-size:0.85rem; color:var(--color-text-muted); margin-top:0.5rem; }
+    .result-card { text-align:center; padding:3rem; }
+    .wpm-score { font-size:4rem; font-weight:700; color:var(--color-primary); margin:1rem 0; }
+    .telemetry-summary { background:var(--color-surface); padding:1.5rem; border-radius:var(--color-radius); margin-top:2rem; }
+    .telemetry-item { display:flex; justify-content:space-between; padding:0.5rem 0; border-bottom:1px solid var(--color-border); }
+    .telemetry-item:last-child { border-bottom:none; }
+  </style>
+</head>
+<body>
+  <main class="main-content">
+    <div class="container typing-container">
+      <div class="typing-header">
+        <h1>⌨️ Eco Typing Test</h1>
+        <p class="text-muted">Test your typing speed with eco-themed facts!</p>
+      </div>
+
+      <div class="stats-bar" id="stats-bar">
+        <div class="stat-card">
+          <div class="stat-value" id="wpm">0</div>
+          <div class="stat-label">WPM</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="accuracy">100%</div>
+          <div class="stat-label">Accuracy</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="time">0s</div>
+          <div class="stat-label">Time</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="keystrokes">0</div>
+          <div class="stat-label">Keystrokes</div>
+        </div>
+      </div>
+
+      <div id="typing-content">
+        <div class="text-display" id="text-display"></div>
+        <input type="text" class="typing-input" id="typing-input" placeholder="Start typing here..." autocomplete="off" autofocus />
+        <div style="display:flex; gap:1rem; justify-content:center;">
+          <button class="btn btn-primary" id="restart-btn">🔄 New Text</button>
+          <button class="btn btn-secondary" id="finish-btn">Finish Early</button>
+        </div>
+      </div>
+
+      <div id="result-content" style="display:none;">
+        <div class="card result-card">
+          <h2>Test Complete!</h2>
+          <div class="wpm-score" id="final-wpm">0 WPM</div>
+          <p class="text-muted" id="final-accuracy">Accuracy: 0%</p>
+          <p class="text-muted" id="final-time">Time: 0s</p>
+          <div style="display:flex; gap:1rem; justify-content:center; margin-top:2rem;">
+            <a href="/memory-game.html" class="btn btn-primary">Play Memory Game</a>
+            <a href="/quiz.html" class="btn btn-secondary">Take Quiz</a>
+          </div>
+          <div class="telemetry-summary">
+            <h4 style="margin-bottom:1rem;">📊 Telemetry Captured</h4>
+            <div class="telemetry-item">
+              <span>Keystrokes tracked</span>
+              <span id="key-count">0</span>
+            </div>
+            <div class="telemetry-item">
+              <span>Backspace corrections</span>
+              <span id="backspace-count">0</span>
+            </div>
+            <div class="telemetry-item">
+              <span>Typing pauses</span>
+              <span id="pause-count">0</span>
+            </div>
+            <div class="telemetry-item">
+              <span>Average key interval</span>
+              <span id="avg-interval">0ms</span>
+            </div>
+            <div class="telemetry-item">
+              <span>Mouse movements</span>
+              <span id="mouse-count">0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/config.js"></script>
+  <script src="/smartcaptcha.min.js"></script>
+  <script src="/autofill_detector.js"></script>
+  <script src="/sdk_shim.js"></script>
+  <script>SmartCaptcha.init({apiKey:window.SMARTCAPTCHA_CONFIG.API_KEY,endpoint:window.SMARTCAPTCHA_CONFIG.BACKEND_URL});</script>
+  <script type="module">
+    import { initShell } from '/utils/shell.js';
+    import { getSessionId, getSessionMeta } from '/utils/session.js';
+    initShell('Typing Test');
+
+    const TEXTS = [
+      "Climate change is one of the most pressing issues of our time. Rising temperatures, melting glaciers, and extreme weather events are becoming more common. We must take action now to protect our planet for future generations.",
+      "Renewable energy sources like solar and wind power are becoming increasingly affordable. By transitioning to clean energy, we can reduce our carbon footprint and create a sustainable future for everyone.",
+      "The ocean absorbs about 30% of the carbon dioxide produced by humans. This causes ocean acidification, which threatens marine ecosystems and coral reefs worldwide. We must reduce emissions to protect our oceans.",
+      "Biodiversity loss is accelerating at an alarming rate. Species extinction is 1000 times faster than the natural rate. Protecting habitats and reducing pollution are crucial steps to preserve Earth's rich diversity of life.",
+      "Sustainable agriculture practices can help feed the growing global population while protecting the environment. Crop rotation, organic farming, and reduced pesticide use are key strategies for eco-friendly food production."
+    ];
+
+    let currentText = TEXTS[0];
+    let currentIndex = 0;
+    let startTime = null;
+    let timerInterval = null;
+    let keystrokes = 0;
+    let correctChars = 0;
+    let backspaceCount = 0;
+    let pauseCount = 0;
+    let keyIntervals = [];
+    let lastKeyTime = null;
+    let telemetry = {
+      mouseMovements: [],
+      keystrokes: [],
+      pauses: [],
+      corrections: 0
+    };
+
+    // Track mouse movements
+    let lastMouseTime = Date.now();
+    document.addEventListener('mousemove', (e) => {
+      const now = Date.now();
+      if (now - lastMouseTime > 50) {
+        telemetry.mouseMovements.push({ x: e.clientX, y: e.clientY, time: now });
+        lastMouseTime = now;
+      }
+    });
+
+    const textDisplay = document.getElementById('text-display');
+    const typingInput = document.getElementById('typing-input');
+    const wpmDisplay = document.getElementById('wpm');
+    const accuracyDisplay = document.getElementById('accuracy');
+    const timeDisplay = document.getElementById('time');
+    const keystrokesDisplay = document.getElementById('keystrokes');
+    const restartBtn = document.getElementById('restart-btn');
+    const finishBtn = document.getElementById('finish-btn');
+
+    function renderText() {
+      let html = '';
+      const inputValue = typingInput.value;
+      
+      for (let i = 0; i < currentText.length; i++) {
+        if (i < inputValue.length) {
+          if (inputValue[i] === currentText[i]) {
+            html += `<span class="correct">${currentText[i]}</span>`;
+          } else {
+            html += `<span class="incorrect">${currentText[i]}</span>`;
+          }
+        } else if (i === inputValue.length) {
+          html += `<span class="current">${currentText[i]}</span>`;
+        } else {
+          html += `<span class="pending">${currentText[i]}</span>`;
+        }
+      }
+      textDisplay.innerHTML = html;
+      currentIndex = inputValue.length;
+    }
+
+    function updateStats() {
+      if (!startTime) return;
+      
+      const elapsed = (Date.now() - startTime) / 1000;
+      const minutes = elapsed / 60;
+      const wpm = Math.round((correctChars / 5) / minutes) || 0;
+      const accuracy = keystrokes > 0 ? Math.round((correctChars / keystrokes) * 100) : 100;
+      
+      wpmDisplay.textContent = wpm;
+      accuracyDisplay.textContent = accuracy + '%';
+      timeDisplay.textContent = Math.floor(elapsed) + 's';
+      keystrokesDisplay.textContent = keystrokes;
+    }
+
+    function startTimer() {
+      if (!startTime) {
+        startTime = Date.now();
+        timerInterval = setInterval(updateStats, 100);
+      }
+    }
+
+    function finishTest() {
+      clearInterval(timerInterval);
+      
+      const elapsed = (Date.now() - startTime) / 1000;
+      const minutes = elapsed / 60;
+      const wpm = Math.round((correctChars / 5) / minutes) || 0;
+      const accuracy = keystrokes > 0 ? Math.round((correctChars / keystrokes) * 100) : 100;
+      
+      document.getElementById('typing-content').style.display = 'none';
+      document.getElementById('result-content').style.display = 'block';
+      document.getElementById('final-wpm').textContent = wpm + ' WPM';
+      document.getElementById('final-accuracy').textContent = 'Accuracy: ' + accuracy + '%';
+      document.getElementById('final-time').textContent = 'Time: ' + Math.floor(elapsed) + 's';
+      
+      document.getElementById('key-count').textContent = keystrokes;
+      document.getElementById('backspace-count').textContent = backspaceCount;
+      document.getElementById('pause-count').textContent = pauseCount;
+      document.getElementById('avg-interval').textContent = keyIntervals.length > 0 ? Math.round(keyIntervals.reduce((a,b) => a+b, 0) / keyIntervals.length) + 'ms' : '0ms';
+      document.getElementById('mouse-count').textContent = telemetry.mouseMovements.length;
+      
+      // Send telemetry to backend
+      sendTelemetryToBackend({
+        wpm,
+        accuracy,
+        elapsed,
+        keystrokes,
+        backspaceCount,
+        pauseCount,
+        avgInterval: keyIntervals.length > 0 ? Math.round(keyIntervals.reduce((a,b) => a+b, 0) / keyIntervals.length) : 0
+      });
+    }
+
+    async function sendTelemetryToBackend(data) {
+      try {
+        const sessionId = getSessionId();
+        const meta = getSessionMeta();
+        
+        // Convert telemetry events to SDK format
+        const events = telemetry.keystrokes.map(k => ({
+          type: 'kd',
+          t: k.time,
+          k: k.key
+        }));
+        
+        // Add mouse movement events
+        telemetry.mouseMovements.forEach(m => {
+          events.push({
+            type: 'mm',
+            t: m.time,
+            x: m.x,
+            y: m.y
+          });
+        });
+        
+        const payload = {
+          sessionId,
+          meta,
+          events,
+          timestamp: Date.now()
+        };
+        
+        const response = await fetch(`${window.SMARTCAPTCHA_CONFIG.BACKEND_URL}/api/telemetry`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': window.SMARTCAPTCHA_CONFIG.API_KEY
+          },
+          body: JSON.stringify(payload)
+        });
+        
+        console.log('Telemetry sent to backend:', await response.json());
+      } catch (error) {
+        console.error('Failed to send telemetry:', error);
+      }
+    }
+
+    function resetTest() {
+      currentText = TEXTS[Math.floor(Math.random() * TEXTS.length)];
+      currentIndex = 0;
+      startTime = null;
+      keystrokes = 0;
+      correctChars = 0;
+      backspaceCount = 0;
+      pauseCount = 0;
+      keyIntervals = [];
+      lastKeyTime = null;
+      telemetry = {
+        mouseMovements: [],
+        keystrokes: [],
+        pauses: [],
+        corrections: 0
+      };
+      
+      clearInterval(timerInterval);
+      renderText();
+      typingInput.value = '';
+      updateStats();
+    }
+
+    typingInput.addEventListener('input', (e) => {
+      startTimer();
+      
+      const inputValue = typingInput.value;
+      
+      // Track each keystroke
+      if (inputValue.length > 0) {
+        const inputChar = inputValue[inputValue.length - 1];
+        keystrokes++;
+        
+        telemetry.keystrokes.push({
+          key: inputChar,
+          time: Date.now(),
+          expected: currentText[inputValue.length - 1] || null
+        });
+        
+        // Calculate key interval
+        if (lastKeyTime) {
+          const interval = Date.now() - lastKeyTime;
+          keyIntervals.push(interval);
+          if (interval > 500) pauseCount++;
+        }
+        lastKeyTime = Date.now();
+      }
+      
+      // Count correct characters
+      correctChars = 0;
+      for (let i = 0; i < inputValue.length; i++) {
+        if (inputValue[i] === currentText[i]) {
+          correctChars++;
+        }
+      }
+      
+      renderText();
+      updateStats();
+      
+      if (inputValue.length >= currentText.length) {
+        finishTest();
+      }
+    });
+
+    typingInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Backspace') {
+        backspaceCount++;
+        telemetry.corrections++;
+      }
+    });
+
+    restartBtn.addEventListener('click', resetTest);
+    finishBtn.addEventListener('click', finishTest);
+
+    // Initialize
+    renderText();
+  </script>
+</body>
+</html>

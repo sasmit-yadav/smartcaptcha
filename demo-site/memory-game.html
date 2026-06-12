@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Memory Game — EcoHub</title>
+  <link rel="stylesheet" href="/styles/base.css" />
+  <style>
+    .game-container { max-width:700px; margin:0 auto; }
+    .game-header { text-align:center; margin-bottom:2rem; }
+    .game-stats { display:flex; justify-content:center; gap:2rem; margin-bottom:2rem; }
+    .stat-item { text-align:center; }
+    .stat-value { font-size:2rem; font-weight:700; color:var(--color-primary); }
+    .stat-label { font-size:0.85rem; color:var(--color-text-muted); }
+    .game-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:1rem; margin-bottom:2rem; }
+    .card { aspect-ratio:1; background:var(--color-surface); border:2px solid var(--color-border); border-radius:var(--color-radius); cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:2.5rem; transition:all 0.3s; position:relative; perspective:1000px; transform-style:preserve-3d; }
+    .card:hover { border-color:var(--color-primary); transform:scale(1.02); }
+    .card.flipped { background:#dcfce7; border-color:#16a34a; }
+    .card.matched { background:#bbf7d0; border-color:#22c55e; opacity:0.7; cursor:not-allowed; }
+    .card-content { display:none; }
+    .card.flipped .card-content, .card.matched .card-content { display:block; }
+    .card-back { display:block; }
+    .card.flipped .card-back, .card.matched .card-back { display:none; }
+    .result-card { text-align:center; padding:3rem; }
+    .score-display { font-size:4rem; font-weight:700; color:var(--color-primary); margin:1rem 0; }
+    .telemetry-summary { background:var(--color-surface); padding:1.5rem; border-radius:var(--color-radius); margin-top:2rem; }
+    .telemetry-item { display:flex; justify-content:space-between; padding:0.5rem 0; border-bottom:1px solid var(--color-border); }
+    .telemetry-item:last-child { border-bottom:none; }
+    @media(max-width:500px) { .game-grid { grid-template-columns:repeat(3,1fr); } }
+  </style>
+</head>
+<body>
+  <main class="main-content">
+    <div class="container game-container">
+      <div class="game-header">
+        <h1>🧠 Eco Memory Game</h1>
+        <p class="text-muted">Match the eco-themed cards!</p>
+      </div>
+
+      <div class="game-stats" id="game-stats">
+        <div class="stat-item">
+          <div class="stat-value" id="moves">0</div>
+          <div class="stat-label">Moves</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="matches">0/8</div>
+          <div class="stat-label">Matches</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="timer">0:00</div>
+          <div class="stat-label">Time</div>
+        </div>
+      </div>
+
+      <div id="game-content">
+        <div class="game-grid" id="game-grid"></div>
+        <div style="display:flex; gap:1rem; justify-content:center;">
+          <button class="btn btn-primary" id="restart-btn">🔄 New Game</button>
+        </div>
+      </div>
+
+      <div id="result-content" style="display:none;">
+        <div class="card result-card">
+          <h2>🎉 Game Complete!</h2>
+          <div class="score-display" id="final-moves">0 Moves</div>
+          <p class="text-muted" id="final-time">Time: 0:00</p>
+          <p class="text-muted" id="final-accuracy">Accuracy: 0%</p>
+          <div style="display:flex; gap:1rem; justify-content:center; margin-top:2rem;">
+            <a href="/typing-test.html" class="btn btn-primary">Take Typing Test</a>
+            <a href="/quiz.html" class="btn btn-secondary">Take Quiz</a>
+          </div>
+          <div class="telemetry-summary">
+            <h4 style="margin-bottom:1rem;">📊 Telemetry Captured</h4>
+            <div class="telemetry-item">
+              <span>Total clicks</span>
+              <span id="click-count">0</span>
+            </div>
+            <div class="telemetry-item">
+              <span>Match attempts</span>
+              <span id="match-attempts">0</span>
+            </div>
+            <div class="telemetry-item">
+              <span>First card hover time</span>
+              <span id="hover-time">0ms</span>
+            </div>
+            <div class="telemetry-item">
+              <span>Mouse movements</span>
+              <span id="mouse-count">0</span>
+            </div>
+            <div class="telemetry-item">
+              <span>Average decision time</span>
+              <span id="avg-decision">0ms</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/config.js"></script>
+  <script src="/smartcaptcha.min.js"></script>
+  <script src="/autofill_detector.js"></script>
+  <script src="/sdk_shim.js"></script>
+  <script>SmartCaptcha.init({apiKey:window.SMARTCAPTCHA_CONFIG.API_KEY,endpoint:window.SMARTCAPTCHA_CONFIG.BACKEND_URL});</script>
+  <script type="module">
+    import { initShell } from '/utils/shell.js';
+    import { getSessionId, getSessionMeta } from '/utils/session.js';
+    initShell('Memory Game');
+
+    const EMOJIS = ['🌍', '🌱', '♻️', '🌊', '🌳', '☀️', '🌿', '💚'];
+    let cards = [];
+    let flippedCards = [];
+    let matchedPairs = 0;
+    let moves = 0;
+    let startTime = null;
+    let timerInterval = null;
+    let telemetry = {
+      clicks: [],
+      matchAttempts: [],
+      hoverTimes: [],
+      decisionTimes: [],
+      mouseMovements: [],
+      firstCardHover: null
+    };
+
+    // Track mouse movements
+    let lastMouseTime = Date.now();
+    document.addEventListener('mousemove', (e) => {
+      const now = Date.now();
+      if (now - lastMouseTime > 50) {
+        telemetry.mouseMovements.push({ x: e.clientX, y: e.clientY, time: now });
+        lastMouseTime = now;
+      }
+    });
+
+    const gameGrid = document.getElementById('game-grid');
+    const movesDisplay = document.getElementById('moves');
+    const matchesDisplay = document.getElementById('matches');
+    const timerDisplay = document.getElementById('timer');
+    const restartBtn = document.getElementById('restart-btn');
+
+    function shuffleArray(array) {
+      for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+      }
+      return array;
+    }
+
+    function createCards() {
+      cards = [...EMOJIS, ...EMOJIS];
+      shuffleArray(cards);
+      
+      gameGrid.innerHTML = '';
+      cards.forEach((emoji, index) => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.dataset.index = index;
+        card.dataset.emoji = emoji;
+        
+        const back = document.createElement('div');
+        back.className = 'card-back';
+        back.textContent = '?';
+        
+        const content = document.createElement('div');
+        content.className = 'card-content';
+        content.textContent = emoji;
+        
+        card.appendChild(back);
+        card.appendChild(content);
+        
+        // Track hover time
+        let hoverStart = null;
+        card.addEventListener('mouseenter', () => {
+          hoverStart = Date.now();
+        });
+        
+        card.addEventListener('mouseleave', () => {
+          if (hoverStart) {
+            const hoverDuration = Date.now() - hoverStart;
+            telemetry.hoverTimes.push(hoverDuration);
+            if (!telemetry.firstCardHover) {
+              telemetry.firstCardHover = hoverDuration;
+            }
+            hoverStart = null;
+          }
+        });
+        
+        card.addEventListener('click', () => handleCardClick(card));
+        gameGrid.appendChild(card);
+      });
+    }
+
+    function handleCardClick(card) {
+      if (flippedCards.length >= 2 || card.classList.contains('flipped') || card.classList.contains('matched')) {
+        return;
+      }
+
+      if (!startTime) {
+        startTime = Date.now();
+        timerInterval = setInterval(updateTimer, 1000);
+      }
+
+      card.classList.add('flipped');
+      flippedCards.push(card);
+      
+      // Track click
+      telemetry.clicks.push({
+        index: parseInt(card.dataset.index),
+        time: Date.now()
+      });
+
+      if (flippedCards.length === 2) {
+        moves++;
+        movesDisplay.textContent = moves;
+        
+        const [card1, card2] = flippedCards;
+        const matchAttempt = {
+          card1: card1.dataset.index,
+          card2: card2.dataset.index,
+          time: Date.now(),
+          match: card1.dataset.emoji === card2.dataset.emoji
+        };
+        telemetry.matchAttempts.push(matchAttempt);
+        
+        // Track decision time (time between first and second click)
+        if (telemetry.clicks.length >= 2) {
+          const lastClick = telemetry.clicks[telemetry.clicks.length - 2];
+          const decisionTime = Date.now() - lastClick.time;
+          telemetry.decisionTimes.push(decisionTime);
+        }
+
+        if (card1.dataset.emoji === card2.dataset.emoji) {
+          card1.classList.add('matched');
+          card2.classList.add('matched');
+          matchedPairs++;
+          matchesDisplay.textContent = `${matchedPairs}/8`;
+          flippedCards = [];
+          
+          if (matchedPairs === 8) {
+            endGame();
+          }
+        } else {
+          setTimeout(() => {
+            card1.classList.remove('flipped');
+            card2.classList.remove('flipped');
+            flippedCards = [];
+          }, 1000);
+        }
+      }
+    }
+
+    function updateTimer() {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const minutes = Math.floor(elapsed / 60);
+      const seconds = elapsed % 60;
+      timerDisplay.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }
+
+    function endGame() {
+      clearInterval(timerInterval);
+      
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const accuracy = matchedPairs > 0 ? Math.round((matchedPairs * 2) / moves * 100) : 0;
+      
+      document.getElementById('game-content').style.display = 'none';
+      document.getElementById('result-content').style.display = 'block';
+      document.getElementById('final-moves').textContent = moves + ' Moves';
+      document.getElementById('final-time').textContent = 'Time: ' + timerDisplay.textContent;
+      document.getElementById('final-accuracy').textContent = 'Accuracy: ' + accuracy + '%';
+      
+      document.getElementById('click-count').textContent = telemetry.clicks.length;
+      document.getElementById('match-attempts').textContent = telemetry.matchAttempts.length;
+      document.getElementById('hover-time').textContent = telemetry.firstCardHover + 'ms';
+      document.getElementById('mouse-count').textContent = telemetry.mouseMovements.length;
+      document.getElementById('avg-decision').textContent = telemetry.decisionTimes.length > 0 ? Math.round(telemetry.decisionTimes.reduce((a,b) => a+b, 0) / telemetry.decisionTimes.length) + 'ms' : '0ms';
+      
+      // Send telemetry to backend
+      sendTelemetryToBackend({
+        moves,
+        elapsed,
+        accuracy,
+        matchAttempts: telemetry.matchAttempts.length,
+        avgDecisionTime: telemetry.decisionTimes.length > 0 ? Math.round(telemetry.decisionTimes.reduce((a,b) => a+b, 0) / telemetry.decisionTimes.length) : 0,
+        firstCardHover: telemetry.firstCardHover
+      });
+    }
+
+    async function sendTelemetryToBackend(data) {
+      try {
+        const sessionId = getSessionId();
+        const meta = getSessionMeta();
+        
+        // Convert telemetry events to SDK format
+        const events = telemetry.clicks.map(c => ({
+          type: 'cl',
+          t: c.time,
+          x: 0,
+          y: 0,
+          target: `card-${c.index}`
+        }));
+        
+        // Add mouse movement events
+        telemetry.mouseMovements.forEach(m => {
+          events.push({
+            type: 'mm',
+            t: m.time,
+            x: m.x,
+            y: m.y
+          });
+        });
+        
+        const payload = {
+          sessionId,
+          meta,
+          events,
+          timestamp: Date.now()
+        };
+        
+        const response = await fetch(`${window.SMARTCAPTCHA_CONFIG.BACKEND_URL}/api/telemetry`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': window.SMARTCAPTCHA_CONFIG.API_KEY
+          },
+          body: JSON.stringify(payload)
+        });
+        
+        console.log('Telemetry sent to backend:', await response.json());
+      } catch (error) {
+        console.error('Failed to send telemetry:', error);
+      }
+    }
+
+    function resetGame() {
+      cards = [];
+      flippedCards = [];
+      matchedPairs = 0;
+      moves = 0;
+      startTime = null;
+      telemetry = {
+        clicks: [],
+        matchAttempts: [],
+        hoverTimes: [],
+        decisionTimes: [],
+        mouseMovements: [],
+        firstCardHover: null
+      };
+      
+      clearInterval(timerInterval);
+      movesDisplay.textContent = '0';
+      matchesDisplay.textContent = '0/8';
+      timerDisplay.textContent = '0:00';
+      
+      document.getElementById('game-content').style.display = 'block';
+      document.getElementById('result-content').style.display = 'none';
+      
+      createCards();
+    }
+
+    restartBtn.addEventListener('click', resetGame);
+
+    // Initialize
+    createCards();
+  </script>
+</body>
+</html>

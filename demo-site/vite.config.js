@@ -13,7 +13,6 @@ export default defineConfig({
         signup: resolve(__dirname, 'signup.html'),
         shop: resolve(__dirname, 'shop.html'),
         article: resolve(__dirname, 'article.html'),
-        playground: resolve(__dirname, 'playground.html'),
       },
     },
   },

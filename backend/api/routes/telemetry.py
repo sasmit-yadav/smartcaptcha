@@ -22,16 +22,6 @@ async def receive_telemetry(
     Receive a batch of telemetry events from the SDK.
     Validates payload, stores events in database.
     """
-    # Validate timestamp (not too far in the future) if provided
-    now_ms = int(time.time() * 1000)
-    payload_ts = getattr(payload, "timestamp", None)
-    if payload_ts is not None:
-        try:
-            if int(payload_ts) > now_ms + 60000:
-                return {"queued": False, "error": "Future timestamp rejected"}
-        except (ValueError, TypeError):
-            return {"queued": False, "error": "Invalid timestamp"}
-
     # Store events — use Python field names so DB columns map reliably
     events_data = [e.model_dump(by_alias=False) for e in payload.events]
     count = insert_events_batch(payload.sessionId, events_data)

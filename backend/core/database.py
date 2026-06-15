@@ -157,6 +157,30 @@ def init_db():
                 received_at TIMESTAMP DEFAULT NOW()
             )
         """)
+        # Create session_features table for ML training
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS session_features (
+                id SERIAL PRIMARY KEY,
+                session_id VARCHAR(36) NOT NULL REFERENCES sessions(id),
+                avg_mouse_vel REAL,
+                std_mouse_vel REAL,
+                max_mouse_vel REAL,
+                total_distance REAL,
+                avg_angle_change REAL,
+                click_count INTEGER,
+                avg_click_interval REAL,
+                avg_iki REAL,
+                std_iki REAL,
+                avg_hold REAL,
+                scroll_count INTEGER,
+                avg_scroll_vel REAL,
+                session_duration REAL,
+                event_count INTEGER,
+                device_type VARCHAR(20),
+                label VARCHAR(10),
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
         # Create indexes if they do not already exist
         indexes = [
             ("idx_events_session", "CREATE INDEX idx_events_session ON events(session_id)"),

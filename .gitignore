@@ -6,7 +6,7 @@ venv/
 .venv/
 
 # Environment
-.env
+backend/.env
 .env.local
 
 # Build output

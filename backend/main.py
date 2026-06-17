@@ -16,6 +16,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from api.routes.telemetry import router as telemetry_router
 from api.routes.session import router as session_router
+from api.routes.prediction import router as prediction_router
 from core.database import init_db, get_session_stats
 from fastapi.exceptions import RequestValidationError
 from starlette.responses import JSONResponse
@@ -41,14 +42,10 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
                  request.method, request.url.path, exc.errors(), body_text)
     return JSONResponse(status_code=422, content={"detail": "Request validation error", "errors": exc.errors()})
 
-# CORS - use ALLOWED_ORIGINS from env or allow all for development
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "*")
-if allowed_origins != "*":
-    allowed_origins = [origin.strip() for origin in allowed_origins.split(",")]
-
+# CORS - allow all origins for development/testing
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins if allowed_origins != "*" else ["*"],
+    allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -57,6 +54,7 @@ app.add_middleware(
 # Register routes
 app.include_router(telemetry_router)
 app.include_router(session_router)
+app.include_router(prediction_router)
 
 
 @app.on_event("startup")

@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign Up — SmartCaptcha Test</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+    .auth-card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); width: 100%; max-width: 460px; }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; color: #333; }
+    .subtitle { color: #666; margin-bottom: 2rem; }
+    .form-group { margin-bottom: 1rem; }
+    .form-label { display: block; margin-bottom: 0.5rem; font-size: 0.875rem; color: #333; }
+    .form-input { width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 4px; font-size: 1rem; }
+    .form-input.error { border-color: #ef4444; }
+    .form-error { color: #ef4444; font-size: 0.75rem; margin-top: 0.25rem; display: none; }
+    .form-input.error + .form-error { display: block; }
+    .btn { width: 100%; padding: 0.75rem; border: none; border-radius: 4px; font-size: 1rem; cursor: pointer; }
+    .btn-primary { background: #2563eb; color: white; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-primary:disabled { background: #9ca3af; cursor: not-allowed; }
+    .strength-bar { height: 4px; border-radius: 2px; background: #e5e7eb; margin-top: 0.35rem; overflow: hidden; }
+    .strength-fill { height: 100%; width: 0; border-radius: 2px; transition: width 0.25s, background 0.25s; }
+    .strength-text { font-size: 0.75rem; color: #6b7280; margin-top: 0.2rem; }
+    .result-box { margin-top: 1rem; padding: 1rem; border-radius: 4px; display: none; }
+    .result-box.accept { background: #dcfce7; color: #166534; }
+    .result-box.reject { background: #fee2e2; color: #991b1b; }
+  </style>
+</head>
+<body>
+  <div class="auth-card">
+    <h1>SmartCaptcha Test</h1>
+    <p class="subtitle">Test bot detection on signup form</p>
+
+    <form id="signup-form" novalidate>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div class="form-group">
+          <label class="form-label" for="fname">First name</label>
+          <input class="form-input" type="text" id="fname" placeholder="Jane" required />
+          <p class="form-error">Required.</p>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="lname">Last name</label>
+          <input class="form-input" type="text" id="lname" placeholder="Doe" required />
+          <p class="form-error">Required.</p>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="email">Email address</label>
+        <input class="form-input" type="email" id="email" placeholder="you@example.com" required />
+        <p class="form-error">Enter a valid email.</p>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="password">Password</label>
+        <input class="form-input" type="password" id="password" placeholder="Min 8 characters" required />
+        <div class="strength-bar"><div class="strength-fill" id="strength-fill"></div></div>
+        <p class="strength-text" id="strength-text"></p>
+        <p class="form-error">Min 8 characters required.</p>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="confirm">Confirm password</label>
+        <input class="form-input" type="password" id="confirm" placeholder="Re-enter password" required />
+        <p class="form-error">Passwords do not match.</p>
+      </div>
+
+      <div class="form-group" style="display: flex; align-items: flex-start; gap: 0.5rem;">
+        <input type="checkbox" id="terms" style="margin-top: 0.3rem;" required />
+        <label for="terms" style="font-size: 0.85rem; cursor: pointer;">
+          I agree to the Terms of Service and Privacy Policy
+        </label>
+      </div>
+
+      <button type="submit" class="btn btn-primary" id="submit-btn">Create Account</button>
+    </form>
+
+    <div id="result-box" class="result-box"></div>
+  </div>
+
+  <script>
+    // Backend URL configuration
+    const BACKEND_URL = 'http://localhost:8000';
+    
+    // Simple event tracking for testing
+    const events = [];
+    let sessionStart = Date.now();
+
+    // Track mouse movements
+    document.addEventListener('mousemove', (e) => {
+      events.push({
+        type: 'mm',
+        t: Date.now() - sessionStart,
+        x: e.clientX,
+        y: e.clientY
+      });
+    });
+
+    // Track clicks
+    document.addEventListener('click', (e) => {
+      events.push({
+        type: 'cl',
+        t: Date.now() - sessionStart,
+        x: e.clientX,
+        y: e.clientY
+      });
+    });
+
+    // Track keyboard
+    document.addEventListener('keydown', (e) => {
+      events.push({
+        type: 'kd',
+        t: Date.now() - sessionStart,
+        k: e.key
+      });
+    });
+
+    document.addEventListener('keyup', (e) => {
+      events.push({
+        type: 'ku',
+        t: Date.now() - sessionStart,
+        k: e.key
+      });
+    });
+
+    // Track scroll
+    document.addEventListener('scroll', (e) => {
+      events.push({
+        type: 'sc',
+        t: Date.now() - sessionStart,
+        y: window.scrollY
+      });
+    });
+
+    const form = document.getElementById('signup-form');
+    const passEl = document.getElementById('password');
+    const confirmEl = document.getElementById('confirm');
+    const emailEl = document.getElementById('email');
+    const fnameEl = document.getElementById('fname');
+    const lnameEl = document.getElementById('lname');
+    const termsEl = document.getElementById('terms');
+    const fill = document.getElementById('strength-fill');
+    const strengthText = document.getElementById('strength-text');
+    const btn = document.getElementById('submit-btn');
+    const resultBox = document.getElementById('result-box');
+
+    // Password strength
+    passEl.addEventListener('input', () => {
+      const v = passEl.value;
+      let score = 0;
+      if (v.length >= 8) score++;
+      if (/[A-Z]/.test(v)) score++;
+      if (/[0-9]/.test(v)) score++;
+      if (/[^A-Za-z0-9]/.test(v)) score++;
+
+      const levels = [
+        { w: '0%', bg: 'transparent', t: '' },
+        { w: '25%', bg: '#ef4444', t: 'Weak' },
+        { w: '50%', bg: '#f59e0b', t: 'Fair' },
+        { w: '75%', bg: '#22c55e', t: 'Good' },
+        { w: '100%', bg: '#16a34a', t: 'Strong' },
+      ];
+      fill.style.width = levels[score].w;
+      fill.style.background = levels[score].bg;
+      strengthText.textContent = levels[score].t;
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      let valid = true;
+      const check = (el, cond) => {
+        if (!cond) { el.classList.add('error'); valid = false; }
+        else { el.classList.remove('error'); }
+      };
+
+      check(fnameEl, fnameEl.value.trim().length > 0);
+      check(lnameEl, lnameEl.value.trim().length > 0);
+      check(emailEl, /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailEl.value));
+      check(passEl, passEl.value.length >= 8);
+      check(confirmEl, confirmEl.value === passEl.value && confirmEl.value.length > 0);
+
+      if (!termsEl.checked) {
+        alert('Please accept the terms.');
+        valid = false;
+      }
+      if (!valid) return;
+
+      btn.disabled = true;
+      btn.textContent = 'Checking security…';
+      resultBox.style.display = 'none';
+
+      try {
+        // Extract features from events
+        const features = extractFeatures(events);
+
+        // Send to prediction API
+        const response = await fetch(`${BACKEND_URL}/api/predict`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(features)
+        });
+
+        if (!response.ok) {
+          throw new Error('Prediction service unavailable');
+        }
+
+        const prediction = await response.json();
+
+        // Display result
+        resultBox.style.display = 'block';
+        resultBox.className = 'result-box ' + prediction.action;
+        
+        if (prediction.action === 'reject') {
+          resultBox.innerHTML = `
+            <strong>⚠️ Bot Detected</strong><br>
+            Bot probability: ${(prediction.bot_probability * 100).toFixed(1)}%<br>
+            Risk score: ${prediction.risk_score}/100<br>
+            Confidence: ${(prediction.confidence * 100).toFixed(1)}%
+          `;
+          btn.textContent = 'Bot Detected';
+          btn.style.background = '#ef4444';
+        } else {
+          resultBox.innerHTML = `
+            <strong>✓ Human Verified</strong><br>
+            Bot probability: ${(prediction.bot_probability * 100).toFixed(1)}%<br>
+            Risk score: ${prediction.risk_score}/100<br>
+            Confidence: ${(prediction.confidence * 100).toFixed(1)}%
+          `;
+          btn.textContent = '✓ Account Created';
+          btn.style.background = '#22c55e';
+        }
+
+        btn.disabled = false;
+
+      } catch (error) {
+        console.error('Prediction error:', error);
+        resultBox.style.display = 'block';
+        resultBox.className = 'result-box reject';
+        resultBox.innerHTML = `<strong>Error:</strong> ${error.message}<br>Prediction service unavailable. Using fallback.`;
+        btn.textContent = '✓ Account Created (Fallback)';
+        btn.style.background = '#22c55e';
+        btn.disabled = false;
+      }
+    });
+
+    function extractFeatures(events) {
+      const mouseEvents = events.filter(e => e.type === 'mm');
+      const clickEvents = events.filter(e => e.type === 'cl');
+      const keyDownEvents = events.filter(e => e.type === 'kd');
+      const keyUpEvents = events.filter(e => e.type === 'ku');
+      const scrollEvents = events.filter(e => e.type === 'sc');
+
+      // Calculate mouse velocities
+      const mouseVels = [];
+      for (let i = 1; i < mouseEvents.length; i++) {
+        const dx = mouseEvents[i].x - mouseEvents[i-1].x;
+        const dy = mouseEvents[i].y - mouseEvents[i-1].y;
+        const dt = (mouseEvents[i].t - mouseEvents[i-1].t) / 1000;
+        if (dt > 0) {
+          const dist = Math.sqrt(dx*dx + dy*dy);
+          const vel = dist / dt;
+          if (vel > 0 && vel < 10000) mouseVels.push(vel);
+        }
+      }
+
+      const avgMouseVel = mouseVels.length > 0 ? mouseVels.reduce((a, b) => a + b, 0) / mouseVels.length : 0;
+      const stdMouseVel = mouseVels.length > 0 ? Math.sqrt(mouseVels.reduce((sq, n) => sq + Math.pow(n - avgMouseVel, 2), 0) / mouseVels.length) : 0;
+      const maxMouseVel = mouseVels.length > 0 ? Math.max(...mouseVels) : 0;
+      
+      // Calculate total distance
+      let totalDistance = 0;
+      for (let i = 1; i < mouseEvents.length; i++) {
+        const dx = mouseEvents[i].x - mouseEvents[i-1].x;
+        const dy = mouseEvents[i].y - mouseEvents[i-1].y;
+        totalDistance += Math.sqrt(dx*dx + dy*dy);
+      }
+
+      // Calculate angle changes (simplified)
+      const angles = [];
+      for (let i = 2; i < mouseEvents.length; i++) {
+        const dx1 = mouseEvents[i-1].x - mouseEvents[i-2].x;
+        const dy1 = mouseEvents[i-1].y - mouseEvents[i-2].y;
+        const dx2 = mouseEvents[i].x - mouseEvents[i-1].x;
+        const dy2 = mouseEvents[i].y - mouseEvents[i-1].y;
+        const angle1 = Math.atan2(dy1, dx1);
+        const angle2 = Math.atan2(dy2, dx2);
+        let angleDiff = Math.abs(angle2 - angle1);
+        if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
+        angles.push(angleDiff);
+      }
+      const avgAngleChange = angles.length > 0 ? angles.reduce((a, b) => a + b, 0) / angles.length : 0;
+
+      // Click intervals
+      const clickIntervals = [];
+      for (let i = 1; i < clickEvents.length; i++) {
+        const interval = clickEvents[i].t - clickEvents[i-1].t;
+        if (interval > 0 && interval < 10000) clickIntervals.push(interval);
+      }
+      const avgClickInterval = clickIntervals.length > 0 ? clickIntervals.reduce((a, b) => a + b, 0) / clickIntervals.length : 0;
+
+      // Keyboard IKI
+      const ikiIntervals = [];
+      for (let i = 1; i < keyDownEvents.length; i++) {
+        const interval = keyDownEvents[i].t - keyDownEvents[i-1].t;
+        if (interval > 0 && interval < 10000) ikiIntervals.push(interval);
+      }
+      const avgIki = ikiIntervals.length > 0 ? ikiIntervals.reduce((a, b) => a + b, 0) / ikiIntervals.length : 0;
+      const stdIki = ikiIntervals.length > 0 ? Math.sqrt(ikiIntervals.reduce((sq, n) => sq + Math.pow(n - avgIki, 2), 0) / ikiIntervals.length) : 0;
+
+      // Key hold times
+      const holdTimes = [];
+      for (const kd of keyDownEvents) {
+        const ku = keyUpEvents.find(k => k.k === kd.k && k.t > kd.t);
+        if (ku) {
+          const hold = ku.t - kd.t;
+          if (hold > 0 && hold < 5000) holdTimes.push(hold);
+        }
+      }
+      const avgHold = holdTimes.length > 0 ? holdTimes.reduce((a, b) => a + b, 0) / holdTimes.length : 0;
+
+      // Scroll velocities
+      const scrollVels = [];
+      for (let i = 1; i < scrollEvents.length; i++) {
+        const dy = scrollEvents[i].y - scrollEvents[i-1].y;
+        const dt = (scrollEvents[i].t - scrollEvents[i-1].t) / 1000;
+        if (dt > 0) {
+          const vel = Math.abs(dy) / dt;
+          if (vel > 0 && vel < 10000) scrollVels.push(vel);
+        }
+      }
+      const avgScrollVel = scrollVels.length > 0 ? scrollVels.reduce((a, b) => a + b, 0) / scrollVels.length : 0;
+
+      // Session duration
+      const firstEvent = events[0];
+      const lastEvent = events[events.length - 1];
+      const sessionDuration = firstEvent && lastEvent ? (lastEvent.t - firstEvent.t) / 1000 : 0;
+
+      return {
+        avg_mouse_vel: avgMouseVel,
+        std_mouse_vel: stdMouseVel,
+        max_mouse_vel: maxMouseVel,
+        total_distance: totalDistance,
+        avg_angle_change: avgAngleChange,
+        click_count: clickEvents.length,
+        avg_click_interval: avgClickInterval,
+        avg_iki: avgIki,
+        std_iki: stdIki,
+        avg_hold: avgHold,
+        scroll_count: scrollEvents.length,
+        avg_scroll_vel: avgScrollVel,
+        session_duration: sessionDuration,
+        event_count: events.length
+      };
+    }
+  </script>
+</body>
+</html>

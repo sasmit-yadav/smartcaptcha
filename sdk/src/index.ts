@@ -20,6 +20,7 @@ import { startKeyboardTracking, stopKeyboardTracking } from './collectors/keyboa
 import { startScrollTracking, stopScrollTracking } from './collectors/scroll.js';
 import { startFocusTracking, stopFocusTracking } from './collectors/focus.js';
 import { startTouchTracking, stopTouchTracking } from './collectors/touch.js';
+import { computeFeatures } from './core/features.js';
 
 import type {
   NextCaptchaConfig,
@@ -27,9 +28,7 @@ import type {
   DebugSnapshot,
   SelfTestResult,
   DecisionCallback,
-  SelfTestCallback,
-  TelemetryEvent,
-  FeatureVector
+  SelfTestCallback
 } from './types.js';
 
 /**
@@ -209,8 +208,19 @@ const NextCaptcha: NextCaptchaAPI = {
         console.log(`[NextCaptcha] Events collected: ${events.length}`);
       }
 
-      // Extract features from events (simplified version)
-      const features = extractFeatures(events);
+      // Extract features from events (V4 feature set)
+      const features = computeFeatures(events, sessionMeta);
+      
+      if (debug) {
+        console.log('[NextCaptcha] Computed features:', Object.keys(features).slice(0, 10), '...');
+        console.log('[NextCaptcha] Total feature count:', Object.keys(features).length);
+        console.log('[NextCaptcha] Sample feature values:', {
+          avg_hover_duration: features.avg_hover_duration,
+          avg_overshoot_ratio: features.avg_overshoot_ratio,
+          mouse_curvature_std: features.mouse_curvature_std,
+          mouse_jerk_std: features.mouse_jerk_std
+        });
+      }
       
       // Add fingerprint data
       const fingerprint = {
@@ -219,6 +229,17 @@ const NextCaptcha: NextCaptchaAPI = {
         has_touch: sessionMeta.hasTouch || false,
         platform: sessionMeta.platform || 'unknown'
       };
+
+      const requestBody = {
+        sdkVersion: SDK_VERSION,
+        ...features,
+        ...fingerprint
+      };
+      
+      if (debug) {
+        console.log('[NextCaptcha] Request body keys:', Object.keys(requestBody).slice(0, 25));
+        console.log('[NextCaptcha] Total request body keys:', Object.keys(requestBody).length);
+      }
 
       // Send to prediction API - use init config or default to local development
       const endpoint = initConfig?.endpoint || 'http://localhost:8001';
@@ -235,11 +256,7 @@ const NextCaptcha: NextCaptchaAPI = {
           'Content-Type': 'application/json',
           'X-API-Key': apiKey
         },
-        body: JSON.stringify({
-          sdkVersion: SDK_VERSION,
-          ...features,
-          ...fingerprint
-        })
+        body: JSON.stringify(requestBody)
       })
       .then(response => response.json())
       .then((data: DecisionResult) => {
@@ -362,96 +379,6 @@ const NextCaptcha: NextCaptchaAPI = {
       });
   },
 };
-
-/**
- * Extract features from collected events (simplified for customer SDK)
- */
-function extractFeatures(events: TelemetryEvent[]): FeatureVector {
-  const mouseEvents = events.filter(e => e.type === 'mm');
-  const clickEvents = events.filter(e => e.type === 'cl');
-  const keyDownEvents = events.filter(e => e.type === 'kd');
-  const scrollEvents = events.filter(e => e.type === 'sc');
-
-  // Basic feature extraction
-  const mouseVels: number[] = [];
-  for (let i = 1; i < mouseEvents.length; i++) {
-    const dx = mouseEvents[i].x! - mouseEvents[i-1].x!;
-    const dy = mouseEvents[i].y! - mouseEvents[i-1].y!;
-    const dt = (mouseEvents[i].t - mouseEvents[i-1].t) / 1000;
-    if (dt > 0) {
-      const dist = Math.sqrt(dx*dx + dy*dy);
-      const vel = dist / dt;
-      if (vel > 0 && vel < 10000) mouseVels.push(vel);
-    }
-  }
-
-  const avgMouseVel = mouseVels.length > 0 ? mouseVels.reduce((a, b) => a + b, 0) / mouseVels.length : 0;
-  
-  let totalDistance = 0;
-  for (let i = 1; i < mouseEvents.length; i++) {
-    const dx = mouseEvents[i].x! - mouseEvents[i-1].x!;
-    const dy = mouseEvents[i].y! - mouseEvents[i-1].y!;
-    totalDistance += Math.sqrt(dx*dx + dy*dy);
-  }
-
-  const firstEvent = events[0];
-  const lastEvent = events[events.length - 1];
-  const sessionDuration = firstEvent && lastEvent ? (lastEvent.t - firstEvent.t) / 1000 : 0;
-
-  // Return V4 feature set with defaults for missing features
-  return {
-    // V1 Base Features
-    mouse_count: mouseEvents.length,
-    mouse_vel_mean: avgMouseVel,
-    mouse_vel_std: 0,
-    mouse_vel_max: 0,
-    mouse_accel_mean: 0,
-    mouse_accel_std: 0,
-    mouse_accel_max: 0,
-    mouse_angle_std: 0,
-    mouse_angle_p90: 0,
-    mouse_path_efficiency: 0,
-    mouse_idle_gap_count: 0,
-    mouse_event_ratio: mouseEvents.length / events.length,
-    click_count: clickEvents.length,
-    click_interval_std: 0,
-    click_interval_min: 0,
-    click_interval_p90: 0,
-    double_click_count: 0,
-    key_count: keyDownEvents.length,
-    iki_p10: 0,
-    iki_p50: 0,
-    iki_p90: 0,
-    hold_std: 0,
-    hold_p90: 0,
-    backspace_count: 0,
-    scroll_count: scrollEvents.length,
-    avg_scroll_vel: 0,
-    scroll_vel_std: 0,
-    scroll_rev_count: 0,
-    scroll_pause_count: 0,
-    focus_event_count: 0,
-    touch_event_count: 0,
-    session_duration: sessionDuration,
-    event_count: events.length,
-    event_rate: events.length / sessionDuration,
-    pause_count: 0,
-    pause_ratio: 0,
-    // V2 Additions
-    mouse_vel_p10: 0,
-    mouse_vel_p50: 0,
-    mouse_vel_p90: 0,
-    // V3 Additions
-    mouse_curvature_std: 0,
-    mouse_jerk_std: 0,
-    movement_entropy: 0,
-    // V4 Additions
-    avg_hover_duration: 0,
-    hover_duration_std: 0,
-    avg_overshoot_ratio: 0,
-    overshoot_ratio_std: 0,
-  };
-}
 
 // Export for esbuild to handle global exposure
 export default NextCaptcha;

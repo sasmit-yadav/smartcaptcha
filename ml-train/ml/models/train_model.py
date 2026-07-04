@@ -22,13 +22,262 @@ from sklearn.preprocessing import StandardScaler
 import xgboost as xgb
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "backend"))
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "ml"))
 
 from core.database import get_connection, init_db, release_connection
 from features.feature_columns import FEATURE_COLUMNS
 
-load_dotenv(ROOT / "backend" / ".env")
+load_dotenv(ROOT / ".env")
+
+
+def load_data():
+    """Load desktop session features from PostgreSQL."""
+    init_db()
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        selected_columns = ["session_id", *FEATURE_COLUMNS, "device_type", "label"]
+        cursor.execute(
+            f"""
+            SELECT {", ".join(selected_columns)}
+            FROM session_features
+            WHERE label IS NOT NULL
+            """
+        )
+        rows = cursor.fetchall()
+        columns = [desc[0] for desc in cursor.description]
+        df = pd.DataFrame(rows, columns=columns)
+    finally:
+        release_connection(conn)
+
+    print(f"Loaded {len(df)} desktop sessions")
+    if not df.empty:
+        print(f"Label distribution:\n{df['label'].value_counts()}")
+    if len(df) < 200:
+        print("Warning: dataset is small; treat perfect scores as suspicious.")
+    if df.empty or df["label"].nunique() < 2:
+        raise ValueError("Need at least one human and one bot session to train.")
+    return df
+
+
+def preprocess_data(df):
+    """Fill missing numeric features and encode labels."""
+    df = df.fillna(0)
+    df["label_encoded"] = df["label"].map({"human": 0, "bot": 1})
+    if df["label_encoded"].isnull().any():
+        raise ValueError(f"Unknown labels found: {df['label'].unique()}")
+    return df
+
+
+def split_data(df):
+    """Split data into train/validation sets."""
+    X = df[FEATURE_COLUMNS]
+    y = df["label_encoded"]
+    X_train, X_val, y_train, y_val = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+    return X_train, X_val, y_train, y_val
+
+
+def train_random_forest(X_train, y_train):
+    """Train Random Forest classifier."""
+    rf = RandomForestClassifier(
+        n_estimators=100,
+        max_depth=10,
+        min_samples_split=5,
+        min_samples_leaf=2,
+        random_state=42,
+        class_weight="balanced",
+    )
+    rf.fit(X_train, y_train)
+    return rf
+
+
+def train_xgboost(X_train, y_train):
+    """Train XGBoost classifier."""
+    xgb_model = xgb.XGBClassifier(
+        n_estimators=100,
+        max_depth=6,
+        learning_rate=0.1,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        random_state=42,
+        scale_pos_weight=1,
+        eval_metric="logloss",
+    )
+    xgb_model.fit(X_train, y_train)
+    return xgb_model
+
+
+def evaluate_model(model, X_val, y_val, model_name):
+    """Evaluate model and return metrics."""
+    y_pred = model.predict(X_val)
+    y_proba = model.predict_proba(X_val)[:, 1] if hasattr(model, "predict_proba") else None
+
+    metrics = {
+        "accuracy": (y_pred == y_val).mean(),
+        "precision": precision_score(y_val, y_pred),
+        "recall": recall_score(y_val, y_pred),
+        "f1": f1_score(y_val, y_pred),
+    }
+
+    if y_proba is not None:
+        metrics["roc_auc"] = roc_auc_score(y_val, y_proba)
+
+    print(f"\n{model_name} Metrics:")
+    for metric, value in metrics.items():
+        print(f"  {metric}: {value:.4f}")
+
+    return metrics
+
+
+def save_artifacts(model, scaler, metrics, feature_importance, model_name, threshold_info):
+    """Save model, scaler, and metadata."""
+    artifacts_dir = ROOT / "ml" / "models" / "artifacts"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    model_path = artifacts_dir / f"{model_name}_{timestamp}.pkl"
+    scaler_path = artifacts_dir / f"scaler_{timestamp}.pkl"
+    metadata_path = artifacts_dir / f"{model_name}_metadata_{timestamp}.json"
+    metrics_path = artifacts_dir / f"{model_name}_metrics_{timestamp}.json"
+    feature_importance_path = artifacts_dir / f"{model_name}_feature_importance_{timestamp}.csv"
+
+    joblib.dump(model, model_path)
+    joblib.dump(scaler, scaler_path)
+
+    metadata = {
+        "model_name": model_name,
+        "timestamp": timestamp,
+        "feature_columns": FEATURE_COLUMNS,
+        "decision_threshold": threshold_info.get("threshold", 0.50),
+        "challenge_low": threshold_info.get("challenge_low", 0.35),
+        "challenge_high": threshold_info.get("challenge_high", 0.50),
+        "metrics": metrics,
+    }
+
+    with open(metadata_path, "w") as f:
+        json.dump(metadata, f, indent=2)
+
+    with open(metrics_path, "w") as f:
+        json.dump(metrics, f, indent=2)
+
+    if feature_importance is not None:
+        feature_importance.to_csv(feature_importance_path, index=False)
+
+    print(f"\nArtifacts saved to {artifacts_dir}")
+    print(f"  Model: {model_path}")
+    print(f"  Scaler: {scaler_path}")
+    print(f"  Metadata: {metadata_path}")
+
+    return {
+        "model_path": str(model_path),
+        "scaler_path": str(scaler_path),
+        "metadata_path": str(metadata_path),
+        "metrics_path": str(metrics_path),
+        "feature_importance_path": str(feature_importance_path),
+    }
+
+
+def find_optimal_threshold(y_val, y_proba):
+    """Find optimal decision threshold using ROC curve."""
+    fpr, tpr, thresholds = roc_curve(y_val, y_proba)
+    youden_j = tpr - fpr
+    optimal_idx = youden_j.argmax()
+    optimal_threshold = thresholds[optimal_idx]
+
+    print(f"Optimal threshold: {optimal_threshold:.4f}")
+    print(f"  TPR at optimal: {tpr[optimal_idx]:.4f}")
+    print(f"  FPR at optimal: {fpr[optimal_idx]:.4f}")
+
+    return {
+        "threshold": float(optimal_threshold),
+        "challenge_low": float(max(0.35, optimal_threshold - 0.15)),
+        "challenge_high": float(optimal_threshold),
+    }
+
+
+def main():
+    """Main training pipeline."""
+    print("=" * 60)
+    print("Training V2 Model with Enhanced Features")
+    print("=" * 60)
+
+    # Load data
+    df = load_data()
+
+    # Preprocess
+    df = preprocess_data(df)
+
+    # Split
+    X_train, X_val, y_train, y_val = split_data(df)
+
+    # Scale features
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_val_scaled = scaler.transform(X_val)
+
+    # Train models
+    print("\nTraining Random Forest...")
+    rf_model = train_random_forest(X_train_scaled, y_train)
+    rf_metrics = evaluate_model(rf_model, X_val_scaled, y_val, "Random Forest")
+
+    print("\nTraining XGBoost...")
+    xgb_model = train_xgboost(X_train_scaled, y_train)
+    xgb_metrics = evaluate_model(xgb_model, X_val_scaled, y_val, "XGBoost")
+
+    # Find optimal threshold
+    y_proba_rf = rf_model.predict_proba(X_val_scaled)[:, 1]
+    threshold_info = find_optimal_threshold(y_val, y_proba_rf)
+
+    # Feature importance
+    rf_feature_importance = pd.DataFrame(
+        {"feature": FEATURE_COLUMNS, "importance": rf_model.feature_importances_}
+    ).sort_values("importance", ascending=False)
+
+    print("\nTop 10 Important Features:")
+    print(rf_feature_importance.head(10))
+
+    # Save artifacts
+    rf_artifacts = save_artifacts(
+        rf_model, scaler, rf_metrics, rf_feature_importance, "random_forest", threshold_info
+    )
+
+    xgb_feature_importance = pd.DataFrame(
+        {"feature": FEATURE_COLUMNS, "importance": xgb_model.feature_importances_}
+    ).sort_values("importance", ascending=False)
+
+    xgb_artifacts = save_artifacts(
+        xgb_model, scaler, xgb_metrics, xgb_feature_importance, "xgboost", threshold_info
+    )
+
+    # Save comparison
+    comparison = {
+        "timestamp": datetime.now().isoformat(),
+        "models": {
+            "random_forest": {
+                "metrics": rf_metrics,
+                "artifacts": rf_artifacts,
+            },
+            "xgboost": {
+                "metrics": xgb_metrics,
+                "artifacts": xgb_artifacts,
+            },
+        },
+        "best_model": "random_forest" if rf_metrics["f1"] > xgb_metrics["f1"] else "xgboost",
+    }
+
+    comparison_path = ROOT / "ml" / "models" / "artifacts" / f"model_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    with open(comparison_path, "w") as f:
+        json.dump(comparison, f, indent=2)
+
+    print(f"\nComparison saved to {comparison_path}")
+    print(f"Best model: {comparison['best_model']}")
+
+
+if __name__ == "__main__":
+    main()
 
 
 def load_data():

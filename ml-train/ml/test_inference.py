@@ -7,12 +7,12 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "backend"))
+sys.path.insert(0, str(ROOT))
 
 from core.database import get_connection, release_connection
 from models.inference import predict_session
 
-load_dotenv(ROOT / "backend" / ".env")
+load_dotenv(ROOT / ".env")
 
 
 def get_session_features(session_id):

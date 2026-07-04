@@ -3,8 +3,8 @@
  *
  * Usage:
  *   NextCaptcha.init({
- *     apiKey: "demo-key",
- *     endpoint: "http://localhost:8000",
+ *     apiKey: "your-api-key",
+ *     endpoint: "https://api.nextcaptcha.com",
  *     debug: true
  *   })
  *
@@ -65,6 +65,7 @@ const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefine
 const SDK_VERSION = '0.1.0';
 let initialized = false;
 let debug = false;
+let initConfig: NextCaptchaConfig | null = null;
 
 interface NextCaptchaAPI {
   init(config: NextCaptchaConfig): void;
@@ -115,13 +116,14 @@ const NextCaptcha: NextCaptchaAPI = {
     }
 
     debug = config.debug || false;
-
+    initConfig = config;
+    
     // 1. Initialize session with source (default to 'demo' for backward compatibility)
     initSession(config.source || 'demo');
 
-    // 2. Initialize transport
+    // 2. Initialize transport - use provided endpoint or default to local development
     initTransport({
-      endpoint: config.endpoint || 'http://localhost:8000',
+      endpoint: config.endpoint || 'http://localhost:8001',
       apiKey: config.apiKey,
       debug,
     });
@@ -218,9 +220,14 @@ const NextCaptcha: NextCaptchaAPI = {
         platform: sessionMeta.platform || 'unknown'
       };
 
-      // Send to prediction API
-      const endpoint = (window as any).NEXTCAPTCHA_CONFIG?.BACKEND_URL || 'http://localhost:8000';
-      const apiKey = (window as any).NEXTCAPTCHA_CONFIG?.API_KEY || '';
+      // Send to prediction API - use init config or default to local development
+      const endpoint = initConfig?.endpoint || 'http://localhost:8001';
+      const apiKey = initConfig?.apiKey || '';
+      
+      if (!apiKey) {
+        callback({ error: 'API key not provided', action: 'block', bot_probability: 1, risk_score: 100, confidence: 0, risk_engine_enabled: false, behavior_score: 0, fingerprint_score: 0, overall_risk: 100 });
+        return;
+      }
       
       fetch(`${endpoint}/api/predict`, {
         method: 'POST',
@@ -330,8 +337,9 @@ const NextCaptcha: NextCaptchaAPI = {
       results.tests.push({ name: 'Events Collected', status: 'warn', error: 'No events collected yet. Interact with the page first.' });
     }
 
-    // Test 4: Network connectivity check
-    const endpoint = (window as any).NEXTCAPTCHA_CONFIG?.BACKEND_URL || 'http://localhost:8000';
+    // Test 4: Network connectivity check - use config.js if available
+    const configEndpoint = (window as any).SMARTCAPTCHA_CONFIG?.BACKEND_URL;
+    const endpoint = (window as any).NEXTCAPTCHA_CONFIG?.BACKEND_URL || configEndpoint || 'https://api.nextcaptcha.com';
     fetch(`${endpoint}/health`, { method: 'GET' })
       .then(response => {
         if (response.ok) {

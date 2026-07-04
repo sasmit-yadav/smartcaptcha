@@ -9,13 +9,13 @@ from dotenv import load_dotenv
 from datetime import datetime
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "backend"))
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "ml"))
 
 from core.database import get_connection, release_connection
 from features.feature_columns import FEATURE_COLUMNS
 
-load_dotenv(ROOT / "backend" / ".env")
+load_dotenv(ROOT / ".env")
 
 
 def export_features_to_csv():

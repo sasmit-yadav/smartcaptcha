@@ -9,13 +9,13 @@ import pandas as pd
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "backend"))
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "ml"))
 
 from core.database import get_connection, init_db, release_connection
 from features.feature_columns import FEATURE_COLUMNS
 
-load_dotenv(ROOT / "backend" / ".env")
+load_dotenv(ROOT / ".env")
 
 
 def load_all_sessions():

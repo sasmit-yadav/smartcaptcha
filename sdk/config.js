@@ -1,16 +1,23 @@
 /**
- * SmartCaptcha Configuration
- * Centralized backend URL configuration - update this single file to change backend endpoint
+ * NextCaptcha SDK Configuration
+ * 
+ * NOTE: This config is for SDK development/testing only.
+ * Production SDK does not use this file - customers configure
+ * backend URL via NextCaptcha.init({ endpoint: '...' })
+ * 
+ * Current Architecture:
+ * - Port 8000: Telemetry backend (demo site)
+ * - Port 8001: SDK backend (predictions for customers)
  */
 
 window.SMARTCAPTCHA_CONFIG = {
-  // Backend API endpoint - automatically use local backend when running on localhost
+  // SDK Backend for predictions (port 8001)
   BACKEND_URL: (function() {
-    const DEFAULT_BACKEND = 'https://smartcaptcha-backend.onrender.com';
-    const LOCAL_BACKEND = 'http://localhost:8000';
+    const DEFAULT_BACKEND = 'https://api.nextcaptcha.com';
+    const LOCAL_SDK_BACKEND = 'http://localhost:8001';
     const host = window.location.hostname;
     if (host === 'localhost' || host === '127.0.0.1') {
-      return LOCAL_BACKEND;
+      return LOCAL_SDK_BACKEND;
     }
     return DEFAULT_BACKEND;
   })(),

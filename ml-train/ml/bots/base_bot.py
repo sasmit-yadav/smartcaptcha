@@ -17,11 +17,11 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "backend"))
+sys.path.insert(0, str(ROOT))
 
 from core.database import get_connection, release_connection
 
-load_dotenv()
+load_dotenv(ROOT / ".env")
 
 DEMO_SITE_URL = os.getenv('DEMO_SITE_URL', 'http://localhost:5173')
 TESTING_SITE_URL = os.getenv('TESTING_SITE_URL', 'http://localhost:8080')

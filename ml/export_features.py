@@ -10,8 +10,10 @@ from datetime import datetime
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
+sys.path.insert(0, str(ROOT / "ml"))
 
 from core.database import get_connection, release_connection
+from features.feature_columns import FEATURE_COLUMNS
 
 load_dotenv(ROOT / "backend" / ".env")
 
@@ -22,25 +24,9 @@ def export_features_to_csv():
         cursor = conn.cursor()
         
         # Get all features with labels
-        cursor.execute("""
-            SELECT 
-                session_id,
-                avg_mouse_vel,
-                std_mouse_vel,
-                max_mouse_vel,
-                total_distance,
-                avg_angle_change,
-                click_count,
-                avg_click_interval,
-                avg_iki,
-                std_iki,
-                avg_hold,
-                scroll_count,
-                avg_scroll_vel,
-                session_duration,
-                event_count,
-                device_type,
-                label
+        selected_columns = ["session_id", *FEATURE_COLUMNS, "device_type", "label"]
+        cursor.execute(f"""
+            SELECT {", ".join(selected_columns)}
             FROM session_features
             WHERE label IS NOT NULL
         """)

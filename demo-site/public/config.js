@@ -1,9 +1,9 @@
 /**
- * SmartCaptcha Configuration
+ * NextCaptcha Configuration
  * Centralized backend URL configuration - update this single file to change backend endpoint
  */
 
-window.SMARTCAPTCHA_CONFIG = {
+window.NEXTCAPTCHA_CONFIG = {
   // Backend API endpoint - automatically use local backend when running on localhost
   BACKEND_URL: (function() {
     const DEFAULT_BACKEND = 'https://smartcaptcha-backend.onrender.com';

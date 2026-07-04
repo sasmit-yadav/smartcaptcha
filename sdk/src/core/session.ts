@@ -1,0 +1,59 @@
+/**
+ * SDK Session Manager — generates and persists session ID.
+ * Stored in sessionStorage (clears on tab close).
+ */
+
+import type { SessionMeta } from '../types.js';
+
+const SESSION_KEY = 'sc_session_id';
+const START_KEY = 'sc_session_start';
+const SOURCE_KEY = 'sc_session_source';
+
+let sessionId: string | null = null;
+let startTime: number | null = null;
+
+export function initSession(source: 'demo' | 'client' = 'demo'): void {
+  sessionId = sessionStorage.getItem(SESSION_KEY);
+  if (!sessionId) {
+    sessionId = crypto.randomUUID();
+    sessionStorage.setItem(SESSION_KEY, sessionId);
+  }
+  const startTimeStr = sessionStorage.getItem(START_KEY);
+  if (!startTimeStr) {
+    startTime = Date.now();
+    sessionStorage.setItem(START_KEY, startTime.toString());
+  } else {
+    startTime = parseInt(startTimeStr, 10);
+  }
+  sessionStorage.setItem(SOURCE_KEY, source);
+}
+
+export function getSessionId(): string {
+  if (!sessionId) initSession();
+  return sessionId!;
+}
+
+export function getSessionMeta(): SessionMeta {
+  const ua = navigator.userAgent;
+  
+  // V2: Detect webdriver flag (Selenium killer)
+  const webdriverFlag = navigator.webdriver || false;
+  
+  // Get source from sessionStorage or use default
+  const sourceStr = sessionStorage.getItem(SOURCE_KEY);
+  const source = (sourceStr === 'client' || sourceStr === 'demo') ? sourceStr : 'demo';
+  
+  return {
+    sessionId: getSessionId(),
+    startTime: startTime || Date.now(),
+    userAgent: ua,
+    platform: navigator.platform || 'unknown',
+    webdriverFlag,
+    hasTouch: 'ontouchstart' in window,
+    source,
+  };
+}
+
+export function getSessionDuration(): number {
+  return startTime ? Date.now() - startTime : 0;
+}

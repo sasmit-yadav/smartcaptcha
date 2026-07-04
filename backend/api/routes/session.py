@@ -17,7 +17,10 @@ async def session_start(payload: SessionStartPayload):
     """Register a new browsing session."""
     meta = payload.meta.model_dump()
     meta['sessionId'] = payload.sessionId
-    insert_session(meta)
+    # Extract source from meta and map to label
+    # The SDK now sends 'source' field in session meta
+    # We'll handle this in the database layer by passing it through
+    insert_session(meta, label=meta.get('source') if meta.get('source') in ('client', 'demo') else None)
     return {
         "sessionId": payload.sessionId,
         "accepted": True,

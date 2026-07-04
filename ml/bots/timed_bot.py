@@ -5,7 +5,10 @@ Expected telemetry signature:
 - Inter-click timing variance: 0
 - Perfectly regular pattern = strong bot signal
 """
-from base_bot import BaseBot
+try:
+    from .base_bot import BaseBot
+except ImportError:
+    from base_bot import BaseBot
 from selenium.webdriver.common.by import By
 import time
 
@@ -13,8 +16,8 @@ import time
 class TimedBot(BaseBot):
     """Bot that performs actions with EXACTLY fixed timing intervals."""
     
-    def __init__(self, headless=True, key_delay=0.100, click_delay=0.500):
-        super().__init__(headless)
+    def __init__(self, headless=True, target='demo', key_delay=0.100, click_delay=0.500):
+        super().__init__(headless, target)
         self.key_delay = key_delay  # Exactly 100ms between keystrokes
         self.click_delay = click_delay  # Exactly 500ms between clicks
         

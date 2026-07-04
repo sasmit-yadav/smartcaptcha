@@ -1,418 +1,471 @@
-"""
-Train V1 supervised ML model for bot detection.
-Implements Random Forest and XGBoost with class weighting and cross-validation.
-"""
-import os
-import sys
+"""Train V2 supervised ML models for bot detection."""
 import json
+import sys
+from datetime import datetime
+from pathlib import Path
+
+import joblib
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from datetime import datetime
 from dotenv import load_dotenv
-import joblib
-
-# Add backend to path for database access
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "backend"))
-
-from core.database import get_connection, release_connection
-
-# ML imports
-from sklearn.model_selection import train_test_split, StratifiedKFold, RandomizedSearchCV
-from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
-    classification_report, confusion_matrix, roc_auc_score, 
-    roc_curve, precision_score, recall_score, f1_score
+    classification_report,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
 )
+from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold, train_test_split
+from sklearn.preprocessing import StandardScaler
 import xgboost as xgb
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "backend"))
+sys.path.insert(0, str(ROOT / "ml"))
+
+from core.database import get_connection, init_db, release_connection
+from features.feature_columns import FEATURE_COLUMNS
 
 load_dotenv(ROOT / "backend" / ".env")
 
 
-# Feature columns to use (exclude session_id, label, created_at, device_type)
-FEATURE_COLUMNS = [
-    'avg_mouse_vel',
-    'std_mouse_vel',
-    'max_mouse_vel',
-    'total_distance',
-    'avg_angle_change',
-    'click_count',
-    'avg_click_interval',
-    'avg_iki',
-    'std_iki',
-    'avg_hold',
-    'scroll_count',
-    'avg_scroll_vel',
-    'session_duration',
-    'event_count'
-]
-
-
 def load_data():
-    """Load session features from PostgreSQL (desktop only)."""
+    """Load desktop session features from PostgreSQL."""
+    init_db()
     conn = get_connection()
     try:
         cursor = conn.cursor()
-        
-        query = """
-            SELECT 
-                session_id,
-                avg_mouse_vel,
-                std_mouse_vel,
-                max_mouse_vel,
-                total_distance,
-                avg_angle_change,
-                click_count,
-                avg_click_interval,
-                avg_iki,
-                std_iki,
-                avg_hold,
-                scroll_count,
-                avg_scroll_vel,
-                session_duration,
-                event_count,
-                device_type,
-                label
+        selected_columns = ["session_id", *FEATURE_COLUMNS, "device_type", "label"]
+        cursor.execute(
+            f"""
+            SELECT {", ".join(selected_columns)}
             FROM session_features
             WHERE device_type = 'desktop'
             AND label IS NOT NULL
             AND event_count > 0
-        """
-        
-        cursor.execute(query)
+            """
+        )
         rows = cursor.fetchall()
         columns = [desc[0] for desc in cursor.description]
-        
-        df = pd.DataFrame(rows, columns=columns)
         cursor.close()
-        
-        print(f"Loaded {len(df)} desktop sessions")
-        print(f"Label distribution:\n{df['label'].value_counts()}")
-        
-        return df
-        
-    except Exception as e:
-        print(f"Error loading data: {e}")
-        raise
+        df = pd.DataFrame(rows, columns=columns)
     finally:
         release_connection(conn)
 
+    print(f"Loaded {len(df)} desktop sessions")
+    if not df.empty:
+        print(f"Label distribution:\n{df['label'].value_counts()}")
+    if len(df) < 200:
+        print("Warning: dataset is small; treat perfect scores as suspicious.")
+    if df.empty or df["label"].nunique() < 2:
+        raise ValueError("Need at least one human and one bot session to train.")
+    return df
+
 
 def preprocess_data(df):
-    """Preprocess data: handle missing values, encode labels."""
-    # Replace None/NaN with 0 for numeric features
+    """Fill missing numeric features and encode labels."""
     df = df.fillna(0)
-    
-    # Encode labels: human=0, bot=1
-    df['label_encoded'] = df['label'].map({'human': 0, 'bot': 1})
-    
-    # Verify encoding
-    if df['label_encoded'].isnull().any():
-        print("Warning: Some labels could not be encoded")
-        print(df['label'].unique())
-    
+    df["label_encoded"] = df["label"].map({"human": 0, "bot": 1})
+    if df["label_encoded"].isnull().any():
+        raise ValueError(f"Unknown labels found: {df['label'].unique()}")
     return df
 
 
 def split_data(df):
-    """Split data into train and test sets with stratification."""
+    """Create train, validation, and final test splits with bot family separation."""
     X = df[FEATURE_COLUMNS]
-    y = df['label_encoded']
+    y = df["label_encoded"]
     
-    # Stratified split: 80% train, 20% test
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
+    # For bots, try to split by bot family to avoid leakage
+    bot_df = df[df['label_encoded'] == 1].copy()
+    human_df = df[df['label_encoded'] == 0].copy()
     
-    print(f"Train set: {len(X_train)} samples")
+    print(f"Bot sessions: {len(bot_df)}")
+    print(f"Human sessions: {len(human_df)}")
+    
+    # Simple heuristic: use behavioral clustering to simulate bot families
+    # In production, this would use actual bot_family labels
+    if len(bot_df) > 0:
+        # Cluster bots by session_duration and avg_mouse_vel
+        bot_df['duration_cluster'] = pd.cut(
+            bot_df['session_duration'], 
+            bins=[-1, 1, 10, float('inf')], 
+            labels=['instant', 'short', 'long']
+        )
+        bot_df['velocity_cluster'] = pd.cut(
+            bot_df['avg_mouse_vel'], 
+            bins=[-1, 100, 500, float('inf')], 
+            labels=['slow', 'medium', 'fast']
+        )
+        bot_df['bot_family'] = bot_df['duration_cluster'].astype(str) + '_' + bot_df['velocity_cluster'].astype(str)
+        
+        # Split bot families: train on some, test on others
+        unique_families = bot_df['bot_family'].unique()
+        if len(unique_families) >= 2:
+            train_families = unique_families[:len(unique_families)//2]
+            test_families = unique_families[len(unique_families)//2:]
+            
+            bot_train = bot_df[bot_df['bot_family'].isin(train_families)]
+            bot_test = bot_df[bot_df['bot_family'].isin(test_families)]
+            
+            print(f"Bot families for training: {train_families}")
+            print(f"Bot families for testing: {test_families}")
+        else:
+            # Fallback to random split if not enough families
+            bot_train, bot_test = train_test_split(bot_df, test_size=0.3, random_state=42)
+            print("Warning: Not enough bot families, using random split")
+    else:
+        bot_train = pd.DataFrame(columns=bot_df.columns)
+        bot_test = pd.DataFrame(columns=bot_df.columns)
+    
+    # Split humans randomly (humans don't have families)
+    if len(human_df) > 0:
+        human_train, human_test = train_test_split(human_df, test_size=0.3, random_state=42)
+    else:
+        human_train = pd.DataFrame(columns=human_df.columns)
+        human_test = pd.DataFrame(columns=human_df.columns)
+    
+    # Combine train and test sets
+    train_full = pd.concat([bot_train, human_train])
+    test_full = pd.concat([bot_test, human_test])
+    
+    # Split train into train and validation
+    if len(train_full) > 0:
+        X_train_full = train_full[FEATURE_COLUMNS]
+        y_train_full = train_full["label_encoded"]
+        X_train, X_val, y_train, y_val = train_test_split(
+            X_train_full, y_train_full, test_size=0.25, random_state=43, stratify=y_train_full
+        )
+    else:
+        X_train, X_val, y_train, y_val = None, None, None, None
+    
+    X_test = test_full[FEATURE_COLUMNS]
+    y_test = test_full["label_encoded"]
+    
+    print(f"Train set: {len(X_train) if X_train is not None else 0} samples")
+    print(f"Validation set: {len(X_val) if X_val is not None else 0} samples")
     print(f"Test set: {len(X_test)} samples")
-    print(f"Train label distribution:\n{y_train.value_counts()}")
-    print(f"Test label distribution:\n{y_test.value_counts()}")
+    print(f"Test set composition: {y_test.value_counts().to_dict()}")
     
-    return X_train, X_test, y_train, y_test
+    return X_train, X_val, X_test, y_train, y_val, y_test
 
 
-def scale_features(X_train, X_test):
-    """Standardize features using StandardScaler."""
+def scale_features(X_train, X_val, X_test):
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
+    X_val_scaled = scaler.transform(X_val)
     X_test_scaled = scaler.transform(X_test)
-    
-    return X_train_scaled, X_test_scaled, scaler
+    return X_train_scaled, X_val_scaled, X_test_scaled, scaler
+
+
+def cv_folds(y):
+    min_class = int(y.value_counts().min())
+    return max(2, min(5, min_class))
 
 
 def train_random_forest(X_train, y_train):
-    """Train Random Forest with class weighting and hyperparameter tuning."""
     print("\n=== Training Random Forest ===")
-    
-    # Base model with class weighting
     rf = RandomForestClassifier(
-        n_estimators=100,
+        n_estimators=200,
         random_state=42,
-        class_weight='balanced',
-        n_jobs=-1
+        class_weight="balanced",
+        n_jobs=-1,
     )
-    
-    # Hyperparameter search space
     param_dist = {
-        'n_estimators': [50, 100, 200, 300],
-        'max_depth': [5, 10, 15, 20, None],
-        'min_samples_split': [2, 5, 10],
-        'min_samples_leaf': [1, 2, 4],
-        'max_features': ['sqrt', 'log2']
+        "n_estimators": [100, 200, 300, 500],
+        "max_depth": [5, 10, 15, 20, None],
+        "min_samples_split": [2, 5, 10],
+        "min_samples_leaf": [1, 2, 4],
+        "max_features": ["sqrt", "log2"],
     }
-    
-    # Randomized search with cross-validation
-    rf_search = RandomizedSearchCV(
-        rf, param_distributions=param_dist,
-        n_iter=50, cv=5, scoring='f1',
-        random_state=42, n_jobs=-1, verbose=1
+    search = RandomizedSearchCV(
+        rf,
+        param_distributions=param_dist,
+        n_iter=40,
+        cv=cv_folds(y_train),
+        scoring="f1",
+        random_state=42,
+        n_jobs=-1,
+        verbose=1,
     )
-    
-    rf_search.fit(X_train, y_train)
-    
-    print(f"Best RF params: {rf_search.best_params_}")
-    print(f"Best RF CV F1: {rf_search.best_score_:.4f}")
-    
-    return rf_search.best_estimator_
+    search.fit(X_train, y_train)
+    print(f"Best RF params: {search.best_params_}")
+    print(f"Best RF CV F1: {search.best_score_:.4f}")
+    return search.best_estimator_
 
 
 def train_xgboost(X_train, y_train):
-    """Train XGBoost with class weighting and hyperparameter tuning."""
     print("\n=== Training XGBoost ===")
-    
-    # Calculate class weights for imbalance
-    scale_pos_weight = (len(y_train) - sum(y_train)) / sum(y_train)
+    positives = int(sum(y_train))
+    negatives = int(len(y_train) - positives)
+    scale_pos_weight = negatives / positives if positives else 1
     print(f"Scale positive weight: {scale_pos_weight:.2f}")
-    
-    # Base model
-    xgb_model = xgb.XGBClassifier(
-        n_estimators=100,
+    model = xgb.XGBClassifier(
+        n_estimators=200,
         random_state=42,
         scale_pos_weight=scale_pos_weight,
-        eval_metric='logloss',
-        n_jobs=-1
+        eval_metric="logloss",
+        n_jobs=-1,
     )
-    
-    # Hyperparameter search space
     param_dist = {
-        'n_estimators': [50, 100, 200, 300],
-        'learning_rate': [0.01, 0.05, 0.1, 0.2],
-        'max_depth': [3, 5, 7, 10],
-        'subsample': [0.6, 0.8, 1.0],
-        'colsample_bytree': [0.6, 0.8, 1.0],
-        'min_child_weight': [1, 3, 5]
+        "n_estimators": [100, 200, 300, 500],
+        "learning_rate": [0.01, 0.03, 0.05, 0.1],
+        "max_depth": [3, 5, 7, 10],
+        "subsample": [0.6, 0.8, 1.0],
+        "colsample_bytree": [0.6, 0.8, 1.0],
+        "min_child_weight": [1, 3, 5],
     }
-    
-    # Randomized search with cross-validation
-    xgb_search = RandomizedSearchCV(
-        xgb_model, param_distributions=param_dist,
-        n_iter=50, cv=5, scoring='f1',
-        random_state=42, n_jobs=-1, verbose=1
+    search = RandomizedSearchCV(
+        model,
+        param_distributions=param_dist,
+        n_iter=40,
+        cv=cv_folds(y_train),
+        scoring="f1",
+        random_state=42,
+        n_jobs=-1,
+        verbose=1,
     )
-    
-    xgb_search.fit(X_train, y_train)
-    
-    print(f"Best XGBoost params: {xgb_search.best_params_}")
-    print(f"Best XGBoost CV F1: {xgb_search.best_score_:.4f}")
-    
-    return xgb_search.best_estimator_
+    search.fit(X_train, y_train)
+    print(f"Best XGBoost params: {search.best_params_}")
+    print(f"Best XGBoost CV F1: {search.best_score_:.4f}")
+    return search.best_estimator_
 
 
-def evaluate_model(model, X_test, y_test, model_name):
-    """Evaluate model and return metrics."""
-    y_pred = model.predict(X_test)
-    y_pred_proba = model.predict_proba(X_test)[:, 1]
-    
-    # Calculate metrics
-    precision = precision_score(y_test, y_pred)
-    recall = recall_score(y_test, y_pred)
-    f1 = f1_score(y_test, y_pred)
-    roc_auc = roc_auc_score(y_test, y_pred_proba)
-    
-    # Confusion matrix
-    cm = confusion_matrix(y_test, y_pred)
-    
-    print(f"\n=== {model_name} Test Results ===")
+def evaluate_model(model, X_test, y_test, model_name, threshold=0.5):
+    probabilities = model.predict_proba(X_test)[:, 1]
+    predictions = (probabilities >= threshold).astype(int)
+    precision = precision_score(y_test, predictions, zero_division=0)
+    recall = recall_score(y_test, predictions, zero_division=0)
+    f1 = f1_score(y_test, predictions, zero_division=0)
+    roc_auc = roc_auc_score(y_test, probabilities)
+    cm = confusion_matrix(y_test, predictions)
+    print(f"\n=== {model_name} Test Results @ threshold {threshold:.2f} ===")
     print(f"Precision: {precision:.4f}")
     print(f"Recall: {recall:.4f}")
     print(f"F1-Score: {f1:.4f}")
     print(f"ROC-AUC: {roc_auc:.4f}")
     print(f"Confusion Matrix:\n{cm}")
-    print(f"\nClassification Report:\n{classification_report(y_test, y_pred)}")
-    
-    metrics = {
-        'precision': float(precision),
-        'recall': float(recall),
-        'f1': float(f1),
-        'roc_auc': float(roc_auc),
-        'confusion_matrix': cm.tolist(),
-        'classification_report': classification_report(y_test, y_pred, output_dict=True)
+    print(classification_report(y_test, predictions, zero_division=0))
+    return {
+        "precision": float(precision),
+        "recall": float(recall),
+        "f1": float(f1),
+        "roc_auc": float(roc_auc),
+        "threshold": float(threshold),
+        "confusion_matrix": cm.tolist(),
+        "classification_report": classification_report(
+            y_test, predictions, output_dict=True, zero_division=0
+        ),
     }
-    
-    return metrics
 
 
 def cross_validate_model(model, X_train, y_train, model_name):
-    """Perform stratified 5-fold cross-validation."""
-    print(f"\n=== {model_name} 5-Fold Cross-Validation ===")
+    print(f"\n=== {model_name} Cross-Validation ===")
+    cv = StratifiedKFold(n_splits=cv_folds(y_train), shuffle=True, random_state=42)
+    scores = {"precision": [], "recall": [], "f1": [], "roc_auc": []}
+    for train_idx, val_idx in cv.split(X_train, y_train):
+        fold_model = type(model)(**model.get_params())
+        fold_model.fit(X_train[train_idx], y_train.iloc[train_idx])
+        pred = fold_model.predict(X_train[val_idx])
+        proba = fold_model.predict_proba(X_train[val_idx])[:, 1]
+        y_val = y_train.iloc[val_idx]
+        scores["precision"].append(precision_score(y_val, pred, zero_division=0))
+        scores["recall"].append(recall_score(y_val, pred, zero_division=0))
+        scores["f1"].append(f1_score(y_val, pred, zero_division=0))
+        scores["roc_auc"].append(roc_auc_score(y_val, proba))
+    for metric, values in scores.items():
+        print(f"CV {metric}: {np.mean(values):.4f} +/- {np.std(values):.4f}")
+    return scores
+
+
+def tune_threshold(model, X_val, y_val, min_bot_recall=0.95, max_fpr=0.01):
+    """Pick a validation threshold optimizing for false positive rate < 1%."""
+    probabilities = model.predict_proba(X_val)[:, 1]
+    candidates = np.linspace(0.05, 0.95, 91)
+    best = None
     
-    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    
-    cv_scores = {
-        'precision': [],
-        'recall': [],
-        'f1': [],
-        'roc_auc': []
-    }
-    
-    for fold, (train_idx, val_idx) in enumerate(cv.split(X_train, y_train)):
-        X_fold_train, X_fold_val = X_train[train_idx], X_train[val_idx]
-        y_fold_train, y_fold_val = y_train.iloc[train_idx], y_train.iloc[val_idx]
+    for threshold in candidates:
+        pred = (probabilities >= threshold).astype(int)
         
-        model_fold = type(model)(**model.get_params())
-        model_fold.fit(X_fold_train, y_fold_train)
+        # Calculate metrics
+        precision = precision_score(y_val, pred, zero_division=0)
+        recall = recall_score(y_val, pred, zero_division=0)
+        f1 = f1_score(y_val, pred, zero_division=0)
         
-        y_pred = model_fold.predict(X_fold_val)
-        y_pred_proba = model_fold.predict_proba(X_fold_val)[:, 1]
+        # Calculate false positive rate
+        cm = confusion_matrix(y_val, pred)
+        if cm.shape == (2, 2):
+            tn, fp, fn, tp = cm.ravel()
+            fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
+        else:
+            fpr = 0
         
-        cv_scores['precision'].append(precision_score(y_fold_val, y_pred))
-        cv_scores['recall'].append(recall_score(y_fold_val, y_pred))
-        cv_scores['f1'].append(f1_score(y_fold_val, y_pred))
-        cv_scores['roc_auc'].append(roc_auc_score(y_fold_val, y_pred_proba))
+        row = {
+            "threshold": float(threshold),
+            "precision": float(precision),
+            "recall": float(recall),
+            "f1": float(f1),
+            "fpr": float(fpr),
+        }
+        
+        # Stage 4B: Optimize for false positive rate < 1%
+        # Priority: FPR < 1% > high bot recall > high F1
+        if fpr <= max_fpr and recall >= min_bot_recall:
+            if best is None or f1 > best["f1"]:
+                best = row
+        elif best is None:
+            best = row
     
-    print(f"CV Precision: {np.mean(cv_scores['precision']):.4f} ± {np.std(cv_scores['precision']):.4f}")
-    print(f"CV Recall: {np.mean(cv_scores['recall']):.4f} ± {np.std(cv_scores['recall']):.4f}")
-    print(f"CV F1: {np.mean(cv_scores['f1']):.4f} ± {np.std(cv_scores['f1']):.4f}")
-    print(f"CV ROC-AUC: {np.mean(cv_scores['roc_auc']):.4f} ± {np.std(cv_scores['roc_auc']):.4f}")
+    if best is None:
+        # Fallback: find threshold with lowest FPR
+        best = min(
+            (
+                {
+                    "threshold": float(t),
+                    "precision": float(precision_score(y_val, (probabilities >= t).astype(int), zero_division=0)),
+                    "recall": float(recall_score(y_val, (probabilities >= t).astype(int), zero_division=0)),
+                    "f1": float(f1_score(y_val, (probabilities >= t).astype(int), zero_division=0)),
+                    "fpr": 0.0,  # Will calculate below
+                }
+                for t in candidates
+            ),
+            key=lambda item: item["threshold"],  # Prefer higher threshold (more conservative)
+        )
     
-    return cv_scores
+    print(
+        f"Tuned threshold: {best['threshold']:.2f} "
+        f"(precision={best['precision']:.4f}, recall={best['recall']:.4f}, f1={best['f1']:.4f}, fpr={best['fpr']:.4f})"
+    )
+    if best['fpr'] > max_fpr:
+        print(f"Warning: Could not achieve FPR < {max_fpr}, got {best['fpr']:.4f}")
+    
+    return best
 
 
 def get_feature_importance(model, feature_names):
-    """Get feature importance from model."""
-    if hasattr(model, 'feature_importances_'):
+    if hasattr(model, "feature_importances_"):
         importance = model.feature_importances_
     else:
-        # For XGBoost
-        importance = model.get_booster().get_score(importance_type='gain')
-        # Map to feature names
-        importance_dict = {f: importance.get(f'f{i}', 0) for i, f in enumerate(feature_names)}
-        importance = [importance_dict[f] for f in feature_names]
-    
-    feature_importance = pd.DataFrame({
-        'feature': feature_names,
-        'importance': importance
-    }).sort_values('importance', ascending=False)
-    
-    return feature_importance
+        booster_scores = model.get_booster().get_score(importance_type="gain")
+        importance = [booster_scores.get(f"f{i}", 0) for i, _ in enumerate(feature_names)]
+    return pd.DataFrame({"feature": feature_names, "importance": importance}).sort_values(
+        "importance", ascending=False
+    )
 
 
-def save_artifacts(model, scaler, metrics, feature_importance, model_name):
-    """Save model, scaler, metrics, and feature importance."""
+def save_artifacts(model, scaler, metrics, feature_importance, model_name, threshold_info):
     artifacts_dir = ROOT / "ml" / "models" / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
-    
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    
-    # Save model
+
     model_path = artifacts_dir / f"{model_name}_{timestamp}.pkl"
-    joblib.dump(model, model_path)
-    print(f"Saved model to {model_path}")
-    
-    # Save scaler
     scaler_path = artifacts_dir / f"scaler_{timestamp}.pkl"
-    joblib.dump(scaler, scaler_path)
-    print(f"Saved scaler to {scaler_path}")
-    
-    # Save metrics
     metrics_path = artifacts_dir / f"{model_name}_metrics_{timestamp}.json"
-    with open(metrics_path, 'w') as f:
-        json.dump(metrics, f, indent=2)
-    print(f"Saved metrics to {metrics_path}")
-    
-    # Save feature importance
     importance_path = artifacts_dir / f"{model_name}_feature_importance_{timestamp}.csv"
+    metadata_path = artifacts_dir / f"{model_name}_metadata_{timestamp}.json"
+
+    joblib.dump(model, model_path)
+    joblib.dump(scaler, scaler_path)
+    with open(metrics_path, "w") as f:
+        json.dump(metrics, f, indent=2)
     feature_importance.to_csv(importance_path, index=False)
-    print(f"Saved feature importance to {importance_path}")
-    
-    return {
-        'model_path': str(model_path),
-        'scaler_path': str(scaler_path),
-        'metrics_path': str(metrics_path),
-        'importance_path': str(importance_path)
+    metadata = {
+        "model_name": model_name,
+        "created_at": datetime.now().isoformat(),
+        "feature_version": "v4",
+        "feature_columns": FEATURE_COLUMNS,
+        "decision_threshold": threshold_info["threshold"],
+        # Binary classification (no challenges)
+        "binary_threshold": 0.50,      # Score < 0.50: allow, Score >= 0.50: block
+        "threshold_metrics": threshold_info,
+        "training_methodology": "bot_family_split",  # Stage 4A
+        "optimization_target": "fpr_1_percent",  # Stage 4B
     }
+    with open(metadata_path, "w") as f:
+        json.dump(metadata, f, indent=2)
+
+    print(f"Saved model to {model_path}")
+    print(f"Saved scaler to {scaler_path}")
+    print(f"Saved metrics to {metrics_path}")
+    print(f"Saved feature importance to {importance_path}")
+    print(f"Saved metadata to {metadata_path}")
+    return {
+        "model_path": str(model_path),
+        "scaler_path": str(scaler_path),
+        "metrics_path": str(metrics_path),
+        "importance_path": str(importance_path),
+        "metadata_path": str(metadata_path),
+    }
+
+
+def summarize_cv(scores):
+    return {k: {"mean": float(np.mean(v)), "std": float(np.std(v))} for k, v in scores.items()}
 
 
 def main():
-    """Main training pipeline."""
     print("=" * 60)
-    print("PHASE 7: Model Training (V1)")
+    print("PHASE 7: Model Training (V2)")
     print("=" * 60)
-    
-    # Load data
-    df = load_data()
-    
-    # Preprocess
-    df = preprocess_data(df)
-    
-    # Split data
-    X_train, X_test, y_train, y_test = split_data(df)
-    
-    # Scale features
-    X_train_scaled, X_test_scaled, scaler = scale_features(X_train, X_test)
-    
-    # Train Random Forest
+
+    df = preprocess_data(load_data())
+    X_train, X_val, X_test, y_train, y_val, y_test = split_data(df)
+    X_train_scaled, X_val_scaled, X_test_scaled, scaler = scale_features(X_train, X_val, X_test)
+
     rf_model = train_random_forest(X_train_scaled, y_train)
     rf_cv_scores = cross_validate_model(rf_model, X_train_scaled, y_train, "Random Forest")
-    rf_metrics = evaluate_model(rf_model, X_test_scaled, y_test, "Random Forest")
+    rf_threshold = tune_threshold(rf_model, X_val_scaled, y_val)
+    rf_metrics = evaluate_model(rf_model, X_test_scaled, y_test, "Random Forest", rf_threshold["threshold"])
     rf_importance = get_feature_importance(rf_model, FEATURE_COLUMNS)
-    print(f"\nRandom Forest Feature Importance:\n{rf_importance}")
-    rf_artifacts = save_artifacts(rf_model, scaler, rf_metrics, rf_importance, "random_forest")
-    
-    # Train XGBoost
+    print(f"\nRandom Forest Feature Importance:\n{rf_importance.head(20)}")
+    rf_artifacts = save_artifacts(
+        rf_model, scaler, rf_metrics, rf_importance, "random_forest", rf_threshold
+    )
+
     xgb_model = train_xgboost(X_train_scaled, y_train)
     xgb_cv_scores = cross_validate_model(xgb_model, X_train_scaled, y_train, "XGBoost")
-    xgb_metrics = evaluate_model(xgb_model, X_test_scaled, y_test, "XGBoost")
+    xgb_threshold = tune_threshold(xgb_model, X_val_scaled, y_val)
+    xgb_metrics = evaluate_model(xgb_model, X_test_scaled, y_test, "XGBoost", xgb_threshold["threshold"])
     xgb_importance = get_feature_importance(xgb_model, FEATURE_COLUMNS)
-    print(f"\nXGBoost Feature Importance:\n{xgb_importance}")
-    xgb_artifacts = save_artifacts(xgb_model, scaler, xgb_metrics, xgb_importance, "xgboost")
-    
-    # Compare models
-    print("\n" + "=" * 60)
-    print("MODEL COMPARISON")
-    print("=" * 60)
-    print(f"Random Forest - F1: {rf_metrics['f1']:.4f}, ROC-AUC: {rf_metrics['roc_auc']:.4f}")
-    print(f"XGBoost - F1: {xgb_metrics['f1']:.4f}, ROC-AUC: {xgb_metrics['roc_auc']:.4f}")
-    
-    # Select best model based on F1 score
-    best_model_name = "random_forest" if rf_metrics['f1'] > xgb_metrics['f1'] else "xgboost"
-    print(f"\nBest model: {best_model_name}")
-    
-    # Save comparison summary
+    print(f"\nXGBoost Feature Importance:\n{xgb_importance.head(20)}")
+    xgb_artifacts = save_artifacts(
+        xgb_model, scaler, xgb_metrics, xgb_importance, "xgboost", xgb_threshold
+    )
+
+    rf_score = (rf_metrics["f1"], rf_metrics["roc_auc"])
+    xgb_score = (xgb_metrics["f1"], xgb_metrics["roc_auc"])
+    best_model_name = "random_forest" if rf_score >= xgb_score else "xgboost"
     comparison = {
-        'random_forest': {
-            'test_metrics': rf_metrics,
-            'cv_scores': {k: {'mean': float(np.mean(v)), 'std': float(np.std(v))} for k, v in rf_cv_scores.items()},
-            'artifacts': rf_artifacts
+        "random_forest": {
+            "test_metrics": rf_metrics,
+            "cv_scores": summarize_cv(rf_cv_scores),
+            "threshold": rf_threshold,
+            "artifacts": rf_artifacts,
         },
-        'xgboost': {
-            'test_metrics': xgb_metrics,
-            'cv_scores': {k: {'mean': float(np.mean(v)), 'std': float(np.std(v))} for k, v in xgb_cv_scores.items()},
-            'artifacts': xgb_artifacts
+        "xgboost": {
+            "test_metrics": xgb_metrics,
+            "cv_scores": summarize_cv(xgb_cv_scores),
+            "threshold": xgb_threshold,
+            "artifacts": xgb_artifacts,
         },
-        'best_model': best_model_name,
-        'timestamp': datetime.now().isoformat()
+        "best_model": best_model_name,
+        "feature_version": "v2",
+        "feature_columns": FEATURE_COLUMNS,
+        "timestamp": datetime.now().isoformat(),
     }
-    
-    comparison_path = ROOT / "ml" / "models" / "artifacts" / f"model_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    with open(comparison_path, 'w') as f:
+    comparison_path = (
+        ROOT
+        / "ml"
+        / "models"
+        / "artifacts"
+        / f"model_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    )
+    with open(comparison_path, "w") as f:
         json.dump(comparison, f, indent=2)
+    print(f"\nBest model: {best_model_name}")
     print(f"Saved comparison to {comparison_path}")
-    
-    print("\nTraining complete!")
+    print("\nTraining complete.")
 
 
 if __name__ == "__main__":

@@ -5,7 +5,11 @@ This bot was NOT used in training the model.
 """
 import time
 import random
-from base_bot import BaseBot
+try:
+    from .base_bot import BaseBot
+except ImportError:
+    from base_bot import BaseBot
+from selenium.webdriver.common.by import By
 
 
 class StealthBot(BaseBot):
@@ -18,8 +22,8 @@ class StealthBot(BaseBot):
     - Natural click timing
     """
     
-    def __init__(self, headless=False):
-        super().__init__(headless)
+    def __init__(self, headless=False, target='testing'):
+        super().__init__(headless, target)
         self.typing_speed_range = (80, 200)  # ms per character (human-like)
         self.pause_probability = 0.15  # 15% chance to pause
         self.pause_duration_range = (500, 2000)  # ms
@@ -33,7 +37,7 @@ class StealthBot(BaseBot):
             time.sleep(delay)
             
             # Send key event
-            self.add_event('kd', k=char, tw=int(delay * 1000))
+            self.add_event('kd', k='CHAR', iki=int(delay * 1000))
             element.send_keys(char)
             
             # Random pause (simulating thinking)
@@ -43,7 +47,7 @@ class StealthBot(BaseBot):
         
         # Send key up events
         for char in text:
-            self.add_event('ku', k=char, th=random.randint(50, 150))
+            self.add_event('ku', k='CHAR', hold=random.randint(50, 150))
     
     def move_naturally(self, element):
         """Move mouse with subtle human-like jitter (simulated via events)."""
@@ -81,16 +85,13 @@ class StealthBot(BaseBot):
         print(f"Pause probability: {self.pause_probability * 100}%")
         
         try:
+            self.start_session()
             self.setup_driver()
             
-            # Navigate to testing signup page
-            self.driver.get("http://localhost:8080/signup.html")
-            print("Navigated to testing signup page")
+            # Navigate to signup page on target site
+            self.navigate_to("/signup.html")
+            print(f"Navigated to {self.target} signup page")
             time.sleep(2)
-            
-            # Start session
-            self.start_session()
-            print(f"Session started: {self.session_id}")
             
             # Fill first name with natural typing
             fname = self.wait_for_element(By.ID, 'fname')
@@ -173,6 +174,5 @@ class StealthBot(BaseBot):
 
 
 if __name__ == "__main__":
-    from selenium.webdriver.common.by import By
     bot = StealthBot()
     bot.run()

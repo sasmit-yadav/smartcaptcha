@@ -6,13 +6,19 @@ Expected telemetry signature:
 - Session duration: < 2 seconds
 - Single click event
 """
-from base_bot import BaseBot
+try:
+    from .base_bot import BaseBot
+except ImportError:
+    from base_bot import BaseBot
 from selenium.webdriver.common.by import By
 import time
 
 
 class InstantBot(BaseBot):
     """Bot that fills forms instantly using JavaScript, bypassing typing simulation."""
+    
+    def __init__(self, headless=True, target='demo'):
+        super().__init__(headless, target)
     
     def run(self):
         """Execute instant bot behavior on login page."""

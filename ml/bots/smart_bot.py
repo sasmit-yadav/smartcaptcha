@@ -6,7 +6,10 @@ Expected telemetry signature:
 - Varying typing speed
 - Still detectable as bot due to statistical patterns
 """
-from base_bot import BaseBot
+try:
+    from .base_bot import BaseBot
+except ImportError:
+    from base_bot import BaseBot
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 import time
@@ -16,8 +19,8 @@ import random
 class SmartBot(BaseBot):
     """Bot with randomized behavior to appear more human-like."""
     
-    def __init__(self, headless=True):
-        super().__init__(headless)
+    def __init__(self, headless=True, target='demo'):
+        super().__init__(headless, target)
         # Gaussian distribution parameters
         self.typing_mean = 0.150  # Mean 150ms per keystroke
         self.typing_std = 0.030   # Std dev 30ms

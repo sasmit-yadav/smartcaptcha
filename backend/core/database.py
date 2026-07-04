@@ -62,10 +62,59 @@ def _migrate_events_columns(cursor):
         ("scroll_y", "INTEGER"),
         ("scroll_vel", "REAL"),
         ("click_interval", "INTEGER"),
+        ("hover_duration", "INTEGER"),  # V2 telemetry
+        ("overshoot_ratio", "REAL"),   # V2 telemetry
     ]
     for name, col_type in columns:
         cursor.execute(
             f"ALTER TABLE events ADD COLUMN IF NOT EXISTS {name} {col_type}"
+        )
+
+
+def _migrate_session_features_columns(cursor):
+    """Ensure richer V2 ML feature columns exist without resetting collected data."""
+    columns = [
+        ("mouse_vel_p10", "REAL"),
+        ("mouse_vel_p50", "REAL"),
+        ("mouse_vel_p90", "REAL"),
+        ("mouse_accel_mean", "REAL"),
+        ("mouse_accel_std", "REAL"),
+        ("mouse_accel_max", "REAL"),
+        ("mouse_angle_std", "REAL"),
+        ("mouse_angle_p90", "REAL"),
+        ("mouse_path_efficiency", "REAL"),
+        ("mouse_idle_gap_count", "INTEGER"),
+        ("mouse_event_ratio", "REAL"),
+        ("click_interval_std", "REAL"),
+        ("click_interval_min", "REAL"),
+        ("click_interval_p90", "REAL"),
+        ("double_click_count", "INTEGER"),
+        ("key_count", "INTEGER"),
+        ("iki_p10", "REAL"),
+        ("iki_p50", "REAL"),
+        ("iki_p90", "REAL"),
+        ("hold_std", "REAL"),
+        ("hold_p90", "REAL"),
+        ("backspace_count", "INTEGER"),
+        ("scroll_vel_std", "REAL"),
+        ("scroll_rev_count", "INTEGER"),
+        ("scroll_pause_count", "INTEGER"),
+        ("focus_event_count", "INTEGER"),
+        ("touch_event_count", "INTEGER"),
+        ("event_rate", "REAL"),
+        ("pause_count", "INTEGER"),
+        ("pause_ratio", "REAL"),
+        ("mouse_curvature_std", "REAL"),
+        ("mouse_jerk_std", "REAL"),
+        ("movement_entropy", "REAL"),
+        ("avg_hover_duration", "REAL"),
+        ("hover_duration_std", "REAL"),
+        ("avg_overshoot_ratio", "REAL"),
+        ("overshoot_ratio_std", "REAL"),
+    ]
+    for name, col_type in columns:
+        cursor.execute(
+            f"ALTER TABLE session_features ADD COLUMN IF NOT EXISTS {name} {col_type}"
         )
 
 
@@ -104,7 +153,7 @@ def init_db():
                 is_active BOOLEAN DEFAULT TRUE
             )
         """)
-        # Create sessions table (Phase 3.2 + extended fields + event_count)
+        # Create sessions table (Phase 3.2 + extended fields + event_count + V2 telemetry)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
                 id VARCHAR(36) PRIMARY KEY,
@@ -118,10 +167,11 @@ def init_db():
                 label VARCHAR(10),
                 risk_score FLOAT,
                 event_count INTEGER DEFAULT 0,
+                webdriver_flag BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT NOW()
             )
         """)
-        # Create events table with individual ML feature columns (matches old SQLite structure)
+        # Create events table with individual ML feature columns (matches old SQLite structure + V2 telemetry)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS events (
                 id BIGSERIAL PRIMARY KEY,
@@ -146,6 +196,8 @@ def init_db():
                 scroll_vel REAL,
                 scroll_rev BOOLEAN,
                 scroll_pause BOOLEAN,
+                hover_duration INTEGER,
+                overshoot_ratio REAL,
                 state TEXT,
                 action TEXT,
                 force REAL,
@@ -157,7 +209,7 @@ def init_db():
                 received_at TIMESTAMP DEFAULT NOW()
             )
         """)
-        # Create session_features table for ML training
+        # Create session_features table for ML training (V2 + V3 + V4 features)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS session_features (
                 id SERIAL PRIMARY KEY,
@@ -176,6 +228,44 @@ def init_db():
                 avg_scroll_vel REAL,
                 session_duration REAL,
                 event_count INTEGER,
+                mouse_vel_p10 REAL,
+                mouse_vel_p50 REAL,
+                mouse_vel_p90 REAL,
+                mouse_accel_mean REAL,
+                mouse_accel_std REAL,
+                mouse_accel_max REAL,
+                mouse_angle_std REAL,
+                mouse_angle_p90 REAL,
+                mouse_path_efficiency REAL,
+                mouse_idle_gap_count INTEGER,
+                mouse_event_ratio REAL,
+                click_interval_std REAL,
+                click_interval_min REAL,
+                click_interval_p90 REAL,
+                double_click_count INTEGER,
+                key_count INTEGER,
+                iki_p10 REAL,
+                iki_p50 REAL,
+                iki_p90 REAL,
+                hold_std REAL,
+                hold_p90 REAL,
+                backspace_count INTEGER,
+                scroll_vel_std REAL,
+                scroll_rev_count INTEGER,
+                scroll_pause_count INTEGER,
+                focus_event_count INTEGER,
+                touch_event_count INTEGER,
+                event_rate REAL,
+                pause_count INTEGER,
+                pause_ratio REAL,
+                mouse_curvature_std REAL,
+                mouse_jerk_std REAL,
+                movement_entropy REAL,
+                avg_hover_duration REAL,
+                hover_duration_std REAL,
+                avg_overshoot_ratio REAL,
+                overshoot_ratio_std REAL,
+                webdriver_flag BOOLEAN,
                 device_type VARCHAR(20),
                 label VARCHAR(10),
                 created_at TIMESTAMP DEFAULT NOW()
@@ -196,13 +286,21 @@ def init_db():
             if not exists:
                 cursor.execute(idx_sql)
         _migrate_events_columns(cursor)
+        _migrate_session_features_columns(cursor)
+        
+        # Migrate sessions table for V2 telemetry
+        cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS webdriver_flag BOOLEAN DEFAULT FALSE")
+        
+        # Migrate session_features table for V2 telemetry
+        cursor.execute("ALTER TABLE session_features ADD COLUMN IF NOT EXISTS webdriver_flag BOOLEAN DEFAULT FALSE")
+        
         conn.commit()
         print("[DB] PostgreSQL initialized (full ML feature schema)")
     finally:
         release_connection(conn)
 
 
-def insert_session(session_data: dict, project_id: str = None):
+def insert_session(session_data: dict, project_id: str = None, label: str = None):
     conn = get_connection()
     try:
         cursor = conn.cursor()
@@ -217,8 +315,8 @@ def insert_session(session_data: dict, project_id: str = None):
         cursor.execute("""
             INSERT INTO sessions (
                 id, project_id, device_type, screen_width, screen_height,
-                user_agent, started_at
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s)
+                user_agent, started_at, webdriver_flag, label
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT(id) DO NOTHING
         """, (
             session_data.get('sessionId', ''),
@@ -228,6 +326,8 @@ def insert_session(session_data: dict, project_id: str = None):
             session_data.get('screenHeight', 0),
             session_data.get('userAgent', ''),
             start_timestamp,
+            session_data.get('webdriverFlag', False),
+            label,
         ))
         conn.commit()
     finally:
@@ -304,6 +404,8 @@ def insert_events_batch(session_id: str, events: list):
                 scroll_y_val,
                 e.get('vel') if etype == 'sc' else None,
                 scroll_rev_val, scroll_pause_val,
+                e.get('hoverDuration'),  # V2 telemetry
+                e.get('overshootRatio'),  # V2 telemetry
                 e.get('state'),
                 e.get('action'), e.get('force'), e.get('duration'),
                 e.get('gesture'), e.get('swipeDist'), e.get('swipeVel'),
@@ -317,6 +419,7 @@ def insert_events_batch(session_id: str, events: list):
                 target, click_interval, is_double, tw, th,
                 k, iki, hold,
                 scroll_y, scroll_vel, scroll_rev, scroll_pause,
+                hover_duration, overshoot_ratio,
                 state,
                 action, force, duration, gesture, swipe_dist, swipe_vel,
                 payload
@@ -327,6 +430,7 @@ def insert_events_batch(session_id: str, events: list):
                 %s, %s, %s, %s, %s,
                 %s, %s, %s,
                 %s, %s, %s, %s,
+                %s, %s,
                 %s,
                 %s, %s, %s, %s, %s, %s,
                 %s::jsonb)""",

@@ -12,20 +12,30 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 import os
+import sys
+from pathlib import Path
 from dotenv import load_dotenv
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "backend"))
+
+from core.database import get_connection, release_connection
 
 load_dotenv()
 
 DEMO_SITE_URL = os.getenv('DEMO_SITE_URL', 'http://localhost:5173')
+TESTING_SITE_URL = os.getenv('TESTING_SITE_URL', 'http://localhost:8080')
 BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:8000')
 API_KEY = os.getenv('API_KEY', 'demo-key')
+AUTO_LABEL_BOT_SESSIONS = os.getenv('AUTO_LABEL_BOT_SESSIONS', '1') == '1'
 
 
 class BaseBot:
     """Base class for all bot types with common functionality."""
     
-    def __init__(self, headless=True):
+    def __init__(self, headless=True, target='demo'):
         self.headless = headless
+        self.target = target  # 'demo' for demo-site, 'testing' for testing-website
         self.driver = None
         self.session_id = str(uuid.uuid4())
         self.events = []
@@ -45,8 +55,13 @@ class BaseBot:
         self.driver.set_page_load_timeout(30)
         
     def navigate_to(self, path):
-        """Navigate to a specific path on the demo site."""
-        url = f"{DEMO_SITE_URL}{path}"
+        """Navigate to a specific path on the target site (demo or testing)."""
+        if self.target == 'demo':
+            url = f"{DEMO_SITE_URL}{path}"
+        elif self.target == 'testing':
+            url = f"{TESTING_SITE_URL}{path}"
+        else:
+            raise ValueError(f"Unknown target: {self.target}")
         self.driver.get(url)
         time.sleep(3)  # Wait for page to load and SDK to initialize
         
@@ -92,6 +107,7 @@ class BaseBot:
         try:
             self.session_start_time = int(time.time() * 1000)
             meta = {
+                'sessionId': self.session_id,
                 'userAgent': 'Selenium Bot',
                 'deviceType': 'desktop',
                 'screenWidth': 1920,
@@ -134,6 +150,7 @@ class BaseBot:
                 json={
                     'sessionId': self.session_id,
                     'meta': {
+                        'sessionId': self.session_id,
                         'userAgent': 'Selenium Bot',
                         'deviceType': 'desktop',
                         'screenWidth': 1920,
@@ -166,10 +183,33 @@ class BaseBot:
                 timeout=5
             )
             print(f"Session ended: {self.session_id[:8]}... (duration: {duration_ms}ms)")
+            if response.status_code == 200 and AUTO_LABEL_BOT_SESSIONS:
+                self.label_session("bot")
             return response.status_code == 200
         except Exception as e:
             print(f"Failed to end session: {e}")
             return False
+
+    def label_session(self, label):
+        """Mark generated bot telemetry so it is eligible for supervised training."""
+        conn = None
+        try:
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE sessions SET label = %s WHERE id = %s",
+                (label, self.session_id),
+            )
+            conn.commit()
+            cursor.close()
+            print(f"Session labeled as {label}: {self.session_id[:8]}...")
+            return True
+        except Exception as e:
+            print(f"Failed to label session: {e}")
+            return False
+        finally:
+            if conn:
+                release_connection(conn)
         
     def cleanup(self):
         """Close the browser and cleanup resources."""

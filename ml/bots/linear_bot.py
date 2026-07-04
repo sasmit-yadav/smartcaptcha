@@ -5,7 +5,10 @@ Expected telemetry signature:
 - Mouse velocity: perfectly constant
 - No micro-corrections or jitter
 """
-from base_bot import BaseBot
+try:
+    from .base_bot import BaseBot
+except ImportError:
+    from base_bot import BaseBot
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.action_chains import ActionChains
 import time
@@ -13,6 +16,9 @@ import time
 
 class LinearBot(BaseBot):
     """Bot that moves mouse in perfectly straight lines using exact pixel coordinates."""
+    
+    def __init__(self, headless=True, target='demo'):
+        super().__init__(headless, target)
     
     def run(self):
         """Execute linear mouse movement bot on memory game page."""

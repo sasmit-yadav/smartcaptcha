@@ -1,13 +1,43 @@
-{
-  "name": "@smartcaptcha/sdk",
+﻿{
+  "name": "@nextcaptcha/sdk",
   "version": "0.1.0",
-  "description": "SmartCaptcha behavioral telemetry SDK",
-  "main": "dist/smartcaptcha.min.js",
-  "scripts": {
-    "build": "esbuild src/index.js --bundle --minify --outfile=dist/smartcaptcha.min.js --format=iife --global-name=SmartCaptchaModule",
-    "dev": "esbuild src/index.js --bundle --outfile=dist/smartcaptcha.js --format=iife --global-name=SmartCaptchaModule --watch"
+  "description": "NextCaptcha behavioral telemetry SDK for bot detection",
+  "main": "dist/nextcaptcha.cjs.js",
+  "module": "dist/nextcaptcha.esm.js",
+  "browser": "dist/nextcaptcha.min.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/nextcaptcha.esm.js",
+      "require": "./dist/nextcaptcha.cjs.js",
+      "browser": "./dist/nextcaptcha.min.js",
+      "types": "./dist/index.d.ts"
+    }
   },
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "npm run build:umd && npm run build:esm && npm run build:cjs && npm run build:ts",
+    "build:umd": "esbuild ./src/index.ts --bundle --minify --outfile=dist/nextcaptcha.min.js --format=iife",
+    "build:esm": "esbuild ./src/index.ts --bundle --outfile=dist/nextcaptcha.esm.js --format=esm",
+    "build:cjs": "esbuild ./src/index.ts --bundle --outfile=dist/nextcaptcha.cjs.js --format=cjs",
+    "build:ts": "tsc",
+    "dev": "esbuild ./src/index.ts --bundle --outfile=dist/nextcaptcha.js --format=iife --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": ["captcha", "bot-detection", "behavioral-biometrics", "fraud-prevention", "telemetry"],
+  "author": "NextCaptcha",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nextcaptcha/sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/nextcaptcha/sdk/issues"
+  },
+  "homepage": "https://nextcaptcha.ai",
   "devDependencies": {
-    "esbuild": "^0.21.0"
+    "@types/node": "^26.1.0",
+    "esbuild": "^0.21.0",
+    "typescript": "^6.0.3"
   }
 }

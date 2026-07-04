@@ -21,6 +21,7 @@ class SessionMeta(BaseModel):
     pageUrl: Optional[str] = None
     pageTitle: Optional[str] = None
     referrer: Optional[str] = None
+    source: Optional[Literal['demo', 'client']] = None  # Source of the session
 
 
 class TelemetryEvent(BaseModel):

@@ -242,10 +242,10 @@
   <button class="back-to-top" id="btt" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</button>
 
   <script src="/config.js"></script>
-  <script src="/smartcaptcha.min.js"></script>
+  <script src="/nextcaptcha.min.js"></script>
   <script src="/autofill_detector.js"></script>
   <script src="/sdk_shim.js"></script>
-  <script>SmartCaptcha.init({apiKey:window.SMARTCAPTCHA_CONFIG.API_KEY,endpoint:window.SMARTCAPTCHA_CONFIG.BACKEND_URL});</script>
+  <script>NextCaptcha.init({apiKey:window.NEXTCAPTCHA_CONFIG.API_KEY,endpoint:window.NEXTCAPTCHA_CONFIG.BACKEND_URL});</script>
   <script type="module">
     import { initShell } from '/utils/shell.js';
     import { getSessionId, getSessionMeta } from '/utils/session.js';
@@ -407,11 +407,11 @@
           timestamp: Date.now()
         };
         
-        const response = await fetch(`${window.SMARTCAPTCHA_CONFIG.BACKEND_URL}/api/telemetry`, {
+        const response = await fetch(`${window.NEXTCAPTCHA_CONFIG.BACKEND_URL}/api/telemetry`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'X-API-Key': window.SMARTCAPTCHA_CONFIG.API_KEY
+            'X-API-Key': window.NEXTCAPTCHA_CONFIG.API_KEY
           },
           body: JSON.stringify(payload)
         });

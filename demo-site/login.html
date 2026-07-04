@@ -43,10 +43,10 @@
   </main>
 
   <script src="/config.js"></script>
-  <script src="/smartcaptcha.min.js"></script>
+  <script src="/nextcaptcha.min.js"></script>
   <script src="/autofill_detector.js"></script>
   <script src="/sdk_shim.js"></script>
-  <script>SmartCaptcha.init({apiKey:window.SMARTCAPTCHA_CONFIG.API_KEY,endpoint:window.SMARTCAPTCHA_CONFIG.BACKEND_URL});</script>
+  <script>NextCaptcha.init({apiKey:window.NEXTCAPTCHA_CONFIG.API_KEY,endpoint:window.NEXTCAPTCHA_CONFIG.BACKEND_URL});</script>
   <script type="module">
     import { initShell } from '/utils/shell.js';
     initShell('Login');

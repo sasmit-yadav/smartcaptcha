@@ -5,7 +5,11 @@ This bot was NOT used in training the model.
 """
 import time
 import random
-from base_bot import BaseBot
+try:
+    from .base_bot import BaseBot
+except ImportError:
+    from base_bot import BaseBot
+from selenium.webdriver.common.by import By
 
 
 class AggressiveBot(BaseBot):
@@ -18,8 +22,8 @@ class AggressiveBot(BaseBot):
     - High-speed clicking
     """
     
-    def __init__(self, headless=False):
-        super().__init__(headless)
+    def __init__(self, headless=False, target='testing'):
+        super().__init__(headless, target)
         self.typing_speed = 30  # ms per character (ultra-fast)
         self.mouse_speed = 50  # ms between movements (very fast)
         self.click_speed = 100  # ms between clicks (very fast)
@@ -28,12 +32,12 @@ class AggressiveBot(BaseBot):
         """Type text at ultra-fast speed."""
         for char in text:
             time.sleep(self.typing_speed / 1000)
-            self.add_event('kd', k=char, tw=self.typing_speed)
+            self.add_event('kd', k='CHAR', iki=self.typing_speed)
             element.send_keys(char)
         
         # Send key up events with minimal hold time
         for char in text:
-            self.add_event('ku', k=char, th=20)  # Very short hold
+            self.add_event('ku', k='CHAR', hold=20)  # Very short hold
     
     def move_erratic(self, element):
         """Move mouse with erratic, non-linear patterns."""
@@ -68,16 +72,13 @@ class AggressiveBot(BaseBot):
         print(f"Click speed: {self.click_speed}ms (VERY FAST)")
         
         try:
+            self.start_session()
             self.setup_driver()
             
-            # Navigate to testing signup page
-            self.driver.get("http://localhost:8080/signup.html")
-            print("Navigated to testing signup page")
+            # Navigate to signup page on target site
+            self.navigate_to("/signup.html")
+            print(f"Navigated to {self.target} signup page")
             time.sleep(2)
-            
-            # Start session
-            self.start_session()
-            print(f"Session started: {self.session_id}")
             
             # Fill first name with aggressive typing
             fname = self.wait_for_element(By.ID, 'fname')
@@ -160,6 +161,5 @@ class AggressiveBot(BaseBot):
 
 
 if __name__ == "__main__":
-    from selenium.webdriver.common.by import By
     bot = AggressiveBot()
     bot.run()

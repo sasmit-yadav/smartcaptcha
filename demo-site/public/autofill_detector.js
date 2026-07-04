@@ -1,6 +1,6 @@
 (function(){
   // Autofill detector: marks probable autofill events and suppresses sending next input
-  // Usage: include this script after SDK and config; SDK should respect window.SMARTCAPTCHA_SUPPRESS_NEXT_INPUT
+  // Usage: include this script after SDK and config; SDK should respect window.NEXTCAPTCHA_SUPPRESS_NEXT_INPUT
 
   const AF_THRESHOLD_MS = 400; // if no key within this time, value-change likely autofill
   const SUPPRESS_MS = 1500; // suppression duration after detection
@@ -39,13 +39,13 @@
         // Heuristic: if the change is large (many chars) or exactly replaces empty -> filled, mark autofill
         const likelyAutofill = (prev.length === 0 && val.length > 0) || (Math.abs(val.length - prev.length) > 3);
         if (likelyAutofill) {
-          window.SMARTCAPTCHA_AUTOFILL = window.SMARTCAPTCHA_AUTOFILL || {detected: true, firstSeen: Date.now()};
-          window.SMARTCAPTCHA_SUPPRESS_NEXT_INPUT = true;
-          setTimeout(()=>{ window.SMARTCAPTCHA_SUPPRESS_NEXT_INPUT = false; }, SUPPRESS_MS);
-          if (window.smartcaptcha && typeof window.smartcaptcha.setSessionMeta === 'function'){
-            try{ window.smartcaptcha.setSessionMeta({ hasAutofill: true }); }catch(_){ }
+          window.NEXTCAPTCHA_AUTOFILL = window.NEXTCAPTCHA_AUTOFILL || {detected: true, firstSeen: Date.now()};
+          window.NEXTCAPTCHA_SUPPRESS_NEXT_INPUT = true;
+          setTimeout(()=>{ window.NEXTCAPTCHA_SUPPRESS_NEXT_INPUT = false; }, SUPPRESS_MS);
+          if (window.nextcaptcha && typeof window.nextcaptcha.setSessionMeta === 'function'){
+            try{ window.nextcaptcha.setSessionMeta({ hasAutofill: true }); }catch(_){ }
           }
-          console.warn('[SmartCaptcha] Autofill detected, suppressing next input event');
+          console.warn('[NextCaptcha] Autofill detected, suppressing next input event');
         }
       }
 

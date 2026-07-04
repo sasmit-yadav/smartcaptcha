@@ -13,13 +13,8 @@
 window.SMARTCAPTCHA_CONFIG = {
   // SDK Backend for predictions (port 8001)
   BACKEND_URL: (function() {
-    const PRODUCTION_BACKEND = 'https://next-captcha-sdk.onrender.com';
-    const LOCAL_SDK_BACKEND = 'http://localhost:8001';
-    const host = window.location.hostname;
-    if (host === 'localhost' || host === '127.0.0.1') {
-      return LOCAL_SDK_BACKEND;
-    }
-    return PRODUCTION_BACKEND;
+    // Always use production backend
+    return 'https://next-captcha-sdk.onrender.com';
   })(),
 
   // API key (for demo purposes)

@@ -1,0 +1,205 @@
+{
+  "random_forest": {
+    "test_metrics": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "roc_auc": 1.0,
+      "threshold": 0.5199999999999999,
+      "confusion_matrix": [
+        [
+          6,
+          0
+        ],
+        [
+          0,
+          29
+        ]
+      ],
+      "classification_report": {
+        "0": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 6.0
+        },
+        "1": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 29.0
+        },
+        "accuracy": 1.0,
+        "macro avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 35.0
+        },
+        "weighted avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 35.0
+        }
+      }
+    },
+    "cv_scores": {
+      "precision": {
+        "mean": 0.9789473684210528,
+        "std": 0.042105263157894736
+      },
+      "recall": {
+        "mean": 0.9882352941176471,
+        "std": 0.02352941176470589
+      },
+      "f1": {
+        "mean": 0.9828282828282828,
+        "std": 0.022496017627596055
+      },
+      "roc_auc": {
+        "mean": 0.9941176470588236,
+        "std": 0.011764705882352944
+      }
+    },
+    "threshold": {
+      "threshold": 0.5199999999999999,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0
+    },
+    "artifacts": {
+      "model_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml\\models\\artifacts\\v2\\random_forest_20260619_210124.pkl",
+      "scaler_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml\\models\\artifacts\\v2\\scaler_20260619_210124.pkl",
+      "metrics_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml\\models\\artifacts\\v2\\random_forest_metrics_20260619_210124.json",
+      "importance_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml\\models\\artifacts\\v2\\random_forest_feature_importance_20260619_210124.csv",
+      "metadata_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml\\models\\artifacts\\v2\\random_forest_metadata_20260619_210124.json"
+    }
+  },
+  "xgboost": {
+    "test_metrics": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "roc_auc": 1.0,
+      "threshold": 0.25999999999999995,
+      "confusion_matrix": [
+        [
+          6,
+          0
+        ],
+        [
+          0,
+          29
+        ]
+      ],
+      "classification_report": {
+        "0": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 6.0
+        },
+        "1": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 29.0
+        },
+        "accuracy": 1.0,
+        "macro avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 35.0
+        },
+        "weighted avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 35.0
+        }
+      }
+    },
+    "cv_scores": {
+      "precision": {
+        "mean": 0.9789473684210528,
+        "std": 0.042105263157894736
+      },
+      "recall": {
+        "mean": 0.9882352941176471,
+        "std": 0.02352941176470589
+      },
+      "f1": {
+        "mean": 0.9828282828282828,
+        "std": 0.022496017627596055
+      },
+      "roc_auc": {
+        "mean": 0.9970588235294118,
+        "std": 0.00588235294117645
+      }
+    },
+    "threshold": {
+      "threshold": 0.25999999999999995,
+      "precision": 0.9655172413793104,
+      "recall": 1.0,
+      "f1": 0.9824561403508771
+    },
+    "artifacts": {
+      "model_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml\\models\\artifacts\\v2\\xgboost_20260619_210129.pkl",
+      "scaler_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml\\models\\artifacts\\v2\\scaler_20260619_210129.pkl",
+      "metrics_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml\\models\\artifacts\\v2\\xgboost_metrics_20260619_210129.json",
+      "importance_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml\\models\\artifacts\\v2\\xgboost_feature_importance_20260619_210129.csv",
+      "metadata_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml\\models\\artifacts\\v2\\xgboost_metadata_20260619_210129.json"
+    }
+  },
+  "best_model": "random_forest",
+  "feature_version": "v2",
+  "feature_columns": [
+    "avg_mouse_vel",
+    "std_mouse_vel",
+    "max_mouse_vel",
+    "total_distance",
+    "avg_angle_change",
+    "click_count",
+    "avg_click_interval",
+    "avg_iki",
+    "std_iki",
+    "avg_hold",
+    "scroll_count",
+    "avg_scroll_vel",
+    "session_duration",
+    "event_count",
+    "mouse_vel_p10",
+    "mouse_vel_p50",
+    "mouse_vel_p90",
+    "mouse_accel_mean",
+    "mouse_accel_std",
+    "mouse_accel_max",
+    "mouse_angle_std",
+    "mouse_angle_p90",
+    "mouse_path_efficiency",
+    "mouse_idle_gap_count",
+    "mouse_event_ratio",
+    "click_interval_std",
+    "click_interval_min",
+    "click_interval_p90",
+    "double_click_count",
+    "key_count",
+    "iki_p10",
+    "iki_p50",
+    "iki_p90",
+    "hold_std",
+    "hold_p90",
+    "backspace_count",
+    "scroll_vel_std",
+    "scroll_rev_count",
+    "scroll_pause_count",
+    "focus_event_count",
+    "touch_event_count",
+    "event_rate",
+    "pause_count",
+    "pause_ratio"
+  ],
+  "timestamp": "2026-06-19T21:01:29.667593"
+}

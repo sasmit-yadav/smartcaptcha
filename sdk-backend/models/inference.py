@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 import joblib
 import pandas as pd
 
-from features.feature_columns import LEGACY_FEATURE_COLUMNS, V2_FEATURE_COLUMNS
+from features.feature_columns import LEGACY_FEATURE_COLUMNS, V2_FEATURE_COLUMNS, V3_FEATURE_COLUMNS, V4_FEATURE_COLUMNS
 from models.risk_engine import create_risk_engine, RiskEngine
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,18 +48,8 @@ class BotDetector:
         self.scaler = joblib.load(scaler_path)
         self.metadata = self._load_metadata(metadata_path)
         
-        # Use metadata feature columns if available, otherwise resolve
-        if "feature_columns" in self.metadata:
-            self.feature_columns = list(self.metadata["feature_columns"])
-            print(f"Using metadata feature columns: {len(self.feature_columns)} features")
-        elif hasattr(self.model, 'feature_names_in_'):
-            self.feature_columns = list(self.model.feature_names_in_)
-            print(f"Using model's feature columns: {len(self.feature_columns)} features")
-        else:
-            # Force V2 features for the current model (trained before V4)
-            from features.feature_columns import V2_FEATURE_COLUMNS
-            self.feature_columns = V2_FEATURE_COLUMNS
-            print(f"Using V2 feature columns: {len(self.feature_columns)} features")
+        self.feature_columns = self._resolve_feature_columns()
+        print(f"Loaded {len(self.feature_columns)} feature columns")
         
         # Filter incoming features to only use what the model expects
         print(f"[DEBUG] Will filter incoming features to match model's {len(self.feature_columns)} expected features")
@@ -115,8 +105,16 @@ class BotDetector:
 
     def _load_metadata(self, metadata_path):
         if metadata_path:
-            with open(metadata_path, encoding="utf-8") as f:
-                return json.load(f)
+            path = Path(metadata_path)
+            if path.exists():
+                try:
+                    with open(path, encoding="utf-8") as f:
+                        return json.load(f)
+                except Exception as e:
+                    print(f"Error loading metadata from {metadata_path}: {e}")
+            else:
+                print(f"Metadata path does not exist: {metadata_path}")
+            return {}
 
         stem_parts = self.model_path.stem.split("_")
         if len(stem_parts) >= 3:
@@ -124,23 +122,41 @@ class BotDetector:
             timestamp = "_".join(stem_parts[-2:])
             candidate = self.model_path.with_name(f"{model_name}_metadata_{timestamp}.json")
             if candidate.exists():
-                with open(candidate, encoding="utf-8") as f:
-                    return json.load(f)
+                try:
+                    with open(candidate, encoding="utf-8") as f:
+                        return json.load(f)
+                except Exception as e:
+                    print(f"Error loading candidate metadata: {e}")
         return {}
 
     def _resolve_feature_columns(self):
         if "feature_columns" in self.metadata:
             return list(self.metadata["feature_columns"])
 
-        expected_features = getattr(self.model, "n_features_in_", None)
+        expected_features = getattr(self.model, "n_features_in_", None) or getattr(self.scaler, "n_features_in_", None)
+        if expected_features == len(V4_FEATURE_COLUMNS):
+            return V4_FEATURE_COLUMNS
+        if expected_features == len(V3_FEATURE_COLUMNS):
+            return V3_FEATURE_COLUMNS
         if expected_features == len(V2_FEATURE_COLUMNS):
             return V2_FEATURE_COLUMNS
         if expected_features == len(LEGACY_FEATURE_COLUMNS):
             return LEGACY_FEATURE_COLUMNS
+
+        if hasattr(self.scaler, "feature_names_in_"):
+            return list(self.scaler.feature_names_in_)
+        if hasattr(self.model, "feature_names_in_"):
+            return list(self.model.feature_names_in_)
+
         return V2_FEATURE_COLUMNS
 
-    def _validate_features(self, features: Dict[str, Any]) -> pd.DataFrame:
-        prepared = {column: features.get(column, 0) for column in self.feature_columns}
+    def _validate_features(self, features: Dict[str, Any], fingerprint_data: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
+        merged_features = features.copy()
+        if fingerprint_data:
+            for field in ["webdriver_flag"]:
+                if field in fingerprint_data:
+                    merged_features[field] = fingerprint_data[field]
+        prepared = {column: merged_features.get(column, 0) for column in self.feature_columns}
         return pd.DataFrame([prepared], columns=self.feature_columns).fillna(0)
 
     def _rule_risk_boost(self, features: Dict[str, Any]) -> float:
@@ -183,7 +199,7 @@ class BotDetector:
         Returns:
             Dictionary with prediction results and risk scores
         """
-        feature_df = self._validate_features(features)
+        feature_df = self._validate_features(features, fingerprint_data)
         features_scaled = self.scaler.transform(feature_df)
         model_probability = float(self.model.predict_proba(features_scaled)[0, 1])
         rule_boost = self._rule_risk_boost(features)

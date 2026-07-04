@@ -206,3 +206,7 @@ docs/.doctrees/
 .stylelintcache
 .vercel/
 .netlify/
+
+# Allow model metadata and comparison JSON files
+!sdk-backend/models/artifacts/*.json
+!ml-train/ml/models/artifacts/*.json

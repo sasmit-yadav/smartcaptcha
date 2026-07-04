@@ -1,6 +1,6 @@
 ﻿{
   "name": "@nextcaptcha/sdk",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "NextCaptcha behavioral telemetry SDK for bot detection",
   "main": "dist/nextcaptcha.cjs.js",
   "module": "dist/nextcaptcha.esm.js",

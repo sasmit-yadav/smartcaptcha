@@ -16,7 +16,6 @@ router = APIRouter()
 async def receive_telemetry(
     payload: TelemetryPayload,
     request: Request,
-    x_api_key: Optional[str] = Header(None),
 ):
     """
     Receive a batch of telemetry events from the SDK.

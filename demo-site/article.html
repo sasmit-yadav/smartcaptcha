@@ -407,8 +407,7 @@
         const response = await fetch(`${window.NEXTCAPTCHA_CONFIG.BACKEND_URL}/api/telemetry`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json',
-            'X-API-Key': window.NEXTCAPTCHA_CONFIG.API_KEY
+            'Content-Type': 'application/json'
           },
           body: JSON.stringify(payload)
         });

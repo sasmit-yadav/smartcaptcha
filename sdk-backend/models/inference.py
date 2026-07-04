@@ -56,8 +56,13 @@ class BotDetector:
             self.feature_columns = list(self.model.feature_names_in_)
             print(f"Using model's feature columns: {len(self.feature_columns)} features")
         else:
-            self.feature_columns = self._resolve_feature_columns()
-            print(f"Using resolved feature columns: {len(self.feature_columns)} features")
+            # Force V2 features for the current model (trained before V4)
+            from features.feature_columns import V2_FEATURE_COLUMNS
+            self.feature_columns = V2_FEATURE_COLUMNS
+            print(f"Using V2 feature columns: {len(self.feature_columns)} features")
+        
+        # Filter incoming features to only use what the model expects
+        print(f"[DEBUG] Will filter incoming features to match model's {len(self.feature_columns)} expected features")
         
         self.threshold = float(self.metadata.get("decision_threshold", DEFAULT_THRESHOLD))
         self.challenge_low = float(self.metadata.get("challenge_low", DEFAULT_CHALLENGE_LOW))

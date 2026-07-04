@@ -76,22 +76,23 @@ class BotDetector:
                 return None
             artifacts = comparison[best_model].get("artifacts")
             
-            # Convert absolute paths to relative paths if needed
+            # Convert absolute or Windows-style paths to local paths in artifacts_dir if they exist there
             if artifacts:
                 for key in ['model_path', 'scaler_path', 'metadata_path']:
                     if key in artifacts and artifacts[key]:
-                        path = Path(artifacts[key])
-                        if path.is_absolute():
-                            # If absolute path doesn't exist, try to find the file in artifacts_dir
-                            if not path.exists():
-                                # Try to find by filename in artifacts_dir
-                                filename = path.name
-                                matching_files = list(artifacts_dir.glob(f"*{filename}*"))
-                                if matching_files:
-                                    artifacts[key] = str(matching_files[0])
-                                else:
-                                    # Path doesn't exist, return None to use fallback
+                        orig_path_str = artifacts[key]
+                        # Extract the base filename cleanly handling both Windows and Unix slashes
+                        filename = orig_path_str.replace('\\', '/').split('/')[-1]
+                        local_file = artifacts_dir / filename
+                        if local_file.exists():
+                            artifacts[key] = str(local_file)
+                        else:
+                            # Fallback check if the original path exists on the host
+                            try:
+                                if not Path(orig_path_str).exists():
                                     return None
+                            except Exception:
+                                return None
             return artifacts
         except Exception as exc:
             print(f"Could not read comparison artifact {comparison_path}: {exc}")

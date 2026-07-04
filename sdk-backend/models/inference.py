@@ -47,7 +47,14 @@ class BotDetector:
         self.model = joblib.load(model_path)
         self.scaler = joblib.load(scaler_path)
         self.metadata = self._load_metadata(metadata_path)
-        self.feature_columns = self._resolve_feature_columns()
+        
+        # Use model's expected features if available
+        if hasattr(self.model, 'feature_names_in_'):
+            self.feature_columns = list(self.model.feature_names_in_)
+            print(f"Using model's feature columns: {len(self.feature_columns)} features")
+        else:
+            self.feature_columns = self._resolve_feature_columns()
+        
         self.threshold = float(self.metadata.get("decision_threshold", DEFAULT_THRESHOLD))
         self.challenge_low = float(self.metadata.get("challenge_low", DEFAULT_CHALLENGE_LOW))
         self.challenge_high = float(self.metadata.get("challenge_high", self.threshold))

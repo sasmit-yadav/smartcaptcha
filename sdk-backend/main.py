@@ -8,9 +8,8 @@ import os
 from pathlib import Path
 
 # Add project root to path so imports work
-project_root = Path(__file__).parent.parent
+project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / "ml"))
 
 from fastapi import FastAPI, Request, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -66,6 +65,7 @@ async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(sec
     Falls back to demo keys if DEMO_MODE is enabled
     """
     api_key = credentials.credentials
+    print(f"[DEBUG] Received API key: {api_key[:20]}...")
     
     # Demo mode fallback
     if DEMO_MODE and api_key in DEMO_API_KEYS:
@@ -98,16 +98,47 @@ async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(sec
 async def health():
     return {"status": "ok", "service": "nextcaptcha-sdk-api"}
 
+@app.post("/api/telemetry")
+async def telemetry(request: Request):
+    """
+    Dummy telemetry endpoint for SDK compatibility
+    SDK backend doesn't store telemetry, but SDK may try to send it
+    """
+    print("[DEBUG] Telemetry endpoint called (not storing in SDK backend)")
+    return {"status": "ok", "message": "Telemetry received but not stored"}
+
 @app.post("/api/predict")
 async def predict(
     request: Request,
-    key_info: dict = Depends(verify_api_key)
+    authorization: str = Header(None),
+    x_api_key: str = Header(None, alias="X-API-Key")
 ):
     """
     Prediction API for SDK customers
     Takes behavioral features and returns bot detection decision
     """
-    # API key is verified by dependency injection
+    print(f"[DEBUG] Authorization header: {authorization}")
+    print(f"[DEBUG] X-API-Key header: {x_api_key}")
+    
+    # Extract API key from X-API-Key header (SDK sends it this way)
+    api_key = x_api_key
+    
+    # Fallback to Authorization header
+    if not api_key and authorization and authorization.startswith("Bearer "):
+        api_key = authorization[7:]
+    
+    print(f"[DEBUG] Extracted API key: {api_key[:20] if api_key else None}...")
+    
+    # Verify API key
+    if not api_key:
+        raise HTTPException(status_code=401, detail="Missing API key")
+    
+    key_info = api_key_manager.verify_api_key(api_key)
+    if not key_info:
+        print(f"[DEBUG] API key verification failed for: {api_key[:20]}...")
+        raise HTTPException(status_code=403, detail="Invalid or inactive API key")
+    
+    print(f"[DEBUG] API key verified successfully for project: {key_info['project_name']}")
     
     try:
         # Parse request body

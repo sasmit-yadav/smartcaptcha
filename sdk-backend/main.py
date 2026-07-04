@@ -152,8 +152,12 @@ async def predict(
         # Parse request body
         body = await request.json()
         
+        # Debug: Log received features
+        print(f"[DEBUG] Received body keys: {list(body.keys())[:20]}")
+        print(f"[DEBUG] V4 features present: avg_hover_duration={body.get('avg_hover_duration')}, avg_overshoot_ratio={body.get('avg_overshoot_ratio')}, mouse_curvature_std={body.get('mouse_curvature_std')}")
+        
         # Extract features and fingerprint data
-        features = {k: v for k, v in body.items() if k not in ['webdriver_flag', 'user_agent', 'has_touch', 'platform']}
+        features = {k: v for k, v in body.items() if k not in ['webdriver_flag', 'user_agent', 'has_touch', 'platform', 'sdkVersion']}
         fingerprint = {
             'webdriver_flag': body.get('webdriver_flag', False),
             'user_agent': body.get('user_agent', ''),

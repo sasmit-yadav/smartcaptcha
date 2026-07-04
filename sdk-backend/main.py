@@ -98,6 +98,14 @@ async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(sec
 async def health():
     return {"status": "ok", "service": "nextcaptcha-sdk-api"}
 
+@app.get("/")
+async def root():
+    return {
+        "service": "NextCaptcha API",
+        "status": "running",
+        "version": "4.0"
+    }
+
 @app.post("/api/telemetry")
 async def telemetry(request: Request):
     """

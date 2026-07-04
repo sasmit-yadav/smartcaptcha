@@ -16,7 +16,6 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from api.routes.telemetry import router as telemetry_router
 from api.routes.session import router as session_router
-from api.routes.prediction import router as prediction_router
 from core.database import init_db, get_session_stats
 from fastapi.exceptions import RequestValidationError
 from starlette.responses import JSONResponse
@@ -54,7 +53,6 @@ app.add_middleware(
 # Register routes
 app.include_router(telemetry_router)
 app.include_router(session_router)
-app.include_router(prediction_router)
 
 
 @app.on_event("startup")

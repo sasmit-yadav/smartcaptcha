@@ -72,7 +72,263 @@
   <script src="/autofill_detector.js"></script>
   <script type="module">
     import { initShell } from '/utils/shell.js';
+    import { getSessionId, getSessionMeta } from '/utils/session.js';
     initShell('Sign Up');
+
+    // Telemetry tracking
+    const telemetry = {
+      mouseMovements: [],
+      clicks: [],
+      scrolls: [],
+      hovers: [],
+      keyEvents: [],
+      startTime: Date.now(),
+      lastMousePos: { x: 0, y: 0 },
+      lastMouseTime: Date.now(),
+      totalDistance: 0
+    };
+
+    // Start session
+    async function startSession() {
+      try {
+        const sessionId = getSessionId();
+        const meta = getSessionMeta();
+        
+        // Only start session if not already started in this tab
+        if (!sessionStorage.getItem('sc_session_started')) {
+          await fetch(`${window.NEXTCAPTCHA_CONFIG.BACKEND_URL}/api/session/start`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ sessionId, meta })
+          });
+          sessionStorage.setItem('sc_session_started', 'true');
+          console.log('Session started:', sessionId);
+        } else {
+          console.log('Reusing existing session:', sessionId);
+        }
+      } catch (error) {
+        console.error('Failed to start session:', error);
+      }
+    }
+
+    // Start session on load
+    startSession();
+
+    // Track mouse movements with velocity, distance, angle
+    document.addEventListener('mousemove', (e) => {
+      const now = Date.now();
+      const dx = e.clientX - telemetry.lastMousePos.x;
+      const dy = e.clientY - telemetry.lastMousePos.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const dt = now - telemetry.lastMouseTime;
+      const vel = dt > 0 ? (dist / dt) * 1000 : 0; // px/sec
+      const ang = Math.atan2(dy, dx) * (180 / Math.PI);
+      
+      telemetry.totalDistance += dist;
+      
+      telemetry.mouseMovements.push({ 
+        x: e.clientX, 
+        y: e.clientY, 
+        time: now,
+        dist: dist,
+        ang: ang,
+        vel: vel,
+        totalDist: telemetry.totalDistance
+      });
+      
+      telemetry.lastMousePos = { x: e.clientX, y: e.clientY };
+      telemetry.lastMouseTime = now;
+    });
+
+    // Track clicks with target info and timing
+    let lastClickTime = Date.now();
+    document.addEventListener('click', (e) => {
+      const now = Date.now();
+      const target = e.target.tagName.toLowerCase();
+      const rect = e.target.getBoundingClientRect();
+      const interval = now - lastClickTime;
+      
+      telemetry.clicks.push({ 
+        x: e.clientX, 
+        y: e.clientY, 
+        time: now,
+        target: target,
+        tw: rect.width,
+        th: rect.height,
+        interval: interval
+      });
+      
+      lastClickTime = now;
+    });
+
+    // Track scrolls with velocity and direction
+    let lastScrollY = window.scrollY;
+    let lastScrollTime = Date.now();
+    document.addEventListener('scroll', () => {
+      const now = Date.now();
+      const scrollY = window.scrollY;
+      const dy = scrollY - lastScrollY;
+      const dt = now - lastScrollTime;
+      const vel = dt > 0 ? Math.abs(dy / dt) * 1000 : 0;
+      const rev = dy < 0;
+      
+      telemetry.scrolls.push({
+        y: scrollY,
+        time: now,
+        vel: vel,
+        rev: rev
+      });
+      
+      lastScrollY = scrollY;
+      lastScrollTime = now;
+    });
+
+    // Track hover duration
+    document.addEventListener('mouseover', (e) => {
+      const target = e.target;
+      const hoverStart = Date.now();
+      
+      const handleMouseOut = () => {
+        const hoverDuration = Date.now() - hoverStart;
+        if (hoverDuration > 100) { // Only track hovers > 100ms
+          telemetry.hovers.push({
+            target: target.tagName.toLowerCase(),
+            duration: hoverDuration,
+            time: Date.now()
+          });
+        }
+        target.removeEventListener('mouseout', handleMouseOut);
+      };
+      
+      target.addEventListener('mouseout', handleMouseOut);
+    });
+
+    // Track keyboard events
+    let lastKeyTime = Date.now();
+    document.addEventListener('keydown', (e) => {
+      const now = Date.now();
+      const iki = now - lastKeyTime;
+      
+      telemetry.keyEvents.push({
+        type: 'kd',
+        t: now,
+        k: e.key,
+        iki: iki
+      });
+      
+      lastKeyTime = now;
+    });
+
+    // Send telemetry function
+    async function sendTelemetry() {
+      const sessionId = getSessionId();
+      const meta = getSessionMeta();
+      
+      // Convert telemetry events to SDK format
+      const events = [];
+      
+      // Add click events
+      telemetry.clicks.forEach(c => {
+        events.push({
+          type: 'cl',
+          t: c.time,
+          x: c.x,
+          y: c.y,
+          target: c.target,
+          tw: Math.round(c.tw),
+          th: Math.round(c.th),
+          interval: c.interval
+        });
+      });
+      
+      // Add mouse movement events with full features
+      telemetry.mouseMovements.forEach(m => {
+        events.push({
+          type: 'mm',
+          t: m.time,
+          x: m.x,
+          y: m.y,
+          dist: m.dist,
+          ang: m.ang,
+          vel: m.vel,
+          totalDist: m.totalDist
+        });
+      });
+      
+      // Add scroll events with full features
+      telemetry.scrolls.forEach(s => {
+        events.push({
+          type: 'sc',
+          t: s.time,
+          y: s.y,
+          vel: s.vel,
+          rev: s.rev
+        });
+      });
+      
+      // Add hover events
+      telemetry.hovers.forEach(h => {
+        events.push({
+          type: 'fv', // focus/visibility event
+          t: h.time,
+          target: h.target,
+          hoverDuration: h.duration
+        });
+      });
+      
+      // Add keyboard events
+      telemetry.keyEvents.forEach(k => {
+        events.push({
+          type: k.type,
+          t: k.t,
+          k: k.k,
+          iki: k.iki
+        });
+      });
+      
+      if (events.length === 0) {
+        console.log('No events to send');
+        return;
+      }
+      
+      const payload = {
+        sessionId,
+        meta,
+        events,
+        timestamp: Date.now()
+      };
+      
+      try {
+        await fetch(`${window.NEXTCAPTCHA_CONFIG.BACKEND_URL}/api/telemetry`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload),
+          keepalive: true
+        });
+        console.log(`Telemetry sent: ${events.length} events`);
+        
+        // Clear sent events
+        telemetry.clicks = [];
+        telemetry.mouseMovements = [];
+        telemetry.scrolls = [];
+        telemetry.hovers = [];
+        telemetry.keyEvents = [];
+      } catch (error) {
+        console.error('Failed to send telemetry:', error);
+      }
+    }
+
+    // Send telemetry on page unload
+    window.addEventListener('beforeunload', () => {
+      sendTelemetry();
+    });
+
+    // Send telemetry every 30 seconds
+    setInterval(sendTelemetry, 30000);
 
     const form = document.getElementById('signup-form');
     const passEl = document.getElementById('password');

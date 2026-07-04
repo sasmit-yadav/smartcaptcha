@@ -295,7 +295,7 @@ def init_db():
         cursor.execute("ALTER TABLE session_features ADD COLUMN IF NOT EXISTS webdriver_flag BOOLEAN DEFAULT FALSE")
         
         conn.commit()
-        print("[DB] PostgreSQL initialized (full ML feature schema)")
+        print("[DB] PostgreSQL initialized (telemetry schema)")
     finally:
         release_connection(conn)
 

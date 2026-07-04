@@ -15,7 +15,7 @@ import {
   Globe
 } from 'lucide-react';
 
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://next-captcha-sdk.onrender.com';
 
 export default function Dashboard() {
   const [user, setUser] = useState(null);
@@ -404,7 +404,7 @@ export default function Dashboard() {
                 {project.allowed_domains && project.allowed_domains.length > 0 && (
                   <div className="flex flex-wrap gap-2">
                     {project.allowed_domains.slice(0, 3).map((domain, i) => (
-                      <span key={_i} className="text-xs px-2 py-1 bg-surface rounded-full flex items-center gap-1">
+                      <span key={i} className="text-xs px-2 py-1 bg-surface rounded-full flex items-center gap-1">
                         <Globe className="w-3 h-3" />
                         {domain}
                       </span>

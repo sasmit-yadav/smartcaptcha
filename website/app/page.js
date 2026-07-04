@@ -75,10 +75,16 @@ export default function LandingPage() {
             animate={{ opacity: 1, x: 0 }}
             className="flex items-center gap-4"
           >
-            <button className="text-textSecondary hover:text-text transition-colors text-sm font-medium">
+            <button 
+              onClick={() => window.location.href = '/dashboard'}
+              className="text-textSecondary hover:text-text transition-colors text-sm font-medium"
+            >
               Sign In
             </button>
-            <button className="bg-primary hover:bg-primaryDark text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors">
+            <button 
+              onClick={() => window.location.href = '/dashboard'}
+              className="bg-primary hover:bg-primaryDark text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors"
+            >
               Get Started
             </button>
           </motion.div>
@@ -130,7 +136,10 @@ export default function LandingPage() {
                 transition={{ delay: 0.4 }}
                 className="flex flex-wrap gap-4"
               >
-                <button className="bg-primary hover:bg-primaryDark text-white px-8 py-4 rounded-lg font-medium transition-all hover:scale-105 flex items-center gap-2">
+                <button 
+                  onClick={() => window.location.href = '/dashboard'}
+                  className="bg-primary hover:bg-primaryDark text-white px-8 py-4 rounded-lg font-medium transition-all hover:scale-105 flex items-center gap-2"
+                >
                   Get Started
                   <ArrowRight className="w-4 h-4" />
                 </button>
@@ -370,16 +379,16 @@ export default function LandingPage() {
 
             <div className="bg-surface rounded-xl p-6 font-mono text-sm overflow-x-auto">
               <pre className="text-textSecondary">
-                <code>{`npm install @smartcaptcha/sdk
+                <code>{`npm install nextcaptcha-sdk
 
-import SmartCaptcha from '@smartcaptcha/sdk';
+import NextCaptcha from 'nextcaptcha-sdk';
 
-SmartCaptcha.init({
+NextCaptcha.init({
   apiKey: 'your-api-key',
-  endpoint: 'https://api.smartcaptcha.ai'
+  endpoint: 'https://next-captcha-sdk.onrender.com'
 });
 
-SmartCaptcha.getDecision((result) => {
+NextCaptcha.getDecision((result) => {
   if (result.action === 'block') {
     // Block the action
   } else {
@@ -408,7 +417,10 @@ SmartCaptcha.getDecision((result) => {
               Join thousands of developers who trust SmartCaptcha for invisible, intelligent bot protection.
             </p>
             <div className="flex flex-wrap justify-center gap-4">
-              <button className="bg-primary hover:bg-primaryDark text-white px-8 py-4 rounded-lg font-medium transition-all hover:scale-105 flex items-center gap-2">
+              <button 
+                onClick={() => window.location.href = '/dashboard'}
+                className="bg-primary hover:bg-primaryDark text-white px-8 py-4 rounded-lg font-medium transition-all hover:scale-105 flex items-center gap-2"
+              >
                 Get Started Free
                 <ArrowRight className="w-4 h-4" />
               </button>

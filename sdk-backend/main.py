@@ -164,6 +164,9 @@ async def predict(
         # Get prediction from model
         result = detector.predict_session(features, fingerprint_data=fingerprint)
         
+        # Debug: Log the result being returned
+        print(f"[DEBUG] Prediction result: {result}")
+        
         return result
         
     except Exception as e:

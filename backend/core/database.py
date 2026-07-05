@@ -150,9 +150,12 @@ def init_db():
                 key_hash VARCHAR(256) UNIQUE NOT NULL,
                 key_prefix VARCHAR(12) NOT NULL,
                 created_at TIMESTAMP DEFAULT NOW(),
-                is_active BOOLEAN DEFAULT TRUE
+                is_active BOOLEAN DEFAULT TRUE,
+                last_used_at TIMESTAMP
             )
         """)
+        # Safe auto-migration for existing tables
+        cursor.execute("ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP")
         # Create sessions table (Phase 3.2 + extended fields + event_count + V2 telemetry)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS sessions (

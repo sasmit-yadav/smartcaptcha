@@ -37,6 +37,10 @@ api_key_manager = APIKeyManager()
 async def startup():
     global detector
     try:
+        # Run database initialization and auto-migrations
+        from core.database import init_db
+        init_db()
+        
         detector = BotDetector(use_risk_engine=True)
         port = os.getenv("PORT", "8000")
         print(f"[NextCaptcha API] Started on port {port}")

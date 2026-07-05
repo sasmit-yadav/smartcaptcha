@@ -311,20 +311,33 @@ class UserManager:
                 
                 result = cursor.fetchone()
                 if result:
-                    return dict(result)
+                    user_dict = dict(result)
+                else:
+                    # 2. User doesn't exist, create a new one with a dummy password hash
+                    dummy_hash = bcrypt.hashpw(secrets.token_hex(16).encode(), bcrypt.gensalt()).decode()
+                    
+                    cursor.execute("""
+                        INSERT INTO users (email, password_hash, full_name, is_admin)
+                        VALUES (%s, %s, %s, %s)
+                        RETURNING id, email, full_name, company_name, is_admin, created_at
+                    """, (email, dummy_hash, name, False))
+                    
+                    new_user = cursor.fetchone()
+                    conn.commit()
+                    user_dict = dict(new_user)
                 
-                # 2. User doesn't exist, create a new one with a dummy password hash
-                dummy_hash = bcrypt.hashpw(secrets.token_hex(16).encode(), bcrypt.gensalt()).decode()
+                # 3. Ensure they have a default project
+                cursor.execute("SELECT id FROM projects WHERE user_id = %s", (user_dict['id'],))
+                project_row = cursor.fetchone()
+                if not project_row:
+                    cursor.execute("""
+                        INSERT INTO projects (user_id, name, allowed_domains)
+                        VALUES (%s, %s, %s)
+                        RETURNING id
+                    """, (user_dict['id'], "Default Workspace", ["*"]))
+                    conn.commit()
                 
-                cursor.execute("""
-                    INSERT INTO users (email, password_hash, full_name, is_admin)
-                    VALUES (%s, %s, %s, %s)
-                    RETURNING id, email, full_name, company_name, is_admin, created_at
-                """, (email, dummy_hash, name, False))
-                
-                new_user = cursor.fetchone()
-                conn.commit()
-                return dict(new_user)
+                return user_dict
         finally:
             conn.close()
     

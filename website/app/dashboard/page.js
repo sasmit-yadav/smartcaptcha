@@ -45,7 +45,7 @@ export default function Dashboard() {
       if (buttonContainer) {
         window.google.accounts.id.renderButton(
           buttonContainer,
-          { theme: 'filled_dark', size: 'large', width: '380', shape: 'pill' }
+          { theme: 'filled_dark', size: 'large', width: 380, shape: 'pill' }
         );
       }
     }
@@ -126,8 +126,11 @@ export default function Dashboard() {
         headers: { 'user-id': userId }
       });
       const data = await response.json();
-      if (data.success) {
+      if (data.success && data.projects.length > 0) {
         setProjects(data.projects);
+        const defaultProj = data.projects[0];
+        setSelectedProject(defaultProj.id);
+        loadApiKeys(defaultProj.id);
       }
     } catch (err) {
       setError('Failed to load projects');
@@ -358,179 +361,147 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Projects Section */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold">Projects</h2>
-            <button
-              onClick={() => setShowCreateProject(true)}
-              className="flex items-center gap-2 bg-primary hover:bg-primaryDark text-white px-4 py-2 rounded-lg transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              New Project
-            </button>
-          </div>
-
-          {showCreateProject && (
-            <div className="mb-6 p-6 bg-surface2 border border-border rounded-lg">
-              <h3 className="font-semibold mb-4">Create New Project</h3>
-              <div className="space-y-4">
-                <input
-                  type="text"
-                  placeholder="Project Name"
-                  value={newProjectName}
-                  onChange={(e) => setNewProjectName(e.target.value)}
-                  className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:border-primary focus:outline-none"
-                />
-                <input
-                  type="text"
-                  placeholder="Allowed Domains (comma-separated)"
-                  value={newProjectDomains}
-                  onChange={(e) => setNewProjectDomains(e.target.value)}
-                  className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:border-primary focus:outline-none"
-                />
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleCreateProject}
-                    disabled={loading || !newProjectName}
-                    className="px-4 py-2 bg-primary hover:bg-primaryDark text-white rounded-lg transition-colors"
-                  >
-                    {loading ? 'Creating...' : 'Create Project'}
-                  </button>
-                  <button
-                    onClick={() => setShowCreateProject(false)}
-                    className="px-4 py-2 bg-surface hover:bg-surface2 text-text rounded-lg transition-colors"
-                  >
-                    Cancel
-                  </button>
-                </div>
+        {/* API Keys Console (Stripe-inspired) */}
+        {selectedProject && (
+          <div className="bg-surface border border-border rounded-2xl shadow-xl overflow-hidden">
+            {/* Header info */}
+            <div className="p-8 border-b border-border flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <h2 className="text-2xl font-bold mb-1">API Keys</h2>
+                <p className="text-textSecondary text-sm max-w-xl">
+                  Use these keys to authenticate your client SDK integrations and query the risk decision engine. Keep your secret keys safe and do not expose them in public repositories.
+                </p>
+              </div>
+              <div>
+                <button
+                  onClick={() => setShowCreateKey(true)}
+                  className="flex items-center gap-2 bg-primary hover:bg-primaryDark text-white px-5 py-2.5 rounded-lg font-semibold transition-colors text-sm shadow-md"
+                >
+                  <Plus className="w-4 h-4" />
+                  Create API Key
+                </button>
               </div>
             </div>
-          )}
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {projects.map((project) => (
-              <motion.div
-                key={project.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="p-6 bg-surface2 border border-border rounded-lg hover:border-primary/50 transition-colors cursor-pointer"
-                onClick={() => {
-                  setSelectedProject(project.id);
-                  loadApiKeys(project.id);
-                }}
-              >
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <Building2 className="w-5 h-5 text-primary" />
-                    <h3 className="font-semibold">{project.name}</h3>
-                  </div>
-                </div>
-                
-                {project.allowed_domains && project.allowed_domains.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {project.allowed_domains.slice(0, 3).map((domain, i) => (
-                      <span key={i} className="text-xs px-2 py-1 bg-surface rounded-full flex items-center gap-1">
-                        <Globe className="w-3 h-3" />
-                        {domain}
-                      </span>
-                    ))}
-                    {project.allowed_domains.length > 3 && (
-                      <span className="text-xs px-2 py-1 bg-surface rounded-full">
-                        +{project.allowed_domains.length - 3}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </motion.div>
-            ))}
-          </div>
-        </div>
-
-        {/* API Keys Section */}
-        {selectedProject && (
-          <div>
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-bold">API Keys</h2>
-              <button
-                onClick={() => setShowCreateKey(true)}
-                className="flex items-center gap-2 bg-primary hover:bg-primaryDark text-white px-4 py-2 rounded-lg transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                Generate Key
-              </button>
-            </div>
-
+            {/* Generate Key Form Panel */}
             {showCreateKey && (
-              <div className="mb-6 p-6 bg-surface2 border border-border rounded-lg">
-                <h3 className="font-semibold mb-4">Generate API Key</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm text-textSecondary mb-2">Key Type</label>
-                    <select
-                      value={newKeyType}
-                      onChange={(e) => setNewKeyType(e.target.value)}
-                      className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:border-primary focus:outline-none"
-                    >
-                      <option value="live">Live (Production)</option>
-                      <option value="test">Test (Development)</option>
-                    </select>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleCreateApiKey}
-                      disabled={loading}
-                      className="px-4 py-2 bg-primary hover:bg-primaryDark text-white rounded-lg transition-colors"
-                    >
-                      {loading ? 'Generating...' : 'Generate Key'}
-                    </button>
-                    <button
-                      onClick={() => setShowCreateKey(false)}
-                      className="px-4 py-2 bg-surface hover:bg-surface2 text-text rounded-lg transition-colors"
-                    >
-                      Cancel
-                    </button>
+              <div className="p-8 bg-surface2 border-b border-border">
+                <div className="max-w-md">
+                  <h3 className="font-bold text-lg mb-4">Generate API Key</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-textSecondary uppercase tracking-wider mb-2">Key Environment</label>
+                      <select
+                        value={newKeyType}
+                        onChange={(e) => setNewKeyType(e.target.value)}
+                        className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:border-primary focus:outline-none font-medium text-sm"
+                      >
+                        <option value="live">Live (Production Environment)</option>
+                        <option value="test">Test (Sandbox / Development)</option>
+                      </select>
+                    </div>
+                    <div className="flex gap-3 pt-2">
+                      <button
+                        onClick={handleCreateApiKey}
+                        disabled={loading}
+                        className="flex-1 bg-primary hover:bg-primaryDark text-white py-2.5 rounded-lg font-semibold transition-colors text-sm"
+                      >
+                        {loading ? 'Generating...' : 'Create Key'}
+                      </button>
+                      <button
+                        onClick={() => setShowCreateKey(false)}
+                        className="flex-1 bg-surface hover:bg-surface2 text-text py-2.5 rounded-lg font-semibold transition-colors border border-border text-sm"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
             )}
 
-            <div className="space-y-3">
-              {(apiKeys[selectedProject] || []).map((key) => (
-                <div key={key.id} className="p-4 bg-surface2 border border-border rounded-lg flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Key className="text-primary" />
-                    <div>
-                      <div className="font-mono text-sm">{key.key_prefix}...</div>
-                      <div className="text-xs text-textSecondary">
-                        Created: {new Date(key.created_at).toLocaleDateString()}
-                        {key.last_used_at && ` • Last used: ${new Date(key.last_used_at).toLocaleDateString()}`}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`px-2 py-1 rounded-full text-xs ${key.is_active ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                      {key.is_active ? 'Active' : 'Revoked'}
-                    </span>
-                    {key.is_active && (
-                      <button
-                        onClick={() => handleRevokeKey(key.id)}
-                        className="p-2 hover:bg-red-500/10 text-red-500 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-              
-              {(!apiKeys[selectedProject] || apiKeys[selectedProject].length === 0) && (
-                <div className="text-center py-8 text-textSecondary">
-                  <Key className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p>No API keys yet. Generate your first key to get started.</p>
-                </div>
-              )}
-            </div>
+            {/* Keys Table */}
+            {apiKeys[selectedProject] && apiKeys[selectedProject].length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-border text-xs uppercase tracking-wider text-textSecondary bg-surface2">
+                      <th className="py-4 px-6 font-semibold">Name</th>
+                      <th className="py-4 px-6 font-semibold">Key Token</th>
+                      <th className="py-4 px-6 font-semibold">Created</th>
+                      <th className="py-4 px-6 font-semibold">Last Used</th>
+                      <th className="py-4 px-6 font-semibold">Status</th>
+                      <th className="py-4 px-6 font-semibold text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(apiKeys[selectedProject] || []).map((key) => {
+                      const isLive = key.key_prefix.startsWith('sc_live_');
+                      return (
+                        <tr key={key.id} className="border-b border-border text-sm hover:bg-surface2/40 transition-colors">
+                          <td className="py-4 px-6 font-medium">
+                            <span className={`px-2 py-1 rounded-full text-xs font-semibold uppercase ${
+                              isLive ? 'bg-primary/10 text-primary border border-primary/20' : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
+                            }`}>
+                              {isLive ? 'Live' : 'Test'}
+                            </span>
+                          </td>
+                          <td className="py-4 px-6 font-mono text-xs text-textSecondary">
+                            <div className="flex items-center gap-2">
+                              <span>{key.key_prefix}...</span>
+                              <button 
+                                onClick={() => copyToClipboard(key.key_prefix)}
+                                className="text-textSecondary hover:text-text p-1 rounded hover:bg-surface transition-colors"
+                                title="Copy Prefix"
+                              >
+                                <Copy className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </td>
+                          <td className="py-4 px-6 text-textSecondary">
+                            {new Date(key.created_at).toLocaleDateString()}
+                          </td>
+                          <td className="py-4 px-6 text-textSecondary">
+                            {key.last_used_at ? new Date(key.last_used_at).toLocaleDateString() : 'Never'}
+                          </td>
+                          <td className="py-4 px-6">
+                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                              key.is_active ? 'bg-green-500/10 text-green-500 border border-green-500/20' : 'bg-red-500/10 text-red-500 border border-red-500/20'
+                            }`}>
+                              {key.is_active ? 'Active' : 'Revoked'}
+                            </span>
+                          </td>
+                          <td className="py-4 px-6 text-right">
+                            {key.is_active && (
+                              <button
+                                onClick={() => handleRevokeKey(key.id)}
+                                className="p-1.5 hover:bg-red-500/10 text-red-500 rounded-lg transition-colors inline-flex items-center gap-1.5 text-xs font-semibold"
+                              >
+                                <Trash2 className="w-4 h-4" /> Revoke
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-16 bg-surface2/30">
+                <Key className="w-12 h-12 mx-auto mb-4 text-textSecondary opacity-30" />
+                <h3 className="font-bold text-lg mb-1">No API keys yet</h3>
+                <p className="text-sm text-textSecondary mb-6 max-w-sm mx-auto">
+                  Get started by generating your first live or test API credentials.
+                </p>
+                <button
+                  onClick={() => setShowCreateKey(true)}
+                  className="bg-primary hover:bg-primaryDark text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                >
+                  Create API Key
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>

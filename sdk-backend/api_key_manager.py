@@ -327,11 +327,11 @@ class UserManager:
                     user_dict = dict(new_user)
                 
                 # 3. Ensure they have a default project
-                cursor.execute("SELECT id FROM projects WHERE user_id = %s", (user_dict['id'],))
+                cursor.execute("SELECT id FROM projects WHERE owner_id = %s", (user_dict['id'],))
                 project_row = cursor.fetchone()
                 if not project_row:
                     cursor.execute("""
-                        INSERT INTO projects (user_id, name, allowed_domains)
+                        INSERT INTO projects (owner_id, name, allowed_domains)
                         VALUES (%s, %s, %s)
                         RETURNING id
                     """, (user_dict['id'], "Default Workspace", ["*"]))

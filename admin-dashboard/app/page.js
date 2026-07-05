@@ -39,74 +39,29 @@ export default function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
-  // Load Google Identity Services SDK
-  const initializeGoogleSignIn = () => {
-    if (window.google && window.google.accounts) {
-      window.google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: handleGoogleLoginSuccess
-      });
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
 
-      const buttonContainer = document.getElementById('google-admin-btn');
-      if (buttonContainer) {
-        window.google.accounts.id.renderButton(
-          buttonContainer,
-          { theme: 'filled_dark', size: 'large', width: 380, shape: 'pill' }
-        );
-      }
-    }
-  };
-
-  const handleGoogleLoginSuccess = async (response) => {
+  const handleAdminLogin = async (e) => {
+    e.preventDefault();
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${API_BASE_URL}/admin/google-login`, {
+      const res = await fetch(`${API_BASE_URL}/admin/verify-credentials`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id_token: response.credential })
+        body: JSON.stringify({ username, password })
       });
       const data = await res.json();
-      if (data.success) {
-        if (data.user.is_admin) {
-          setUser(data.user);
-          localStorage.setItem('nextcaptcha_admin', JSON.stringify(data.user));
-          loadAllData(data.user.id);
-        } else {
-          setError('Access Denied. You do not have Super Admin privileges.');
-        }
+      if (res.status === 200 && data.success) {
+        setUser(data.user);
+        localStorage.setItem('nextcaptcha_admin', JSON.stringify(data.user));
+        loadAllData(data.user.id);
       } else {
-        setError(data.detail || 'Authentication failed');
+        setError(data.detail || 'Invalid admin username or password');
       }
     } catch (err) {
-      setError('Failed to authenticate with Google');
-    }
-    setLoading(false);
-  };
-
-  const handleMockLogin = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const res = await fetch(`${API_BASE_URL}/admin/google-login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id_token: 'mock_developer_token' })
-      });
-      const data = await res.json();
-      if (data.success) {
-        if (data.user.is_admin) {
-          setUser(data.user);
-          localStorage.setItem('nextcaptcha_admin', JSON.stringify(data.user));
-          loadAllData(data.user.id);
-        } else {
-          setError('Access Denied. Mock account is not configured as admin.');
-        }
-      } else {
-        setError(data.detail || 'Mock Authentication failed');
-      }
-    } catch (err) {
-      setError('Failed to authenticate with Mock User');
+      setError('Connection to admin API failed. Please try again.');
     }
     setLoading(false);
   };
@@ -126,20 +81,6 @@ export default function AdminDashboard() {
       const parsed = JSON.parse(savedAdmin);
       setUser(parsed);
       loadAllData(parsed.id);
-    } else {
-      if (!document.getElementById('google-jssdk-admin')) {
-        const script = document.createElement('script');
-        script.id = 'google-jssdk-admin';
-        script.src = 'https://accounts.google.com/gsi/client';
-        script.async = true;
-        script.defer = true;
-        script.onload = () => {
-          setTimeout(initializeGoogleSignIn, 200);
-        };
-        document.body.appendChild(script);
-      } else {
-        setTimeout(initializeGoogleSignIn, 200);
-      }
     }
   }, []);
 
@@ -240,24 +181,37 @@ export default function AdminDashboard() {
             <p className="text-slate-400 text-sm mt-1">SmartCaptcha Mitigation Control Center</p>
           </div>
 
-          <div className="space-y-6 flex flex-col items-center">
-            {/* Google Authentication */}
-            <div id="google-admin-btn" className="w-full flex justify-center min-h-[50px]"></div>
-
-            <div className="w-full flex items-center gap-3">
-              <div className="h-[1px] bg-white/10 flex-1"></div>
-              <span className="text-xs text-slate-500 uppercase tracking-widest font-semibold">Or</span>
-              <div className="h-[1px] bg-white/10 flex-1"></div>
+          <form onSubmit={handleAdminLogin} className="space-y-4 w-full">
+            <div>
+              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Username</label>
+              <input
+                type="text"
+                placeholder="Enter admin username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+                className="w-full px-4 py-3 bg-[#0F172A] border border-white/5 focus:border-blue-500 rounded-xl text-sm text-slate-200 focus:outline-none placeholder-slate-500"
+              />
             </div>
-
+            <div>
+              <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Password</label>
+              <input
+                type="password"
+                placeholder="Enter admin password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className="w-full px-4 py-3 bg-[#0F172A] border border-white/5 focus:border-blue-500 rounded-xl text-sm text-slate-200 focus:outline-none placeholder-slate-500"
+              />
+            </div>
             <button
-              onClick={handleMockLogin}
+              type="submit"
               disabled={loading}
-              className="w-full py-3 bg-[#111827] border border-white/5 text-slate-300 hover:text-white rounded-xl font-semibold transition-all hover:bg-slate-800 flex items-center justify-center gap-2 text-sm shadow-md"
+              className="w-full py-3 bg-blue-500 hover:bg-blue-600 disabled:bg-blue-500/50 text-white rounded-xl font-bold transition-all flex items-center justify-center gap-2 text-sm shadow-lg mt-6"
             >
-              {loading ? 'Authenticating...' : 'Enter as Super Admin (Bypass)'}
+              {loading ? 'Verifying...' : 'Log In'}
             </button>
-          </div>
+          </form>
 
           {error && (
             <div className="mt-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs flex items-center gap-2">

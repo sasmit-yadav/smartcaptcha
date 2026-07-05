@@ -6,11 +6,21 @@ from typing import Dict, List
 
 router = APIRouter(prefix="/admin", tags=["Super Admin"])
 
+from pydantic import BaseModel
+
+class AdminLoginRequest(BaseModel):
+    username: str
+    password: str
+
 def verify_super_admin(user_id: str):
     """Verify that the user is an active admin in the database"""
     if not user_id:
         raise HTTPException(status_code=401, detail="Missing user-id header")
     
+    # Handle local hardcoded admin fallback ID
+    if user_id == "00000000-0000-0000-0000-000000000000":
+        return
+        
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -22,6 +32,33 @@ def verify_super_admin(user_id: str):
                 raise HTTPException(status_code=403, detail="Access denied. Super Admin privileges required.")
     finally:
         conn.close()
+
+@router.post("/verify-credentials")
+async def verify_credentials(login_req: AdminLoginRequest):
+    """Verify hardcoded super admin credentials"""
+    if login_req.username == "sasmit_rao" and login_req.password == "sas@1234":
+        conn = psycopg2.connect(DATABASE_URL)
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                # Find an existing admin user in DB
+                cursor.execute("SELECT id::text, email, full_name, is_admin FROM users WHERE is_admin = TRUE LIMIT 1")
+                admin_user = cursor.fetchone()
+                if admin_user:
+                    return {"success": True, "user": dict(admin_user)}
+                else:
+                    return {
+                        "success": True, 
+                        "user": {
+                            "id": "00000000-0000-0000-0000-000000000000", 
+                            "email": "hulkb690@gmail.com", 
+                            "full_name": "Sasmit Rao",
+                            "is_admin": True
+                        }
+                    }
+        finally:
+            conn.close()
+    else:
+        raise HTTPException(status_code=401, detail="Invalid admin credentials")
 
 @router.get("/global-analytics")
 async def get_global_analytics(user_id: str = Header(..., alias="user-id")):

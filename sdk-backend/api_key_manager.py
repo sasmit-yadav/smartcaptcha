@@ -291,6 +291,42 @@ class UserManager:
                 
         finally:
             conn.close()
+            
+    @staticmethod
+    def get_or_create_google_user(email: str, name: str = None) -> Dict:
+        """
+        Get an existing user by email, or create a new user for Google OAuth login
+        """
+        import bcrypt
+        
+        conn = psycopg2.connect(DATABASE_URL)
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                # 1. Look up existing user
+                cursor.execute("""
+                    SELECT id, email, full_name, company_name, is_admin, is_active
+                    FROM users
+                    WHERE email = %s
+                """, (email,))
+                
+                result = cursor.fetchone()
+                if result:
+                    return dict(result)
+                
+                # 2. User doesn't exist, create a new one with a dummy password hash
+                dummy_hash = bcrypt.hashpw(secrets.token_hex(16).encode(), bcrypt.gensalt()).decode()
+                
+                cursor.execute("""
+                    INSERT INTO users (email, password_hash, full_name, is_admin)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id, email, full_name, company_name, is_admin, created_at
+                """, (email, dummy_hash, name, False))
+                
+                new_user = cursor.fetchone()
+                conn.commit()
+                return dict(new_user)
+        finally:
+            conn.close()
     
     @staticmethod
     def create_project(user_id: str, name: str, allowed_domains: List[str] = None) -> Dict:

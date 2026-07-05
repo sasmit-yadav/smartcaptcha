@@ -32,12 +32,91 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  // Check for logged in user
+  const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '282307677315-065loak66lukfcde3om7926hcao8tkf8.apps.googleusercontent.com';
+
+  const initializeGoogleSignIn = () => {
+    if (window.google && window.google.accounts) {
+      window.google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: handleGoogleLoginSuccess
+      });
+
+      const buttonContainer = document.getElementById('google-btn-container');
+      if (buttonContainer) {
+        window.google.accounts.id.renderButton(
+          buttonContainer,
+          { theme: 'filled_dark', size: 'large', width: '380', shape: 'pill' }
+        );
+      }
+    }
+  };
+
+  const handleGoogleLoginSuccess = async (response) => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/google-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id_token: response.credential })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setUser(data.user);
+        localStorage.setItem('nextcaptcha_user', JSON.stringify(data.user));
+        loadProjects(data.user.id);
+      } else {
+        setError(data.detail || 'Google Authentication failed');
+      }
+    } catch (err) {
+      setError('Failed to authenticate with Google');
+    }
+    setLoading(false);
+  };
+
+  const handleMockLogin = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/google-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id_token: 'mock_developer_token' })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setUser(data.user);
+        localStorage.setItem('nextcaptcha_user', JSON.stringify(data.user));
+        loadProjects(data.user.id);
+      } else {
+        setError(data.detail || 'Mock Authentication failed');
+      }
+    } catch (err) {
+      setError('Failed to authenticate with Mock User');
+    }
+    setLoading(false);
+  };
+
+  // Check for logged in user and load Google SDK
   useEffect(() => {
     const savedUser = localStorage.getItem('nextcaptcha_user');
     if (savedUser) {
       setUser(JSON.parse(savedUser));
       loadProjects(JSON.parse(savedUser).id);
+    } else {
+      if (!document.getElementById('google-jssdk')) {
+        const script = document.createElement('script');
+        script.id = 'google-jssdk';
+        script.src = 'https://accounts.google.com/gsi/client';
+        script.async = true;
+        script.defer = true;
+        script.onload = () => {
+          setTimeout(initializeGoogleSignIn, 200);
+        };
+        document.body.appendChild(script);
+      } else {
+        setTimeout(initializeGoogleSignIn, 200);
+      }
     }
   }, []);
 
@@ -169,75 +248,22 @@ export default function Dashboard() {
             <p className="text-textSecondary">Manage your API keys and projects</p>
           </div>
           
-          <div className="space-y-4">
-            <input
-              type="email"
-              placeholder="Email"
-              className="w-full px-4 py-3 rounded-lg bg-surface2 border border-border focus:border-primary focus:outline-none"
-              id="login-email"
-            />
-            <input
-              type="password"
-              placeholder="Password"
-              className="w-full px-4 py-3 rounded-lg bg-surface2 border border-border focus:border-primary focus:outline-none"
-              id="login-password"
-            />
-            <button
-              onClick={async () => {
-                const email = document.getElementById('login-email').value;
-                const password = document.getElementById('login-password').value;
-                setLoading(true);
-                try {
-                  const response = await fetch(`${API_BASE_URL}/admin/login`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, password })
-                  });
-                  const data = await response.json();
-                  if (data.success) {
-                    setUser(data.user);
-                    localStorage.setItem('nextcaptcha_user', JSON.stringify(data.user));
-                    loadProjects(data.user.id);
-                  } else {
-                    setError('Invalid credentials');
-                  }
-                } catch (err) {
-                  setError('Login failed');
-                }
-                setLoading(false);
-              }}
-              disabled={loading}
-              className="w-full bg-primary hover:bg-primaryDark text-white py-3 rounded-lg font-medium transition-colors"
-            >
-              {loading ? 'Signing in...' : 'Sign In'}
-            </button>
+          <div className="space-y-6 flex flex-col items-center">
+            {/* Google Identity Services button container */}
+            <div id="google-btn-container" className="w-full flex justify-center py-1 min-h-[50px]"></div>
             
+            <div className="w-full flex items-center gap-3">
+              <div className="h-[1px] bg-border flex-1"></div>
+              <span className="text-xs text-textSecondary font-medium uppercase tracking-wider">Or</span>
+              <div className="h-[1px] bg-border flex-1"></div>
+            </div>
+
             <button
-              onClick={async () => {
-                const email = document.getElementById('login-email').value;
-                const password = document.getElementById('login-password').value;
-                setLoading(true);
-                try {
-                  const response = await fetch(`${API_BASE_URL}/admin/register`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email, password })
-                  });
-                  const data = await response.json();
-                  if (data.success) {
-                    setSuccess('Account created! Please sign in.');
-                  } else {
-                    setError(data.detail || 'Registration failed');
-                  }
-                } catch (err) {
-                  setError('Registration failed');
-                }
-                setLoading(false);
-              }}
+              onClick={handleMockLogin}
               disabled={loading}
-              className="w-full bg-surface2 hover:bg-surface text-text py-3 rounded-lg font-medium transition-colors border border-border"
+              className="w-full bg-surface2 hover:bg-surface text-textSecondary hover:text-text py-3 rounded-lg font-medium transition-colors border border-border flex items-center justify-center gap-2"
             >
-              Create Account
+              {loading ? 'Authenticating...' : 'Continue as Mock Developer (Local Bypass)'}
             </button>
           </div>
           

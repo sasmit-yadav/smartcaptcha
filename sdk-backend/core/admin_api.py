@@ -68,7 +68,7 @@ async def get_global_analytics(user_id: str = Header(..., alias="user-id")):
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
             # 1. Total sessions, active users, active projects
-            cursor.execute("SELECT COUNT(*)::int as total_sessions FROM sessions")
+            cursor.execute("SELECT COUNT(s.id)::int as total_sessions FROM sessions s JOIN projects p ON s.project_id = p.id")
             total_sessions = cursor.fetchone()['total_sessions']
             
             cursor.execute("SELECT COUNT(*)::int as total_users FROM users")
@@ -80,10 +80,11 @@ async def get_global_analytics(user_id: str = Header(..., alias="user-id")):
             # 2. Mitigated (bot) vs Accepted (human) count
             cursor.execute("""
                 SELECT 
-                    COUNT(CASE WHEN label IN ('block', 'reject') THEN 1 END)::int as bot_count,
-                    COUNT(CASE WHEN label = 'accept' THEN 1 END)::int as human_count,
+                    COUNT(CASE WHEN label IN ('bot', 'block', 'reject') THEN 1 END)::int as bot_count,
+                    COUNT(CASE WHEN label IN ('human', 'allow', 'accept') THEN 1 END)::int as human_count,
                     COUNT(CASE WHEN label = 'challenge' THEN 1 END)::int as challenge_count
-                FROM sessions
+                FROM sessions s
+                JOIN projects p ON s.project_id = p.id
             """)
             counts = cursor.fetchone()
             
@@ -91,9 +92,10 @@ async def get_global_analytics(user_id: str = Header(..., alias="user-id")):
             cursor.execute("""
                 SELECT 
                     created_at::date::text as day,
-                    COUNT(CASE WHEN label IN ('block', 'reject') THEN 1 END)::int as bots,
-                    COUNT(CASE WHEN label = 'accept' THEN 1 END)::int as humans
-                FROM sessions
+                    COUNT(CASE WHEN label IN ('bot', 'block', 'reject') THEN 1 END)::int as bots,
+                    COUNT(CASE WHEN label IN ('human', 'allow', 'accept') THEN 1 END)::int as humans
+                FROM sessions s
+                JOIN projects p ON s.project_id = p.id
                 WHERE created_at >= NOW() - INTERVAL '30 days'
                 GROUP BY created_at::date
                 ORDER BY created_at::date ASC

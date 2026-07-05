@@ -715,7 +715,7 @@ export default function AdminDashboard() {
                             </td>
                             <td className="py-4 px-6">
                               <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase border ${
-                                sess.verdict === 'accept'
+                                (sess.verdict === 'accept' || sess.verdict === 'human' || sess.verdict === 'allow')
                                   ? 'bg-cfGreen/10 text-cfGreen border-cfGreen/20'
                                   : sess.verdict === 'challenge'
                                   ? 'bg-cfAmber/10 text-cfAmber border-cfAmber/20'

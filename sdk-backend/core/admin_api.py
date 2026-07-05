@@ -91,14 +91,14 @@ async def get_global_analytics(user_id: str = Header(..., alias="user-id")):
             # 3. Daily activity stats (last 30 days)
             cursor.execute("""
                 SELECT 
-                    created_at::date::text as day,
+                    s.created_at::date::text as day,
                     COUNT(CASE WHEN label IN ('bot', 'block', 'reject') THEN 1 END)::int as bots,
                     COUNT(CASE WHEN label IN ('human', 'allow', 'accept') THEN 1 END)::int as humans
                 FROM sessions s
                 JOIN projects p ON s.project_id = p.id
-                WHERE created_at >= NOW() - INTERVAL '30 days'
-                GROUP BY created_at::date
-                ORDER BY created_at::date ASC
+                WHERE s.created_at >= NOW() - INTERVAL '30 days'
+                GROUP BY s.created_at::date
+                ORDER BY s.created_at::date ASC
             """)
             daily_stats = cursor.fetchall()
             

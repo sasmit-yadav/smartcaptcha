@@ -182,6 +182,7 @@ def init_db():
                 created_at TIMESTAMP DEFAULT NOW()
             )
         """)
+        cursor.execute("ALTER TABLE sessions DROP CONSTRAINT IF EXISTS sessions_label_check")
         # Create events table with individual ML feature columns (matches old SQLite structure + V2 telemetry)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS events (

@@ -19,7 +19,7 @@ class BotDetector:
     """Bot detection model for inference with Risk Engine integration."""
 
     def __init__(self, model_path=None, scaler_path=None, metadata_path=None, use_risk_engine=True):
-        artifacts_dir = ROOT / "models" / "artifacts"
+        artifacts_dir = ROOT / "models" / "artifacts" / "v3"
         if model_path is None:
             selected = self._selected_artifacts_from_latest_comparison(artifacts_dir)
             if selected:

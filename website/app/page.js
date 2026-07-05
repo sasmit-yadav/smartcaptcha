@@ -62,7 +62,7 @@ export default function LandingPage() {
             {['Features', 'Developers', 'Documentation', 'API', 'Pricing'].map((item) => (
               <a
                 key={item}
-                href={`#${item.toLowerCase()}`}
+                href={item === 'Documentation' || item === 'API' ? '/docs' : `#${item.toLowerCase()}`}
                 className="text-textSecondary hover:text-text transition-colors text-sm font-medium"
               >
                 {item}
@@ -143,7 +143,10 @@ export default function LandingPage() {
                   Get Started
                   <ArrowRight className="w-4 h-4" />
                 </button>
-                <button className="bg-surface2 hover:bg-surface text-text px-8 py-4 rounded-lg font-medium transition-colors border border-border">
+                <button 
+                  onClick={() => window.location.href = '/docs'}
+                  className="bg-surface2 hover:bg-surface text-text px-8 py-4 rounded-lg font-medium transition-colors border border-border"
+                >
                   View Documentation
                 </button>
               </motion.div>
@@ -424,7 +427,10 @@ NextCaptcha.getDecision((result) => {
                 Get Started Free
                 <ArrowRight className="w-4 h-4" />
               </button>
-              <button className="bg-surface2 hover:bg-surface text-text px-8 py-4 rounded-lg font-medium transition-colors border border-border">
+              <button 
+                onClick={() => window.location.href = '/docs'}
+                className="bg-surface2 hover:bg-surface text-text px-8 py-4 rounded-lg font-medium transition-colors border border-border"
+              >
                 View Documentation
               </button>
             </div>

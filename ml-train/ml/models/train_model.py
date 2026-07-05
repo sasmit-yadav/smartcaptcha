@@ -134,7 +134,7 @@ def evaluate_model(model, X_val, y_val, model_name):
 
 def save_artifacts(model, scaler, metrics, feature_importance, model_name, threshold_info):
     """Save model, scaler, and metadata."""
-    artifacts_dir = ROOT / "ml" / "models" / "artifacts"
+    artifacts_dir = ROOT / "ml" / "models" / "artifacts" / "v3"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -605,7 +605,7 @@ def get_feature_importance(model, feature_names):
 
 
 def save_artifacts(model, scaler, metrics, feature_importance, model_name, threshold_info):
-    artifacts_dir = ROOT / "ml" / "models" / "artifacts"
+    artifacts_dir = ROOT / "ml" / "models" / "artifacts" / "v3"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 

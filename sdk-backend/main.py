@@ -11,7 +11,7 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from fastapi import FastAPI, Request, HTTPException, Header, Depends
+from fastapi import FastAPI, Request, HTTPException, Header, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
@@ -21,6 +21,9 @@ from typing import Optional, List
 import logging
 
 app = FastAPI(title="NextCaptcha API", version="1.0.0")
+
+from core.admin_api import router as admin_router
+app.include_router(admin_router)
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -122,6 +125,7 @@ async def telemetry(request: Request):
 @app.post("/api/predict")
 async def predict(
     request: Request,
+    background_tasks: BackgroundTasks,
     authorization: str = Header(None),
     x_api_key: str = Header(None, alias="X-API-Key")
 ):
@@ -145,7 +149,7 @@ async def predict(
     if not api_key:
         raise HTTPException(status_code=401, detail="Missing API key")
     
-    key_info = api_key_manager.verify_api_key(api_key)
+    key_info = APIKeyManager.verify_api_key(api_key)
     if not key_info:
         print(f"[DEBUG] API key verification failed for: {api_key[:20]}...")
         raise HTTPException(status_code=403, detail="Invalid or inactive API key")
@@ -162,7 +166,7 @@ async def predict(
         print(f"[DEBUG] V4 features present: avg_hover_duration={body.get('avg_hover_duration')}, avg_overshoot_ratio={body.get('avg_overshoot_ratio')}, mouse_curvature_std={body.get('mouse_curvature_std')}")
         
         # Extract features and fingerprint data
-        features = {k: v for k, v in body.items() if k not in ['webdriver_flag', 'user_agent', 'has_touch', 'platform', 'sdkVersion']}
+        features = {k: v for k, v in body.items() if k not in ['webdriver_flag', 'user_agent', 'has_touch', 'platform', 'sdkVersion', 'sessionId']}
         print(f"[DEBUG] Features extracted: {len(features)} keys")
         print(f"[DEBUG] Feature keys: {list(features.keys())}")
         fingerprint = {
@@ -174,6 +178,24 @@ async def predict(
         
         # Get prediction from model
         result = detector.predict_session(features, fingerprint_data=fingerprint)
+        
+        # Log session telemetry asynchronously (Step 1 of Task List)
+        import uuid
+        session_id = body.get('sessionId')
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            
+        from core.database import insert_session_prediction
+        background_tasks.add_task(
+            insert_session_prediction,
+            session_id=session_id,
+            project_id=key_info['project_id'],
+            device_type=body.get('deviceType', 'desktop' if not body.get('has_touch') else 'mobile'),
+            user_agent=fingerprint.get('user_agent', ''),
+            risk_score=float(result.get('risk_score', 0)),
+            webdriver_flag=fingerprint.get('webdriver_flag', False),
+            label=result.get('action', 'accept')
+        )
         
         # Debug: Log the result being returned
         print(f"[DEBUG] Prediction result: {result}")

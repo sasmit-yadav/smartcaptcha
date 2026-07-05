@@ -156,6 +156,14 @@ def init_db():
         """)
         # Safe auto-migration for existing tables
         cursor.execute("ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP")
+        
+        # Auto-upgrade admin accounts
+        cursor.execute("""
+            UPDATE users 
+            SET is_admin = TRUE 
+            WHERE email IN ('developer@nextcaptcha.com', 'hulkb690@gmail.com')
+        """)
+        
         # Create sessions table (Phase 3.2 + extended fields + event_count + V2 telemetry)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
@@ -331,6 +339,31 @@ def insert_session(session_data: dict, project_id: str = None, label: str = None
             start_timestamp,
             session_data.get('webdriverFlag', False),
             label,
+        ))
+        conn.commit()
+    finally:
+        release_connection(conn)
+
+
+def insert_session_prediction(session_id: str, project_id: str, device_type: str, user_agent: str, risk_score: float, webdriver_flag: bool, label: str):
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO sessions (
+                id, project_id, device_type, user_agent, started_at, webdriver_flag, label, risk_score
+            ) VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s)
+            ON CONFLICT(id) DO UPDATE SET
+                risk_score = EXCLUDED.risk_score,
+                label = EXCLUDED.label
+        """, (
+            session_id,
+            project_id,
+            device_type,
+            user_agent,
+            webdriver_flag,
+            label,
+            risk_score
         ))
         conn.commit()
     finally:

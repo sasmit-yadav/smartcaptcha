@@ -26,51 +26,59 @@ class APIKeyManager:
     KEY_PREFIXES = {
         'live': 'vf_live_',
         'test': 'vf_test_',
-        'admin': 'vf_admin_'
+        'admin': 'vf_admin_',
+        'site': 'vf_site_',
+        'secret': 'vf_secret_',
     }
-    
+
+    # Key types accepted as a "site key" (browser-facing, predict + telemetry).
+    # Legacy vf_live_/vf_test_ keys keep working here indefinitely.
+    SITE_KEY_TYPES = ('site', 'live', 'test', 'legacy', 'admin')
+
     @staticmethod
     def generate_api_key(key_type: str = 'live') -> tuple[str, str]:
         """
         Generate a secure API key and its hash
-        
+
         Args:
-            key_type: Type of key ('live', 'test', 'admin')
-            
+            key_type: Type of key ('live', 'test', 'admin', 'site', 'secret')
+
         Returns:
             Tuple of (api_key, key_hash)
         """
         prefix = APIKeyManager.KEY_PREFIXES.get(key_type, 'vf_live_')
         random_part = secrets.token_urlsafe(32)
         api_key = f"{prefix}{random_part}"
-        
+
         # SHA-256 hash for storage
         key_hash = hashlib.sha256(api_key.encode()).hexdigest()
-        
+
         return api_key, key_hash
-    
+
     @staticmethod
     def verify_api_key(api_key: str) -> Optional[Dict]:
         """
         Verify an API key and return associated project/customer info
-        
+
         Args:
             api_key: The API key to verify
-            
+
         Returns:
             Dict with project/customer info if valid, None otherwise
         """
         key_hash = hashlib.sha256(api_key.encode()).hexdigest()
         key_prefix = api_key[:10]  # First 10 chars for identification
-        
+
         conn = psycopg2.connect(DATABASE_URL)
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute("""
-                    SELECT 
+                    SELECT
                         ak.id as key_id,
                         ak.project_id,
                         ak.is_active,
+                        ak.key_type,
+                        ak.expires_at,
                         p.name as project_name,
                         p.owner_id,
                         p.allowed_domains,
@@ -80,46 +88,51 @@ class APIKeyManager:
                     FROM api_keys ak
                     JOIN projects p ON ak.project_id = p.id
                     JOIN users u ON p.owner_id = u.id
-                    WHERE ak.key_hash = %s 
+                    WHERE ak.key_hash = %s
                     AND ak.key_prefix = %s
                     AND ak.is_active = TRUE
+                    AND (ak.expires_at IS NULL OR ak.expires_at > NOW())
                     AND u.is_active = TRUE
                 """, (key_hash, key_prefix))
-                
+
                 result = cursor.fetchone()
-                return dict(result) if result else None
-                
+                if not result:
+                    return None
+                info = dict(result)
+                info['key_type'] = info.get('key_type') or 'legacy'
+                return info
+
         finally:
             conn.close()
-    
+
     @staticmethod
     def create_api_key(project_id: str, key_type: str = 'live', created_by: str = None) -> Dict:
         """
         Create a new API key for a project
-        
+
         Args:
             project_id: UUID of the project
-            key_type: Type of key ('live', 'test', 'admin')
+            key_type: Type of key ('live', 'test', 'admin', 'site', 'secret')
             created_by: User ID who created the key
-            
+
         Returns:
             Dict with the new API key info
         """
         api_key, key_hash = APIKeyManager.generate_api_key(key_type)
         key_prefix = api_key[:10]
-        
+
         conn = psycopg2.connect(DATABASE_URL)
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute("""
-                    INSERT INTO api_keys (project_id, key_hash, key_prefix)
-                    VALUES (%s, %s, %s)
+                    INSERT INTO api_keys (project_id, key_hash, key_prefix, key_type)
+                    VALUES (%s, %s, %s, %s)
                     RETURNING id, created_at, is_active
-                """, (project_id, key_hash, key_prefix))
-                
+                """, (project_id, key_hash, key_prefix, key_type))
+
                 result = cursor.fetchone()
                 conn.commit()
-                
+
                 return {
                     'id': str(result['id']),
                     'api_key': api_key,
@@ -129,21 +142,78 @@ class APIKeyManager:
                     'is_active': result['is_active'],
                     'key_type': key_type
                 }
-                
+
         except Exception as e:
             conn.rollback()
             raise Exception(f"Failed to create API key: {e}")
         finally:
             conn.close()
-    
+
+    @staticmethod
+    def create_key_pair(project_id: str) -> Dict:
+        """
+        Create a site key + secret key pair for a project (the recommended
+        way for new integrations — plaintexts are only ever returned once).
+        """
+        site_key = APIKeyManager.create_api_key(project_id, key_type='site')
+        secret_key = APIKeyManager.create_api_key(project_id, key_type='secret')
+        return {'site_key': site_key, 'secret_key': secret_key}
+
+    @staticmethod
+    def rotate_api_key(key_id: str, project_id: str, grace_hours: float = 0) -> Dict:
+        """
+        Rotate an API key: create a new key of the same type, and expire the
+        old one after `grace_hours` (0 = immediately).
+
+        Args:
+            key_id: UUID of the key being rotated
+            project_id: project the key must belong to (ownership check at call site)
+            grace_hours: hours before the old key stops working; 0 deactivates now
+
+        Returns:
+            Dict with the new key info and the old key's id/expiry
+        """
+        conn = psycopg2.connect(DATABASE_URL)
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    "SELECT id, project_id, key_type FROM api_keys WHERE id = %s AND project_id = %s",
+                    (key_id, project_id),
+                )
+                old_key = cursor.fetchone()
+                if not old_key:
+                    raise Exception("API key not found")
+
+                key_type = old_key['key_type'] or 'legacy'
+                new_key = APIKeyManager.create_api_key(project_id, key_type=key_type)
+
+                if grace_hours and grace_hours > 0:
+                    cursor.execute(
+                        "UPDATE api_keys SET expires_at = NOW() + (%s || ' hours')::interval WHERE id = %s",
+                        (grace_hours, key_id),
+                    )
+                else:
+                    cursor.execute(
+                        "UPDATE api_keys SET is_active = FALSE, expires_at = NOW() WHERE id = %s",
+                        (key_id,),
+                    )
+                conn.commit()
+
+                return {'new_key': new_key, 'old_key_id': key_id, 'grace_hours': grace_hours}
+        except Exception as e:
+            conn.rollback()
+            raise Exception(f"Failed to rotate API key: {e}")
+        finally:
+            conn.close()
+
     @staticmethod
     def list_api_keys(project_id: str) -> List[Dict]:
         """
         List all API keys for a project
-        
+
         Args:
             project_id: UUID of the project
-            
+
         Returns:
             List of API key info (without actual keys)
         """
@@ -151,20 +221,27 @@ class APIKeyManager:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute("""
-                    SELECT 
+                    SELECT
                         id,
                         key_prefix,
                         created_at,
                         is_active,
-                        last_used_at
+                        last_used_at,
+                        key_type,
+                        expires_at
                     FROM api_keys
                     WHERE project_id = %s
                     ORDER BY created_at DESC
                 """, (project_id,))
-                
+
                 results = cursor.fetchall()
-                return [dict(row) for row in results]
-                
+                rows = []
+                for row in results:
+                    d = dict(row)
+                    d['key_type'] = d.get('key_type') or 'legacy'
+                    rows.append(d)
+                return rows
+
         finally:
             conn.close()
     

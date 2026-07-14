@@ -12,7 +12,7 @@ const SOURCE_KEY = 'sc_session_source';
 let sessionId: string | null = null;
 let startTime: number | null = null;
 
-export function initSession(source: 'demo' | 'client' = 'demo'): void {
+export function initSession(source: 'demo' | 'client' | 'script-tag' = 'demo'): void {
   sessionId = sessionStorage.getItem(SESSION_KEY);
   if (!sessionId) {
     sessionId = crypto.randomUUID();
@@ -41,7 +41,7 @@ export function getSessionMeta(): SessionMeta {
   
   // Get source from sessionStorage or use default
   const sourceStr = sessionStorage.getItem(SOURCE_KEY);
-  const source = (sourceStr === 'client' || sourceStr === 'demo') ? sourceStr : 'demo';
+  const source = (sourceStr === 'client' || sourceStr === 'demo' || sourceStr === 'script-tag') ? sourceStr : 'demo';
   
   return {
     sessionId: getSessionId(),

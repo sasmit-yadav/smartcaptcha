@@ -7,6 +7,7 @@ Connection string via DATABASE_URL env var.
 import os
 import json
 import time
+import random
 import psycopg2
 from psycopg2 import pool
 from psycopg2.extras import execute_values
@@ -159,7 +160,14 @@ def init_db():
         """)
         # Safe auto-migration for existing tables
         cursor.execute("ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP")
-        
+
+        # Site/secret key split (siteverify token flow). Existing keys (created
+        # before this column existed) are backfilled to 'legacy' — they keep
+        # working on predict/telemetry but are never accepted as secret keys.
+        cursor.execute("ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS key_type VARCHAR(10)")
+        cursor.execute("UPDATE api_keys SET key_type = 'legacy' WHERE key_type IS NULL")
+        cursor.execute("ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP")
+
         # Auto-upgrade admin accounts
         cursor.execute("""
             UPDATE users 
@@ -305,10 +313,24 @@ def init_db():
         
         # Migrate sessions table for V2 telemetry
         cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS webdriver_flag BOOLEAN DEFAULT FALSE")
-        
+
         # Migrate session_features table for V2 telemetry
         cursor.execute("ALTER TABLE session_features ADD COLUMN IF NOT EXISTS webdriver_flag BOOLEAN DEFAULT FALSE")
-        
+
+        # Which API key (site key) a predict-logged session came from — lets
+        # siteverify's project-binding check trace a session back to its key.
+        cursor.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS api_key_id UUID REFERENCES api_keys(id)")
+
+        # Single-use verification tokens (siteverify). jti PK + ON CONFLICT DO
+        # NOTHING at consume time gives replay protection without a lookup
+        # query on the hot /api/predict path.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS consumed_tokens (
+                jti VARCHAR(64) PRIMARY KEY,
+                consumed_at TIMESTAMP DEFAULT NOW()
+            )
+        """)
+
         conn.commit()
         print("[DB] PostgreSQL initialized (telemetry schema)")
     finally:
@@ -349,17 +371,18 @@ def insert_session(session_data: dict, project_id: str = None, label: str = None
         release_connection(conn)
 
 
-def insert_session_prediction(session_id: str, project_id: str, device_type: str, user_agent: str, risk_score: float, webdriver_flag: bool, label: str):
+def insert_session_prediction(session_id: str, project_id: str, device_type: str, user_agent: str, risk_score: float, webdriver_flag: bool, label: str, api_key_id: str = None):
     conn = get_connection()
     try:
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO sessions (
-                id, project_id, device_type, user_agent, started_at, webdriver_flag, label, risk_score
-            ) VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s)
+                id, project_id, device_type, user_agent, started_at, webdriver_flag, label, risk_score, api_key_id
+            ) VALUES (%s, %s, %s, %s, NOW(), %s, %s, %s, %s)
             ON CONFLICT(id) DO UPDATE SET
                 risk_score = EXCLUDED.risk_score,
-                label = EXCLUDED.label
+                label = EXCLUDED.label,
+                api_key_id = EXCLUDED.api_key_id
         """, (
             session_id,
             project_id,
@@ -367,11 +390,50 @@ def insert_session_prediction(session_id: str, project_id: str, device_type: str
             user_agent,
             webdriver_flag,
             label,
-            risk_score
+            risk_score,
+            api_key_id,
         ))
         conn.commit()
     finally:
         release_connection(conn)
+
+
+def consume_token_jti(jti: str) -> bool:
+    """
+    Mark a verification-token jti as consumed. Returns True if this call
+    consumed it (first use), False if it was already consumed (replay).
+    """
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO consumed_tokens (jti) VALUES (%s) ON CONFLICT DO NOTHING",
+            (jti,),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        release_connection(conn)
+
+
+def prune_consumed_tokens(older_than_seconds: int = 900):
+    """Opportunistic cleanup of consumed_tokens rows past the token TTL window."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "DELETE FROM consumed_tokens WHERE consumed_at < NOW() - (%s || ' seconds')::interval",
+            (older_than_seconds,),
+        )
+        conn.commit()
+    finally:
+        release_connection(conn)
+
+
+def maybe_prune_consumed_tokens(probability: float = 0.01, older_than_seconds: int = 900):
+    """Call from a hot path to prune consumed_tokens without a scheduled job — fires probabilistically so most requests skip the extra query."""
+    if random.random() < probability:
+        prune_consumed_tokens(older_than_seconds)
 
 
 def update_session_end(session_id: str, duration_ms: int = None):

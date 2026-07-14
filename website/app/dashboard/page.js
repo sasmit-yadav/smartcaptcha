@@ -2,18 +2,21 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { 
-  Shield, 
-  Key, 
-  Plus, 
-  Copy, 
-  Trash2, 
+import {
+  Shield,
+  Key,
+  Plus,
+  Copy,
+  Trash2,
   CheckCircle2,
   XCircle,
   LogOut,
   Building2,
-  Globe
+  Globe,
+  BookOpen
 } from 'lucide-react';
+import CodeBlock from '../../components/docs/CodeBlock';
+import { scriptTagSnippet, siteverifyCurlSnippet } from '../../components/docs/docSnippets';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://next-captcha-sdk.onrender.com';
 
@@ -26,8 +29,7 @@ export default function Dashboard() {
   const [selectedProject, setSelectedProject] = useState(null);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectDomains, setNewProjectDomains] = useState('');
-  const [newKeyType, setNewKeyType] = useState('live');
-  const [generatedKey, setGeneratedKey] = useState(null);
+  const [generatedPair, setGeneratedPair] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -192,33 +194,30 @@ export default function Dashboard() {
     setLoading(false);
   };
 
-  const handleCreateApiKey = async () => {
+  const handleCreateKeyPair = async () => {
     setLoading(true);
     setError('');
     try {
       const token = localStorage.getItem('veriflow_token');
-      const response = await fetch(`${API_BASE_URL}/admin/api-keys`, {
+      const response = await fetch(`${API_BASE_URL}/admin/api-keys/pair`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify({
-          project_id: selectedProject,
-          key_type: newKeyType
-        })
+        body: JSON.stringify({ project_id: selectedProject })
       });
       const data = await response.json();
       if (data.success) {
-        setGeneratedKey(data.api_key);
-        setSuccess('API key generated successfully');
+        setGeneratedPair({ siteKey: data.site_key.api_key, secretKey: data.secret_key.api_key });
+        setSuccess('API key pair generated successfully');
         setShowCreateKey(false);
         loadApiKeys(selectedProject);
       } else {
-        setError(data.detail || 'Failed to generate API key');
+        setError(data.detail || 'Failed to generate API key pair');
       }
     } catch (err) {
-      setError('Failed to generate API key');
+      setError('Failed to generate API key pair');
     }
     setLoading(false);
   };
@@ -349,34 +348,55 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* Generated Key Modal */}
-        {generatedKey && (
+        {/* Generated Key Pair Modal */}
+        {generatedPair && (
           <div className="mb-6 p-6 bg-primary/10 border border-primary/20 rounded-lg">
             <h3 className="font-semibold mb-2 flex items-center gap-2">
               <Key className="w-5 h-5 text-primary" />
-              API Key Generated
+              API Key Pair Generated
             </h3>
             <p className="text-textSecondary text-sm mb-4">
-              Copy this key now. You won't be able to see it again.
+              Copy these now — the secret key won't be shown again.
             </p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={generatedKey.api_key}
-                readOnly
-                className="flex-1 px-4 py-2 bg-surface2 border border-border rounded-lg font-mono text-sm"
-              />
-              <button
-                onClick={() => copyToClipboard(generatedKey.api_key)}
-                className="px-4 py-2 bg-primary hover:bg-primaryDark text-white rounded-lg transition-colors flex items-center gap-2"
-              >
-                <Copy className="w-4 h-4" />
-                Copy
-              </button>
+
+            <div className="space-y-3 mb-6">
+              <div>
+                <label className="block text-xs font-semibold text-textSecondary uppercase tracking-wider mb-1">Site key (browser)</label>
+                <div className="flex gap-2">
+                  <input type="text" value={generatedPair.siteKey} readOnly className="flex-1 px-4 py-2 bg-surface2 border border-border rounded-lg font-mono text-sm" />
+                  <button onClick={() => copyToClipboard(generatedPair.siteKey)} className="px-4 py-2 bg-primary hover:bg-primaryDark text-white rounded-lg transition-colors flex items-center gap-2">
+                    <Copy className="w-4 h-4" /> Copy
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-textSecondary uppercase tracking-wider mb-1">Secret key (server only — never expose in browser code)</label>
+                <div className="flex gap-2">
+                  <input type="text" value={generatedPair.secretKey} readOnly className="flex-1 px-4 py-2 bg-surface2 border border-border rounded-lg font-mono text-sm" />
+                  <button onClick={() => copyToClipboard(generatedPair.secretKey)} className="px-4 py-2 bg-primary hover:bg-primaryDark text-white rounded-lg transition-colors flex items-center gap-2">
+                    <Copy className="w-4 h-4" /> Copy
+                  </button>
+                </div>
+              </div>
             </div>
+
+            <div className="space-y-4">
+              <div>
+                <p className="text-xs font-semibold text-textSecondary uppercase tracking-wider mb-2">Next steps: drop this in your HTML</p>
+                <CodeBlock language="html" code={scriptTagSnippet(generatedPair.siteKey)} />
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-textSecondary uppercase tracking-wider mb-2">Then verify server-side</p>
+                <CodeBlock language="bash" code={siteverifyCurlSnippet(generatedPair.secretKey)} />
+              </div>
+              <a href="/docs" className="inline-flex items-center gap-2 text-primary hover:underline text-sm font-medium">
+                <BookOpen className="w-4 h-4" /> Integration guide →
+              </a>
+            </div>
+
             <button
-              onClick={() => setGeneratedKey(null)}
-              className="mt-4 text-textSecondary hover:text-text text-sm"
+              onClick={() => setGeneratedPair(null)}
+              className="mt-6 text-textSecondary hover:text-text text-sm"
             >
               Close
             </button>
@@ -391,8 +411,11 @@ export default function Dashboard() {
               <div>
                 <h2 className="text-2xl font-bold mb-1">API Keys</h2>
                 <p className="text-textSecondary text-sm max-w-xl">
-                  Use these keys to authenticate your client SDK integrations and query the risk decision engine. Keep your secret keys safe and do not expose them in public repositories.
+                  Site keys authenticate your client SDK; secret keys verify decisions server-side. Keep secret keys out of public repositories and browser code.
                 </p>
+                <a href="/docs" className="inline-flex items-center gap-1.5 text-primary hover:underline text-sm font-medium mt-2">
+                  <BookOpen className="w-4 h-4" /> Integration guide →
+                </a>
               </div>
               <div>
                 <button
@@ -400,43 +423,33 @@ export default function Dashboard() {
                   className="flex items-center gap-2 bg-primary hover:bg-primaryDark text-white px-5 py-2.5 rounded-lg font-semibold transition-colors text-sm shadow-md"
                 >
                   <Plus className="w-4 h-4" />
-                  Create API Key
+                  Create API Key Pair
                 </button>
               </div>
             </div>
 
-            {/* Generate Key Form Panel */}
+            {/* Generate Key Pair Panel */}
             {showCreateKey && (
               <div className="p-8 bg-surface2 border-b border-border">
                 <div className="max-w-md">
-                  <h3 className="font-bold text-lg mb-4">Generate API Key</h3>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-textSecondary uppercase tracking-wider mb-2">Key Environment</label>
-                      <select
-                        value={newKeyType}
-                        onChange={(e) => setNewKeyType(e.target.value)}
-                        className="w-full px-4 py-2.5 bg-background border border-border rounded-lg focus:border-primary focus:outline-none font-medium text-sm"
-                      >
-                        <option value="live">Live (Production Environment)</option>
-                        <option value="test">Test (Sandbox / Development)</option>
-                      </select>
-                    </div>
-                    <div className="flex gap-3 pt-2">
-                      <button
-                        onClick={handleCreateApiKey}
-                        disabled={loading}
-                        className="flex-1 bg-primary hover:bg-primaryDark text-white py-2.5 rounded-lg font-semibold transition-colors text-sm"
-                      >
-                        {loading ? 'Generating...' : 'Create Key'}
-                      </button>
-                      <button
-                        onClick={() => setShowCreateKey(false)}
-                        className="flex-1 bg-surface hover:bg-surface2 text-text py-2.5 rounded-lg font-semibold transition-colors border border-border text-sm"
-                      >
-                        Cancel
-                      </button>
-                    </div>
+                  <h3 className="font-bold text-lg mb-2">Generate API Key Pair</h3>
+                  <p className="text-textSecondary text-sm mb-4">
+                    Creates a site key (for your browser SDK) and a secret key (for server-side verification), shown once.
+                  </p>
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={handleCreateKeyPair}
+                      disabled={loading}
+                      className="flex-1 bg-primary hover:bg-primaryDark text-white py-2.5 rounded-lg font-semibold transition-colors text-sm"
+                    >
+                      {loading ? 'Generating...' : 'Create Key Pair'}
+                    </button>
+                    <button
+                      onClick={() => setShowCreateKey(false)}
+                      className="flex-1 bg-surface hover:bg-surface2 text-text py-2.5 rounded-lg font-semibold transition-colors border border-border text-sm"
+                    >
+                      Cancel
+                    </button>
                   </div>
                 </div>
               </div>
@@ -458,14 +471,19 @@ export default function Dashboard() {
                   </thead>
                   <tbody>
                     {(apiKeys[selectedProject] || []).map((key) => {
-                      const isLive = key.key_prefix.startsWith('vf_live_') || key.key_prefix.startsWith('sc_live_');
+                      const keyType = key.key_type || 'legacy';
+                      const badgeClasses = {
+                        site: 'bg-primary/10 text-primary border-primary/20',
+                        secret: 'bg-rose-500/10 text-rose-500 border-rose-500/20',
+                        legacy: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+                        live: 'bg-primary/10 text-primary border-primary/20',
+                        test: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+                      }[keyType] || 'bg-amber-500/10 text-amber-500 border-amber-500/20';
                       return (
                         <tr key={key.id} className="border-b border-border text-sm hover:bg-surface2/40 transition-colors">
                           <td className="py-4 px-6 font-medium">
-                            <span className={`px-2 py-1 rounded-full text-xs font-semibold uppercase ${
-                              isLive ? 'bg-primary/10 text-primary border border-primary/20' : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
-                            }`}>
-                              {isLive ? 'Live' : 'Test'}
+                            <span className={`px-2 py-1 rounded-full text-xs font-semibold uppercase border ${badgeClasses}`}>
+                              {keyType}
                             </span>
                           </td>
                           <td className="py-4 px-6 font-mono text-xs text-textSecondary">

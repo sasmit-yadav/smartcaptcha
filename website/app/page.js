@@ -382,21 +382,17 @@ export default function LandingPage() {
 
             <div className="bg-surface rounded-xl p-6 font-mono text-sm overflow-x-auto">
               <pre className="text-textSecondary">
-                <code>{`npm install nextcaptcha-sdk
+                <code>{`npm install veriflow-sdk
 
-import NextCaptcha from 'nextcaptcha-sdk';
+import VeriFlow from 'veriflow-sdk';
 
-NextCaptcha.init({
-  apiKey: 'your-api-key',
+VeriFlow.init({
+  apiKey: 'vf_site_your_site_key',
   endpoint: 'https://next-captcha-sdk.onrender.com'
 });
 
-NextCaptcha.getDecision((result) => {
-  if (result.action === 'block') {
-    // Block the action
-  } else {
-    // Allow the action
-  }
+VeriFlow.getToken((result) => {
+  // send result.token to your server for /api/siteverify
 });`}</code>
               </pre>
             </div>

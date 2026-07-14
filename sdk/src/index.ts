@@ -8,7 +8,7 @@
  *     debug: true
  *   })
  *
- * Version: 0.1.0
+ * Version: 0.3.0
  */
 
 import { initSession, getSessionId, getSessionMeta } from './core/session.js';
@@ -21,6 +21,7 @@ import { startScrollTracking, stopScrollTracking } from './collectors/scroll.js'
 import { startFocusTracking, stopFocusTracking } from './collectors/focus.js';
 import { startTouchTracking, stopTouchTracking } from './collectors/touch.js';
 import { computeFeatures } from './core/features.js';
+import { runAutoInit } from './autoinit.js';
 
 import type {
   VeriFlowConfig,
@@ -28,7 +29,9 @@ import type {
   DebugSnapshot,
   SelfTestResult,
   DecisionCallback,
-  SelfTestCallback
+  SelfTestCallback,
+  TokenResult,
+  TokenCallback
 } from './types.js';
 
 /**
@@ -39,12 +42,22 @@ function validateConfig(config: VeriFlowConfig): { valid: boolean; error?: strin
     return { valid: false, error: 'apiKey is required and must be a string' };
   }
 
+  // Secret keys (vf_secret_...) are for server-side /api/siteverify calls
+  // only. A secret key in browser JS/HTML would be visible to every visitor
+  // — hard-reject rather than silently accepting a dangerous misconfiguration.
+  if (config.apiKey.startsWith('vf_secret_')) {
+    return {
+      valid: false,
+      error: 'Secret keys must never be used in the browser. Use your site key (vf_site_...) here, and your secret key only on your server for /api/siteverify.'
+    };
+  }
+
   // Validate API key format (production keys start with vf_ or sc_ prefixes)
-  const validPrefixes = ['vf_live_', 'vf_test_', 'vf_admin_', 'sc_live_', 'sc_test_', 'sc_admin_'];
+  const validPrefixes = ['vf_site_', 'vf_live_', 'vf_test_', 'vf_admin_', 'sc_live_', 'sc_test_', 'sc_admin_'];
   const hasValidPrefix = validPrefixes.some(prefix => config.apiKey.startsWith(prefix));
-  
+
   if (!hasValidPrefix && config.apiKey !== 'demo-key') {
-    return { valid: false, error: 'Invalid API key format. Production keys must start with vf_ or sc_ prefixes' };
+    return { valid: false, error: 'Invalid API key format. Production keys must start with vf_site_ (or legacy vf_live_/vf_test_) prefixes' };
   }
 
   if (config.endpoint && typeof config.endpoint !== 'string') {
@@ -61,7 +74,7 @@ function validateConfig(config: VeriFlowConfig): { valid: boolean; error?: strin
 // Check for browser environment (SSR safety)
 const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined';
 
-const SDK_VERSION = '0.2.0';
+const SDK_VERSION = '0.3.0';
 const DEFAULT_ENDPOINT = 'https://next-captcha-sdk.onrender.com';
 
 /** Run a collector lifecycle call without letting an internal bug crash the host page (S2.1). */
@@ -82,9 +95,13 @@ interface VeriFlowAPI {
   getSessionId(): string;
   getSessionMeta(): import('./types.js').SessionMeta;
   getDecision(callback: DecisionCallback): void;
+  getToken(callback: TokenCallback): void;
+  getToken(): Promise<TokenResult>;
   getDebugSnapshot(): DebugSnapshot;
   selfTest(callback: SelfTestCallback): void;
 }
+
+const SSR_DECISION: DecisionResult = { error: 'SSR environment', action: 'block', bot_probability: 1, risk_score: 100, confidence: 0, risk_engine_enabled: false, behavior_score: 0, fingerprint_score: 0, overall_risk: 100 };
 
 // No-op version for SSR/Node environments
 const VeriFlowSSR: VeriFlowAPI = {
@@ -92,7 +109,12 @@ const VeriFlowSSR: VeriFlowAPI = {
   destroy: () => {},
   getSessionId: () => '',
   getSessionMeta: () => ({ sessionId: '', startTime: 0, userAgent: '', platform: '', webdriverFlag: false, hasTouch: false }),
-  getDecision: (callback: DecisionCallback) => callback({ error: 'SSR environment', action: 'block', bot_probability: 1, risk_score: 100, confidence: 0, risk_engine_enabled: false, behavior_score: 0, fingerprint_score: 0, overall_risk: 100 }),
+  getDecision: (callback: DecisionCallback) => callback(SSR_DECISION),
+  getToken: ((callback?: TokenCallback) => {
+    const result: TokenResult = { token: null, decision: SSR_DECISION, error: 'SSR environment' };
+    if (callback) { callback(result); return; }
+    return Promise.resolve(result);
+  }) as { (callback: TokenCallback): void; (): Promise<TokenResult> },
   getDebugSnapshot: () => ({ version: SDK_VERSION, initialized: false, debug: false, session: { id: '', meta: { sessionId: '', startTime: 0, userAgent: '', platform: '', webdriverFlag: false, hasTouch: false } }, buffer: { eventCount: 0, recentEvents: [] }, collectors: { mouse: false, click: false, keyboard: false, scroll: false, focus: false, touch: false } }),
   selfTest: (callback: SelfTestCallback) => callback({ version: SDK_VERSION, tests: [{ name: 'SSR Environment', status: 'warn', error: 'SDK disabled in SSR' }], passed: 0, failed: 0, overall: 'unknown' })
 };
@@ -298,6 +320,30 @@ const VeriFlow: VeriFlowAPI = {
   },
 
   /**
+   * Get a verification token for the current session (wraps getDecision).
+   * Pass a callback for the classic style, or call with no arguments to get
+   * a Promise — both forms resolve to `{ token, decision, error? }`, where
+   * `token` is the value to hand to your server for /api/siteverify.
+   */
+  getToken: ((callback?: TokenCallback) => {
+    const run = (cb: TokenCallback) => {
+      VeriFlow.getDecision((decision: DecisionResult) => {
+        cb({
+          token: decision.verification_token || null,
+          decision,
+          error: decision.error,
+        });
+      });
+    };
+
+    if (callback) {
+      run(callback);
+      return;
+    }
+    return new Promise<TokenResult>((resolve) => run(resolve));
+  }) as { (callback: TokenCallback): void; (): Promise<TokenResult> },
+
+  /**
    * Get debug snapshot for troubleshooting
    * Returns current SDK state including buffer, session meta, and recent events
    */
@@ -356,8 +402,10 @@ const VeriFlow: VeriFlowAPI = {
       results.failed++;
     }
 
-    // Test 2: API key check
-    const apiKey = (window as any).VERIFLOW_CONFIG?.API_KEY;
+    // Test 2: API key check — prefer the actual init() config over the
+    // legacy window.VERIFLOW_CONFIG global, which script-tag/npm callers
+    // never set.
+    const apiKey = initConfig?.apiKey || (window as any).VERIFLOW_CONFIG?.API_KEY;
     if (apiKey) {
       results.tests.push({ name: 'API Key Valid', status: 'pass' });
       results.passed++;
@@ -406,4 +454,5 @@ export default VeriFlow;
 // Manual global exposure for browser usage (outside of esbuild's control)
 if (typeof window !== 'undefined') {
   (window as any).VeriFlow = VeriFlow;
+  runAutoInit(VeriFlow);
 }

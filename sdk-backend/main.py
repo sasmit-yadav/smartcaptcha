@@ -34,6 +34,7 @@ from api.routes.predict import router as predict_router, get_detector
 from api.routes.telemetry import router as telemetry_router
 from api.routes.session import router as session_router
 from api.routes.admin import router as admin_router
+from api.routes.siteverify import router as siteverify_router
 from core.admin_api import router as super_admin_router
 
 app = FastAPI(title="VeriFlow API", version="1.0.0")
@@ -55,6 +56,7 @@ app.include_router(predict_router)
 app.include_router(telemetry_router)
 app.include_router(session_router)
 app.include_router(admin_router)
+app.include_router(siteverify_router)
 app.include_router(super_admin_router)
 
 

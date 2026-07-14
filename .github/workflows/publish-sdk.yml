@@ -39,27 +39,14 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       
       - name: Create GitHub Release
-        uses: actions/create-release@v1
+        uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
           draft: false
           prerelease: false
-      
-      # CDN upload step (requires CDN credentials in secrets)
-      - name: Upload to CDN
-        if: secrets.CDN_ENDPOINT != ''
-        env:
-          CDN_ENDPOINT: ${{ secrets.CDN_ENDPOINT }}
-          CDN_ACCESS_KEY: ${{ secrets.CDN_ACCESS_KEY }}
-          CDN_SECRET_KEY: ${{ secrets.CDN_SECRET_KEY }}
-        run: |
-          echo "Uploading to CDN..."
-          # Upload dist files to CDN/object storage
-          # This is a placeholder - implement based on your CDN provider
-          # Example for AWS S3:
-          # aws s3 sync dist/ s3://cdn.smartcaptcha.ai/v0.1.0/
-          # aws s3 cp dist/smartcaptcha.min.js s3://cdn.smartcaptcha.ai/latest/smartcaptcha.min.js
-          echo "CDN upload complete"
+
+      # No CDN upload step: jsDelivr (https://cdn.jsdelivr.net/npm/veriflow-sdk)
+      # mirrors npm automatically — nothing to push separately.

@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-07-14
+
+### Added
+- Script-tag auto-init: `<script src="..." data-site-key="vf_site_...">` now
+  initializes the SDK with zero JS — no `<script data-*>` support existed
+  before. Also reads `data-endpoint`, `data-debug`, `data-token-field`.
+- `<form data-veriflow>` integration: intercepts submit, fetches a token, and
+  injects a hidden `veriflow-token` input (name configurable via
+  `data-token-field`) before letting the form submit natively. Fails open on
+  token error.
+- `getToken()` — callback and Promise overloads, wraps `getDecision()` and
+  returns `{ token, decision, error? }` for the new server-side
+  `/api/siteverify` flow (see `sdk-backend` — a bot can ignore/fake the raw
+  browser decision, so the server must redeem a signed token to trust it).
+- `DecisionResult.verification_token` — present when the backend issues one.
+
+### Changed
+- `validateConfig` now accepts `vf_site_` keys and **hard-rejects**
+  `vf_secret_` keys with a loud error — secret keys must never run in the
+  browser (they're valid only at `/api/siteverify`, server-side).
+- `selfTest()`'s API-key check now prefers the actual `init()` config over
+  the legacy `window.VERIFLOW_CONFIG` global, which script-tag/npm callers
+  never set.
+- `SDK_VERSION` synced to `0.3.0`; corrected the stale `Version: 0.1.0`
+  header comment in `index.ts`.
+
 ## [0.2.0] - 2026-07-14
 
 ### Fixed

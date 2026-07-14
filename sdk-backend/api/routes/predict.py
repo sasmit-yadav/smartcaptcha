@@ -9,10 +9,12 @@ import uuid
 import logging
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Request, HTTPException, Header, BackgroundTasks
+from fastapi import APIRouter, Request, HTTPException, Header, BackgroundTasks, Depends
 
 from models.inference import BotDetector
 from api_key_manager import APIKeyManager
+from core.verification_token import issue_token
+from core.rate_limit import rate_limit, enforce
 
 router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
@@ -66,7 +68,7 @@ def verify_key_or_demo(api_key: str):
     return APIKeyManager.verify_api_key(api_key)
 
 
-@router.post("/api/predict")
+@router.post("/api/predict", dependencies=[Depends(rate_limit("predict_ip", limit=300, window_seconds=60))])
 async def predict(
     request: Request,
     background_tasks: BackgroundTasks,
@@ -79,7 +81,7 @@ async def predict(
     Takes behavioral features and returns bot detection decision
     """
     # Never log full credential headers — key prefix only
-    print(f"[DEBUG] Auth headers present: authorization={bool(authorization)}, x_api_key={bool(x_api_key)}")
+    logger.debug("Auth headers present: authorization=%s, x_api_key=%s", bool(authorization), bool(x_api_key))
 
     # Extract API key from X-API-Key header (SDK sends it this way)
     api_key = x_api_key
@@ -88,7 +90,7 @@ async def predict(
     if not api_key and authorization and authorization.startswith("Bearer "):
         api_key = authorization[7:]
 
-    print(f"[DEBUG] Extracted API key: {api_key[:12] if api_key else None}...")
+    logger.debug("Extracted API key: %s...", api_key[:12] if api_key else None)
 
     # Verify API key
     if not api_key:
@@ -96,28 +98,30 @@ async def predict(
 
     key_info = verify_key_or_demo(api_key)
     if not key_info:
-        print(f"[DEBUG] API key verification failed for: {api_key[:12]}...")
+        logger.debug("API key verification failed for: %s...", api_key[:12])
         raise HTTPException(status_code=403, detail="Invalid or inactive API key")
 
-    print(f"[DEBUG] API key verified successfully for project: {key_info['project_name']}")
+    # Secret keys are for server-side /api/siteverify calls only — never
+    # accepted here, where a leaked-in-the-browser key would be catastrophic.
+    if key_info.get('key_type') == 'secret':
+        raise HTTPException(status_code=403, detail="Secret keys cannot be used with /api/predict — use your site key")
+
+    enforce("predict_key", key_info['key_id'], limit=120, window_seconds=60)
+
+    logger.debug("API key verified successfully for project: %s", key_info['project_name'])
 
     if not _check_allowed_domain(origin, key_info.get('allowed_domains')):
-        print(f"[DEBUG] Origin '{origin}' not in allowed_domains for project {key_info['project_name']}")
+        logger.debug("Origin '%s' not in allowed_domains for project %s", origin, key_info['project_name'])
         raise HTTPException(status_code=403, detail="Origin not allowed for this API key")
 
     try:
         # Parse request body
         body = await request.json()
 
-        # Debug: Log received features
-        print(f"[DEBUG] Received body keys: {list(body.keys())}")
-        print(f"[DEBUG] Total keys received: {len(body.keys())}")
-        print(f"[DEBUG] V4 features present: avg_hover_duration={body.get('avg_hover_duration')}, avg_overshoot_ratio={body.get('avg_overshoot_ratio')}, mouse_curvature_std={body.get('mouse_curvature_std')}")
+        logger.debug("Received body keys: %s", list(body.keys()))
 
         # Extract features and fingerprint data
         features = {k: v for k, v in body.items() if k not in ['webdriver_flag', 'user_agent', 'has_touch', 'platform', 'sdkVersion', 'sessionId']}
-        print(f"[DEBUG] Features extracted: {len(features)} keys")
-        print(f"[DEBUG] Feature keys: {list(features.keys())}")
         fingerprint = {
             'webdriver_flag': body.get('webdriver_flag', False),
             'user_agent': body.get('user_agent', ''),
@@ -142,11 +146,25 @@ async def predict(
             user_agent=fingerprint.get('user_agent', ''),
             risk_score=float(result.get('risk_score', 0)),
             webdriver_flag=fingerprint.get('webdriver_flag', False),
-            label=result.get('action', 'accept')
+            label=result.get('action', 'accept'),
+            api_key_id=key_info['key_id'],
+        )
+        background_tasks.add_task(APIKeyManager.update_last_used, key_info['key_id'])
+
+        # Issue a signed, single-use verify token so the customer's *server*
+        # can confirm this decision happened via /api/siteverify — the
+        # browser response alone is not a trust boundary (a bot can ignore
+        # or fake it).
+        result['verification_token'] = issue_token(
+            project_id=key_info['project_id'],
+            session_id=session_id,
+            risk_score=float(result.get('risk_score', 0)),
+            action=result.get('action', 'accept'),
+            hostname=(urlparse(origin).hostname if origin else None),
+            site_key_id=key_info['key_id'],
         )
 
-        # Debug: Log the result being returned
-        print(f"[DEBUG] Prediction result: {result}")
+        logger.debug("Prediction result: %s", result)
 
         return result
 

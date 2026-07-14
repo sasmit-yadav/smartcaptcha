@@ -6,7 +6,7 @@ export interface VeriFlowConfig {
   apiKey: string;
   endpoint?: string;
   debug?: boolean;
-  source?: 'demo' | 'client'; // Source of the session (demo site or customer website)
+  source?: 'demo' | 'client' | 'script-tag'; // Source of the session (demo site, customer website, or script-tag auto-init)
   disableTelemetry?: boolean; // Disable telemetry sending (for lightweight backends)
 }
 
@@ -17,7 +17,7 @@ export interface SessionMeta {
   platform?: string;
   webdriverFlag?: boolean;
   hasTouch?: boolean;
-  source?: 'demo' | 'client'; // Source of the session
+  source?: 'demo' | 'client' | 'script-tag'; // Source of the session
 }
 
 export interface TelemetryEvent {
@@ -112,7 +112,17 @@ export interface DecisionResult {
   fingerprint_score: number;
   overall_risk: number;
   error?: string;
+  /** Short-lived, single-use token for server-side /api/siteverify redemption. */
+  verification_token?: string;
 }
+
+export interface TokenResult {
+  token: string | null;
+  decision: DecisionResult;
+  error?: string;
+}
+
+export type TokenCallback = (result: TokenResult) => void;
 
 export interface DebugSnapshot {
   version: string;

@@ -67,7 +67,7 @@ export default function AdminDashboard() {
       const data = await res.json();
       if (res.status === 200 && data.success) {
         setUser(data.user);
-        localStorage.setItem('nextcaptcha_admin', JSON.stringify(data.user));
+        localStorage.setItem('veriflow_admin', JSON.stringify(data.user));
         loadAllData(data.user.id);
       } else {
         setError(data.detail || 'Invalid admin username or password');
@@ -79,7 +79,7 @@ export default function AdminDashboard() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('nextcaptcha_admin');
+    localStorage.removeItem('veriflow_admin');
     setUser(null);
     setAnalytics(null);
     setUsers([]);
@@ -87,7 +87,7 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    const savedAdmin = localStorage.getItem('nextcaptcha_admin');
+    const savedAdmin = localStorage.getItem('veriflow_admin');
     if (savedAdmin) {
       const parsed = JSON.parse(savedAdmin);
       setUser(parsed);
@@ -201,7 +201,7 @@ export default function AdminDashboard() {
               <Shield className="w-6 h-6 text-cfOrange" />
             </div>
             <h1 className="text-xl font-bold text-slate-100 tracking-tight">Super Admin Console</h1>
-            <p className="text-slate-400 text-xs mt-1">SmartCaptcha Mitigation Control Center</p>
+            <p className="text-slate-400 text-xs mt-1">VeriFlow Mitigation Control Center</p>
           </div>
 
           <form onSubmit={handleAdminLogin} className="space-y-4 w-full">
@@ -274,7 +274,7 @@ export default function AdminDashboard() {
             </div>
             {!sidebarCollapsed && (
               <div>
-                <h2 className="font-bold text-slate-100 text-sm leading-none tracking-tight">SmartCaptcha</h2>
+                <h2 className="font-bold text-slate-100 text-sm leading-none tracking-tight">VeriFlow</h2>
                 <span className="text-[9px] text-cfOrange font-bold tracking-wider uppercase">Super Admin</span>
               </div>
             )}
@@ -632,7 +632,7 @@ export default function AdminDashboard() {
                               </span>
                             </td>
                             <td className="py-4 px-6 text-right">
-                              {dev.email !== 'developer@nextcaptcha.com' && dev.email !== user.email && (
+                              {dev.email !== 'developer@veriflow.com' && dev.email !== 'developer@nextcaptcha.com' && dev.email !== user.email && (
                                 <button
                                   onClick={() => toggleUserStatus(dev.id, dev.is_active)}
                                   className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all inline-flex items-center gap-1.5 ${

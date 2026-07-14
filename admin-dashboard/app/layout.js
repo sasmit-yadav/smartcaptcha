@@ -12,7 +12,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "NextCaptcha | Super Admin Portal",
+  title: "VeriFlow | Super Admin Portal",
   description: "Global threat intelligence, mitigation telemetry, and developer account console.",
 };
 

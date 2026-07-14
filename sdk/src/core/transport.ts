@@ -24,7 +24,7 @@ export function initTransport(config: { endpoint: string; apiKey: string; debug?
  */
 export async function sendBatch(events: TelemetryEvent[]): Promise<void> {
   if (!endpoint) {
-    if (debug) console.warn('[NextCaptcha] No endpoint configured, dropping batch');
+    if (debug) console.warn('[VeriFlow] No endpoint configured, dropping batch');
     return;
   }
 
@@ -48,13 +48,13 @@ export async function sendBatch(events: TelemetryEvent[]): Promise<void> {
 
     if (res.ok) {
       retryCount = 0;
-      if (debug) console.log(`[NextCaptcha] Batch sent: ${events.length} events queued`);
+      if (debug) console.log(`[VeriFlow] Batch sent: ${events.length} events queued`);
       return;
     }
 
     if (res.status === 429) {
       // Rate limited — back off
-      if (debug) console.warn('[NextCaptcha] Rate limited (429), backing off');
+      if (debug) console.warn('[VeriFlow] Rate limited (429), backing off');
       await delay(2000);
       retrySend(payload);
       return;
@@ -62,7 +62,7 @@ export async function sendBatch(events: TelemetryEvent[]): Promise<void> {
 
     if (res.status >= 500) {
       // Server error — retry
-      if (debug) console.warn(`[NextCaptcha] Server error ${res.status}, retrying`);
+      if (debug) console.warn(`[VeriFlow] Server error ${res.status}, retrying`);
       retrySend(payload);
       return;
     }
@@ -71,24 +71,24 @@ export async function sendBatch(events: TelemetryEvent[]): Promise<void> {
       // Client error — don't retry
       // Suppress 404 errors for lightweight backends that don't have telemetry endpoints
       if (res.status !== 404 && debug) {
-        console.error(`[NextCaptcha] Client error ${res.status}, not retrying`);
+        console.error(`[VeriFlow] Client error ${res.status}, not retrying`);
       }
     }
   } catch (err) {
-    if (debug) console.error('[NextCaptcha] Network error:', (err as Error).message);
+    if (debug) console.error('[VeriFlow] Network error:', (err as Error).message);
     retrySend(payload);
   }
 }
 
 async function retrySend(payload: unknown): Promise<void> {
   if (retryCount >= MAX_RETRIES) {
-    if (debug) console.warn('[NextCaptcha] Max retries reached, dropping batch');
+    if (debug) console.warn('[VeriFlow] Max retries reached, dropping batch');
     retryCount = 0;
     return;
   }
   retryCount++;
   const backoff = Math.min(1000 * Math.pow(2, retryCount), 10000);
-  if (debug) console.log(`[NextCaptcha] Retry ${retryCount}/${MAX_RETRIES} in ${backoff}ms`);
+  if (debug) console.log(`[VeriFlow] Retry ${retryCount}/${MAX_RETRIES} in ${backoff}ms`);
   await delay(backoff);
   try {
     await fetch(`${endpoint}/api/telemetry`, {
@@ -102,7 +102,7 @@ async function retrySend(payload: unknown): Promise<void> {
     });
     retryCount = 0;
   } catch (err) {
-    if (debug) console.error('[NextCaptcha] Retry failed:', (err as Error).message);
+    if (debug) console.error('[VeriFlow] Retry failed:', (err as Error).message);
   }
 }
 
@@ -124,9 +124,9 @@ export async function sendSessionStart(): Promise<void> {
       }),
       keepalive: true,
     });
-    if (debug) console.log('[NextCaptcha] Session start sent');
+    if (debug) console.log('[VeriFlow] Session start sent');
   } catch (err) {
-    if (debug) console.error('[NextCaptcha] Session start failed:', (err as Error).message);
+    if (debug) console.error('[VeriFlow] Session start failed:', (err as Error).message);
   }
 }
 
@@ -148,9 +148,9 @@ export async function sendSessionEnd(): Promise<void> {
       }),
       keepalive: true,
     });
-    if (debug) console.log('[NextCaptcha] Session end sent');
+    if (debug) console.log('[VeriFlow] Session end sent');
   } catch (err) {
-    if (debug) console.error('[NextCaptcha] Session end failed:', (err as Error).message);
+    if (debug) console.error('[VeriFlow] Session end failed:', (err as Error).message);
   }
 }
 

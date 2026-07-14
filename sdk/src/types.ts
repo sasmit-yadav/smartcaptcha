@@ -2,7 +2,7 @@
  * NextCaptcha SDK Type Definitions
  */
 
-export interface NextCaptchaConfig {
+export interface VeriFlowConfig {
   apiKey: string;
   endpoint?: string;
   debug?: boolean;

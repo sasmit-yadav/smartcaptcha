@@ -1,10 +1,10 @@
 /**
- * NextCaptcha SDK — Main Entry Point
+ * VeriFlow SDK — Main Entry Point
  *
  * Usage:
- *   NextCaptcha.init({
+ *   VeriFlow.init({
  *     apiKey: "your-api-key",
- *     endpoint: "https://api.nextcaptcha.com",
+ *     endpoint: "https://api.veriflow.com",
  *     debug: true
  *   })
  *
@@ -23,7 +23,7 @@ import { startTouchTracking, stopTouchTracking } from './collectors/touch.js';
 import { computeFeatures } from './core/features.js';
 
 import type {
-  NextCaptchaConfig,
+  VeriFlowConfig,
   DecisionResult,
   DebugSnapshot,
   SelfTestResult,
@@ -34,17 +34,17 @@ import type {
 /**
  * Validate configuration and provide helpful error messages
  */
-function validateConfig(config: NextCaptchaConfig): { valid: boolean; error?: string } {
+function validateConfig(config: VeriFlowConfig): { valid: boolean; error?: string } {
   if (!config.apiKey || typeof config.apiKey !== 'string') {
     return { valid: false, error: 'apiKey is required and must be a string' };
   }
 
-  // Validate API key format (production keys start with sc_live_, sc_test_, or sc_admin_)
-  const validPrefixes = ['sc_live_', 'sc_test_', 'sc_admin_'];
+  // Validate API key format (production keys start with vf_ or sc_ prefixes)
+  const validPrefixes = ['vf_live_', 'vf_test_', 'vf_admin_', 'sc_live_', 'sc_test_', 'sc_admin_'];
   const hasValidPrefix = validPrefixes.some(prefix => config.apiKey.startsWith(prefix));
   
   if (!hasValidPrefix && config.apiKey !== 'demo-key') {
-    return { valid: false, error: 'Invalid API key format. Production keys must start with sc_live_, sc_test_, or sc_admin_' };
+    return { valid: false, error: 'Invalid API key format. Production keys must start with vf_ or sc_ prefixes' };
   }
 
   if (config.endpoint && typeof config.endpoint !== 'string') {
@@ -64,10 +64,10 @@ const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefine
 const SDK_VERSION = '0.1.0';
 let initialized = false;
 let debug = false;
-let initConfig: NextCaptchaConfig | null = null;
+let initConfig: VeriFlowConfig | null = null;
 
-interface NextCaptchaAPI {
-  init(config: NextCaptchaConfig): void;
+interface VeriFlowAPI {
+  init(config: VeriFlowConfig): void;
   destroy(): void;
   getSessionId(): string;
   getSessionMeta(): import('./types.js').SessionMeta;
@@ -77,8 +77,8 @@ interface NextCaptchaAPI {
 }
 
 // No-op version for SSR/Node environments
-const NextCaptchaSSR: NextCaptchaAPI = {
-  init: () => console.warn('[NextCaptcha] Running in SSR environment - SDK disabled'),
+const VeriFlowSSR: VeriFlowAPI = {
+  init: () => console.warn('[VeriFlow] Running in SSR environment - SDK disabled'),
   destroy: () => {},
   getSessionId: () => '',
   getSessionMeta: () => ({ sessionId: '', startTime: 0, userAgent: '', platform: '', webdriverFlag: false, hasTouch: false }),
@@ -87,25 +87,25 @@ const NextCaptchaSSR: NextCaptchaAPI = {
   selfTest: (callback: SelfTestCallback) => callback({ version: '0.1.0', tests: [{ name: 'SSR Environment', status: 'warn', error: 'SDK disabled in SSR' }], passed: 0, failed: 0, overall: 'unknown' })
 };
 
-const NextCaptcha: NextCaptchaAPI = {
+const VeriFlow: VeriFlowAPI = {
   /**
-   * Initialize NextCaptcha SDK.
+   * Initialize VeriFlow SDK.
    */
-  init(config: NextCaptchaConfig = { apiKey: '' }) {
+  init(config: VeriFlowConfig = { apiKey: '' }) {
     if (!isBrowser) {
-      console.warn('[NextCaptcha] Running in SSR environment - SDK disabled');
+      console.warn('[VeriFlow] Running in SSR environment - SDK disabled');
       return;
     }
 
     if (initialized) {
-      if (debug) console.warn('[NextCaptcha] Already initialized');
+      if (debug) console.warn('[VeriFlow] Already initialized');
       return;
     }
 
     // Validate configuration
     const validation = validateConfig(config);
     if (!validation.valid) {
-      const errorMsg = `[NextCaptcha] Configuration error: ${validation.error}. Get an API key at https://nextcaptcha.ai/dashboard`;
+      const errorMsg = `[VeriFlow] Configuration error: ${validation.error}. Get an API key at https://veriflow.com/dashboard`;
       if (debug) {
         throw new Error(errorMsg);
       } else {
@@ -155,10 +155,10 @@ const NextCaptcha: NextCaptchaAPI = {
     initialized = true;
 
     if (debug) {
-      console.log(`[NextCaptcha] v${SDK_VERSION} Initialized ✓`);
-      console.log(`[NextCaptcha] Session: ${getSessionId().slice(-8)}`);
-      console.log(`[NextCaptcha] Endpoint: ${config.endpoint}`);
-      console.log('[NextCaptcha] Collectors: mouse, click, keyboard, scroll, focus' + ('ontouchstart' in window ? ', touch' : ''));
+      console.log(`[VeriFlow] v${SDK_VERSION} Initialized ✓`);
+      console.log(`[VeriFlow] Session: ${getSessionId().slice(-8)}`);
+      console.log(`[VeriFlow] Endpoint: ${config.endpoint}`);
+      console.log('[VeriFlow] Collectors: mouse, click, keyboard, scroll, focus' + ('ontouchstart' in window ? ', touch' : ''));
     }
   },
 
@@ -176,7 +176,7 @@ const NextCaptcha: NextCaptchaAPI = {
     stopBuffer();
     sendSessionEnd();
     initialized = false;
-    if (debug) console.log('[NextCaptcha] Destroyed');
+    if (debug) console.log('[VeriFlow] Destroyed');
   },
 
   /** Get current session ID */
@@ -189,12 +189,12 @@ const NextCaptcha: NextCaptchaAPI = {
    */
   getDecision(callback: DecisionCallback): void {
     if (!isBrowser) {
-      NextCaptchaSSR.getDecision(callback);
+      VeriFlowSSR.getDecision(callback);
       return;
     }
 
     if (!initialized) {
-      callback({ error: 'NextCaptcha not initialized. Call init() first.', action: 'block', bot_probability: 1, risk_score: 100, confidence: 0, risk_engine_enabled: false, behavior_score: 0, fingerprint_score: 0, overall_risk: 100 });
+      callback({ error: 'VeriFlow not initialized. Call init() first.', action: 'block', bot_probability: 1, risk_score: 100, confidence: 0, risk_engine_enabled: false, behavior_score: 0, fingerprint_score: 0, overall_risk: 100 });
       return;
     }
 
@@ -204,17 +204,17 @@ const NextCaptcha: NextCaptchaAPI = {
       const sessionMeta = getSessionMeta();
       
       if (debug) {
-        console.log('[NextCaptcha] Getting decision...');
-        console.log(`[NextCaptcha] Events collected: ${events.length}`);
+        console.log('[VeriFlow] Getting decision...');
+        console.log(`[VeriFlow] Events collected: ${events.length}`);
       }
 
       // Extract features from events (V4 feature set)
       const features = computeFeatures(events, sessionMeta);
       
       if (debug) {
-        console.log('[NextCaptcha] Computed features:', Object.keys(features).slice(0, 10), '...');
-        console.log('[NextCaptcha] Total feature count:', Object.keys(features).length);
-        console.log('[NextCaptcha] Sample feature values:', {
+        console.log('[VeriFlow] Computed features:', Object.keys(features).slice(0, 10), '...');
+        console.log('[VeriFlow] Total feature count:', Object.keys(features).length);
+        console.log('[VeriFlow] Sample feature values:', {
           avg_hover_duration: features.avg_hover_duration,
           avg_overshoot_ratio: features.avg_overshoot_ratio,
           mouse_curvature_std: features.mouse_curvature_std,
@@ -237,8 +237,8 @@ const NextCaptcha: NextCaptchaAPI = {
       };
       
       if (debug) {
-        console.log('[NextCaptcha] Request body keys:', Object.keys(requestBody).slice(0, 25));
-        console.log('[NextCaptcha] Total request body keys:', Object.keys(requestBody).length);
+        console.log('[VeriFlow] Request body keys:', Object.keys(requestBody).slice(0, 25));
+        console.log('[VeriFlow] Total request body keys:', Object.keys(requestBody).length);
       }
 
       // Send to prediction API - use init config or default to local development
@@ -261,17 +261,17 @@ const NextCaptcha: NextCaptchaAPI = {
       .then(response => response.json())
       .then((data: DecisionResult) => {
         if (debug) {
-          console.log('[NextCaptcha] Decision received:', data);
+          console.log('[VeriFlow] Decision received:', data);
         }
         callback(data);
       })
       .catch(error => {
-        console.error('[NextCaptcha] Prediction error:', error);
+        console.error('[VeriFlow] Prediction error:', error);
         callback({ error: (error as Error).message, action: 'block', bot_probability: 1, risk_score: 100, confidence: 0, risk_engine_enabled: false, behavior_score: 0, fingerprint_score: 0, overall_risk: 100 });
       });
 
     } catch (error) {
-      console.error('[NextCaptcha] getDecision error:', error);
+      console.error('[VeriFlow] getDecision error:', error);
       callback({ error: (error as Error).message, action: 'block', bot_probability: 1, risk_score: 100, confidence: 0, risk_engine_enabled: false, behavior_score: 0, fingerprint_score: 0, overall_risk: 100 });
     }
   },
@@ -282,7 +282,7 @@ const NextCaptcha: NextCaptchaAPI = {
    */
   getDebugSnapshot(): DebugSnapshot {
     if (!isBrowser) {
-      return NextCaptchaSSR.getDebugSnapshot();
+      return VeriFlowSSR.getDebugSnapshot();
     }
 
     return {
@@ -314,7 +314,7 @@ const NextCaptcha: NextCaptchaAPI = {
    */
   selfTest(callback: SelfTestCallback): void {
     if (!isBrowser) {
-      NextCaptchaSSR.selfTest(callback);
+      VeriFlowSSR.selfTest(callback);
       return;
     }
 
@@ -336,7 +336,7 @@ const NextCaptcha: NextCaptchaAPI = {
     }
 
     // Test 2: API key check
-    const apiKey = (window as any).NEXTCAPTCHA_CONFIG?.API_KEY;
+    const apiKey = (window as any).VERIFLOW_CONFIG?.API_KEY;
     if (apiKey) {
       results.tests.push({ name: 'API Key Valid', status: 'pass' });
       results.passed++;
@@ -355,8 +355,8 @@ const NextCaptcha: NextCaptchaAPI = {
     }
 
     // Test 4: Network connectivity check - use config.js if available
-    const configEndpoint = (window as any).SMARTCAPTCHA_CONFIG?.BACKEND_URL;
-    const endpoint = (window as any).NEXTCAPTCHA_CONFIG?.BACKEND_URL || configEndpoint || 'https://api.nextcaptcha.com';
+    const configEndpoint = (window as any).VERIFLOW_CONFIG?.BACKEND_URL;
+    const endpoint = (window as any).VERIFLOW_CONFIG?.BACKEND_URL || configEndpoint || 'https://next-captcha-sdk.onrender.com';
     fetch(`${endpoint}/health`, { method: 'GET' })
       .then(response => {
         if (response.ok) {
@@ -367,23 +367,23 @@ const NextCaptcha: NextCaptchaAPI = {
           results.failed++;
         }
         results.overall = results.failed === 0 ? 'pass' : 'fail';
-        if (debug) console.log('[NextCaptcha] Self-test results:', results);
+        if (debug) console.log('[VeriFlow] Self-test results:', results);
         callback(results);
       })
       .catch(error => {
         results.tests.push({ name: 'Network Reachable', status: 'fail', error: (error as Error).message });
         results.failed++;
         results.overall = results.failed === 0 ? 'pass' : 'fail';
-        if (debug) console.log('[NextCaptcha] Self-test results:', results);
+        if (debug) console.log('[VeriFlow] Self-test results:', results);
         callback(results);
       });
   },
 };
 
 // Export for esbuild to handle global exposure
-export default NextCaptcha;
+export default VeriFlow;
 
 // Manual global exposure for browser usage (outside of esbuild's control)
 if (typeof window !== 'undefined') {
-  (window as any).NextCaptcha = NextCaptcha;
+  (window as any).VeriFlow = VeriFlow;
 }

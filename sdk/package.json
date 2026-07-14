@@ -1,40 +1,40 @@
-﻿{
+{
   "version": "0.2.0",
-  "name": "nextcaptcha-sdk",
-  "description": "NextCaptcha behavioral telemetry SDK for bot detection",
-  "main": "dist/nextcaptcha.cjs.js",
-  "module": "dist/nextcaptcha.esm.js",
-  "browser": "dist/nextcaptcha.min.js",
+  "name": "veriflow-sdk",
+  "description": "VeriFlow behavioral telemetry SDK for bot detection",
+  "main": "dist/veriflow.cjs.js",
+  "module": "dist/veriflow.esm.js",
+  "browser": "dist/veriflow.min.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/nextcaptcha.esm.js",
-      "require": "./dist/nextcaptcha.cjs.js",
-      "browser": "./dist/nextcaptcha.min.js",
+      "import": "./dist/veriflow.esm.js",
+      "require": "./dist/veriflow.cjs.js",
+      "browser": "./dist/veriflow.min.js",
       "types": "./dist/index.d.ts"
     }
   },
   "files": ["dist", "README.md", "LICENSE"],
   "scripts": {
     "build": "npm run build:umd && npm run build:esm && npm run build:cjs && npm run build:ts",
-    "build:umd": "esbuild ./src/index.ts --bundle --minify --outfile=dist/nextcaptcha.min.js --format=iife",
-    "build:esm": "esbuild ./src/index.ts --bundle --outfile=dist/nextcaptcha.esm.js --format=esm",
-    "build:cjs": "esbuild ./src/index.ts --bundle --outfile=dist/nextcaptcha.cjs.js --format=cjs",
+    "build:umd": "esbuild ./src/index.ts --bundle --minify --outfile=dist/veriflow.min.js --format=iife",
+    "build:esm": "esbuild ./src/index.ts --bundle --outfile=dist/veriflow.esm.js --format=esm",
+    "build:cjs": "esbuild ./src/index.ts --bundle --outfile=dist/veriflow.cjs.js --format=cjs",
     "build:ts": "tsc",
-    "dev": "esbuild ./src/index.ts --bundle --outfile=dist/nextcaptcha.js --format=iife --watch",
+    "dev": "esbuild ./src/index.ts --bundle --outfile=dist/veriflow.js --format=iife --watch",
     "prepublishOnly": "npm run build"
   },
   "keywords": ["captcha", "bot-detection", "behavioral-biometrics", "fraud-prevention", "telemetry"],
-  "author": "NextCaptcha",
+  "author": "VeriFlow",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nextcaptcha/sdk"
+    "url": "https://github.com/veriflow/sdk"
   },
   "bugs": {
-    "url": "https://github.com/nextcaptcha/sdk/issues"
+    "url": "https://github.com/veriflow/sdk/issues"
   },
-  "homepage": "https://nextcaptcha.ai",
+  "homepage": "https://veriflow.com",
   "devDependencies": {
     "@types/node": "^26.1.0",
     "esbuild": "^0.21.0",

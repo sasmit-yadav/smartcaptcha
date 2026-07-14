@@ -21,9 +21,9 @@ class APIKeyManager:
     """Production-grade API key management with security best practices"""
     
     KEY_PREFIXES = {
-        'live': 'sc_live_',
-        'test': 'sc_test_',
-        'admin': 'sc_admin_'
+        'live': 'vf_live_',
+        'test': 'vf_test_',
+        'admin': 'vf_admin_'
     }
     
     @staticmethod
@@ -37,7 +37,7 @@ class APIKeyManager:
         Returns:
             Tuple of (api_key, key_hash)
         """
-        prefix = APIKeyManager.KEY_PREFIXES.get(key_type, 'sc_live_')
+        prefix = APIKeyManager.KEY_PREFIXES.get(key_type, 'vf_live_')
         random_part = secrets.token_urlsafe(32)
         api_key = f"{prefix}{random_part}"
         
@@ -316,7 +316,7 @@ class UserManager:
                     # 2. User doesn't exist, create a new one with a dummy password hash
                     dummy_hash = bcrypt.hashpw(secrets.token_hex(16).encode(), bcrypt.gensalt()).decode()
                     
-                    is_admin_user = email in ["developer@nextcaptcha.com", "hulkb690@gmail.com"]
+                    is_admin_user = email in ["developer@veriflow.com", "developer@nextcaptcha.com", "hulkb690@gmail.com"]
                     cursor.execute("""
                         INSERT INTO users (email, password_hash, full_name, is_admin)
                         VALUES (%s, %s, %s, %s)

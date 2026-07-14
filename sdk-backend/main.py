@@ -20,7 +20,7 @@ from api_key_manager import APIKeyManager, UserManager
 from typing import Optional, List
 import logging
 
-app = FastAPI(title="NextCaptcha API", version="1.0.0")
+app = FastAPI(title="VeriFlow API", version="1.0.0")
 
 from core.admin_api import router as admin_router
 app.include_router(admin_router)
@@ -46,11 +46,11 @@ async def startup():
         
         detector = BotDetector(use_risk_engine=True)
         port = os.getenv("PORT", "8000")
-        print(f"[NextCaptcha API] Started on port {port}")
-        print(f"[NextCaptcha API] V4 Model with Risk Engine loaded")
-        print(f"[NextCaptcha API] Production API key verification enabled")
+        print(f"[VeriFlow API] Started on port {port}")
+        print(f"[VeriFlow API] V4 Model with Risk Engine loaded")
+        print(f"[VeriFlow API] Production API key verification enabled")
     except Exception as e:
-        print(f"[NextCaptcha API] Failed to load model: {e}")
+        print(f"[VeriFlow API] Failed to load model: {e}")
         raise
 
 # CORS - restrict to customer domains in production
@@ -103,12 +103,12 @@ async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(sec
 
 @app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
-    return {"status": "ok", "service": "nextcaptcha-sdk-api"}
+    return {"status": "ok", "service": "veriflow-sdk-api"}
 
 @app.get("/")
 async def root():
     return {
-        "service": "NextCaptcha API",
+        "service": "VeriFlow API",
         "status": "running",
         "version": "4.0"
     }

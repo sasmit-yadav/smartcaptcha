@@ -19,7 +19,7 @@ export function initBuffer(options: { debug?: boolean; disableTelemetry?: boolea
   telemetryDisabled = options.disableTelemetry || false;
 
   if (telemetryDisabled) {
-    if (debug) console.log('[NextCaptcha] Telemetry disabled - events will not be sent');
+    if (debug) console.log('[VeriFlow] Telemetry disabled - events will not be sent');
     return;
   }
 
@@ -30,12 +30,12 @@ export function initBuffer(options: { debug?: boolean; disableTelemetry?: boolea
   window.addEventListener('beforeunload', flush);
   window.addEventListener('pagehide', flush);
 
-  if (debug) console.log('[NextCaptcha] Buffer initialized (flush every 5s or 100 events)');
+  if (debug) console.log('[VeriFlow] Buffer initialized (flush every 5s or 100 events)');
 }
 
 export function push(event: TelemetryEvent): void {
   events.push(event);
-  if (debug && events.length === 1) console.log('[NextCaptcha] First event captured');
+  if (debug && events.length === 1) console.log('[VeriFlow] First event captured');
 
   // Auto-flush when buffer is full
   if (events.length >= MAX_BUFFER_SIZE) {
@@ -49,7 +49,7 @@ export function flush(): void {
   const batch = events.splice(0, events.length);
 
   if (debug) {
-    console.log(`[NextCaptcha] Flushing ${batch.length} events`);
+    console.log(`[VeriFlow] Flushing ${batch.length} events`);
   }
 
   sendBatch(batch);

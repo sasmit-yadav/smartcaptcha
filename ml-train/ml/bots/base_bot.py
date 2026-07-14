@@ -25,8 +25,12 @@ load_dotenv(ROOT / ".env")
 
 DEMO_SITE_URL = os.getenv('DEMO_SITE_URL', 'http://localhost:5173')
 TESTING_SITE_URL = os.getenv('TESTING_SITE_URL', 'http://localhost:8080')
-BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:8000')
-API_KEY = os.getenv('API_KEY', 'demo-key')
+# sdk-backend is now the single API (telemetry storage + prediction).
+BACKEND_URL = os.getenv('BACKEND_URL', 'http://localhost:8001')
+# Server-side ingest key (core/ingest_auth.py) — bots aren't a customer,
+# so they authenticate as a trusted first-party ingestion source instead
+# of an API key.
+INGEST_API_KEY = os.getenv('INGEST_API_KEY', '')
 AUTO_LABEL_BOT_SESSIONS = os.getenv('AUTO_LABEL_BOT_SESSIONS', '1') == '1'
 
 
@@ -121,7 +125,7 @@ class BaseBot:
                     'sessionId': self.session_id,
                     'meta': meta
                 },
-                headers={'X-API-Key': API_KEY},
+                headers={'X-Ingest-Key': INGEST_API_KEY},
                 timeout=5
             )
             print(f"Session started: {self.session_id[:8]}...")
@@ -159,7 +163,7 @@ class BaseBot:
                     'events': self.events,
                     'timestamp': int(time.time() * 1000)
                 },
-                headers={'X-API-Key': API_KEY},
+                headers={'X-Ingest-Key': INGEST_API_KEY},
                 timeout=10
             )
             print(f"Sent {len(self.events)} events to backend")
@@ -179,7 +183,7 @@ class BaseBot:
                     'sessionId': self.session_id,
                     'duration': duration_ms
                 },
-                headers={'X-API-Key': API_KEY},
+                headers={'X-Ingest-Key': INGEST_API_KEY},
                 timeout=5
             )
             print(f"Session ended: {self.session_id[:8]}... (duration: {duration_ms}ms)")

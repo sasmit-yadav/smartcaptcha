@@ -1,6 +1,14 @@
 """
-NextCaptcha SDK-Only Backend - Production API for customers
-Only provides prediction API, no telemetry storage
+VeriFlow API — single production backend.
+
+Serves:
+- /api/predict          bot-detection decisions (API key required)
+- /api/telemetry        behavioral event ingestion (API key, ingest key, or allowed origin)
+- /api/session/*        session lifecycle (same auth as telemetry)
+- /admin/*              customer accounts, projects, API keys (website dashboard)
+- /api/health, /api/stats
+
+Routes live in api/routes/; DB layer in core/database.py; ML in models/.
 """
 
 import sys
@@ -11,99 +19,83 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from fastapi import FastAPI, Request, HTTPException, Header, Depends, BackgroundTasks
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
-from models.inference import BotDetector
-from api_key_manager import APIKeyManager, UserManager
-from typing import Optional, List
+# Load .env before importing modules that require DATABASE_URL at import time
+from dotenv import load_dotenv
+load_dotenv(project_root / ".env")
+
 import logging
+
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import JSONResponse
+
+from api.routes.predict import router as predict_router, get_detector
+from api.routes.telemetry import router as telemetry_router
+from api.routes.session import router as session_router
+from api.routes.admin import router as admin_router
+from core.admin_api import router as super_admin_router
 
 app = FastAPI(title="VeriFlow API", version="1.0.0")
 
-from core.admin_api import router as admin_router
-app.include_router(admin_router)
-
 logger = logging.getLogger("uvicorn.error")
 
-# Security
-security = HTTPBearer()
-
-# Initialize ML model (shared with demo backend)
-detector = None
-
-# API Key Manager
-api_key_manager = APIKeyManager()
-
-@app.on_event("startup")
-async def startup():
-    global detector
-    try:
-        # Run database initialization and auto-migrations
-        from core.database import init_db
-        init_db()
-        
-        detector = BotDetector(use_risk_engine=True)
-        port = os.getenv("PORT", "8000")
-        print(f"[VeriFlow API] Started on port {port}")
-        print(f"[VeriFlow API] V4 Model with Risk Engine loaded")
-        print(f"[VeriFlow API] Production API key verification enabled")
-    except Exception as e:
-        print(f"[VeriFlow API] Failed to load model: {e}")
-        raise
-
-# CORS - restrict to customer domains in production
+# CORS stays open on purpose: customers call /api/predict from arbitrary
+# domains, so security is enforced by API keys and the ingest origin gate
+# (core/ingest_auth.py), not by CORS.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: Restrict to customer domains
+    allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Demo mode for testing (set DEMO_MODE=1 to use simple keys)
-DEMO_MODE = os.getenv("DEMO_MODE", "0") == "1"
-DEMO_API_KEYS = ["demo-key", "sc_live_xxxxxxxxxxxxx"]
+app.include_router(predict_router)
+app.include_router(telemetry_router)
+app.include_router(session_router)
+app.include_router(admin_router)
+app.include_router(super_admin_router)
 
-async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    """
-    Verify API key using production API key manager
-    Falls back to demo keys if DEMO_MODE is enabled
-    """
-    api_key = credentials.credentials
-    print(f"[DEBUG] Received API key: {api_key[:12]}...")
-    
-    # Demo mode fallback
-    if DEMO_MODE and api_key in DEMO_API_KEYS:
-        return {
-            'key_id': 'demo',
-            'project_id': 'demo-project',
-            'project_name': 'Demo Project',
-            'owner_id': 'demo-user',
-            'owner_email': 'demo@example.com',
-            'company_name': 'Demo Company',
-            'is_admin': False,
-            'allowed_domains': ['*']
-        }
-    
-    # Production verification
-    key_info = api_key_manager.verify_api_key(api_key)
-    if not key_info:
-        raise HTTPException(
-            status_code=403, 
-            detail="Invalid or inactive API key",
-            headers={"WWW-Authenticate": "Bearer"}
-        )
-    
-    # Update last used timestamp
-    api_key_manager.update_last_used(key_info['key_id'])
-    
-    return key_info
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    # Log the raw body and validation errors to help debug intermittent 422s
+    try:
+        body = await request.body()
+        body_text = body.decode(errors="replace")
+    except Exception:
+        body_text = "<unreadable>"
+    logger.error("Request validation error on %s %s: %s -- Body: %s",
+                 request.method, request.url.path, exc.errors(), body_text)
+    return JSONResponse(status_code=422, content={"detail": "Request validation error", "errors": exc.errors()})
+
+
+@app.on_event("startup")
+async def startup():
+    try:
+        # Run database initialization and auto-migrations
+        from core.database import init_db
+        init_db()
+
+        # Warm the ML model so the first predict request isn't slow
+        get_detector()
+
+        port = os.getenv("PORT", "8001")
+        print(f"[VeriFlow API] Started on port {port}")
+        print(f"[VeriFlow API] V4 Model with Risk Engine loaded")
+        print(f"[VeriFlow API] Production API key verification enabled")
+        print(f"[VeriFlow API] Telemetry storage enabled")
+    except Exception as e:
+        print(f"[VeriFlow API] Startup failed: {e}")
+        raise
+
 
 @app.api_route("/health", methods=["GET", "HEAD"])
+@app.api_route("/api/health", methods=["GET", "HEAD"])
 async def health():
-    return {"status": "ok", "service": "veriflow-sdk-api"}
+    return {"status": "ok", "service": "veriflow-api"}
+
 
 @app.get("/")
 async def root():
@@ -113,224 +105,13 @@ async def root():
         "version": "4.0"
     }
 
-@app.post("/api/telemetry")
-async def telemetry(request: Request):
-    """
-    Dummy telemetry endpoint for SDK compatibility
-    SDK backend doesn't store telemetry, but SDK may try to send it
-    """
-    print("[DEBUG] Telemetry endpoint called (not storing in SDK backend)")
-    return {"status": "ok", "message": "Telemetry received but not stored"}
 
-@app.post("/api/predict")
-async def predict(
-    request: Request,
-    background_tasks: BackgroundTasks,
-    authorization: str = Header(None),
-    x_api_key: str = Header(None, alias="X-API-Key")
-):
-    """
-    Prediction API for SDK customers
-    Takes behavioral features and returns bot detection decision
-    """
-    # Never log full credential headers — key prefix only
-    print(f"[DEBUG] Auth headers present: authorization={bool(authorization)}, x_api_key={bool(x_api_key)}")
+@app.get("/api/stats")
+async def stats():
+    """Quick session/event counts for monitoring."""
+    from core.database import get_session_stats
+    return get_session_stats()
 
-    # Extract API key from X-API-Key header (SDK sends it this way)
-    api_key = x_api_key
-
-    # Fallback to Authorization header
-    if not api_key and authorization and authorization.startswith("Bearer "):
-        api_key = authorization[7:]
-
-    print(f"[DEBUG] Extracted API key: {api_key[:12] if api_key else None}...")
-    
-    # Verify API key
-    if not api_key:
-        raise HTTPException(status_code=401, detail="Missing API key")
-    
-    key_info = APIKeyManager.verify_api_key(api_key)
-    if not key_info:
-        print(f"[DEBUG] API key verification failed for: {api_key[:12]}...")
-        raise HTTPException(status_code=403, detail="Invalid or inactive API key")
-    
-    print(f"[DEBUG] API key verified successfully for project: {key_info['project_name']}")
-    
-    try:
-        # Parse request body
-        body = await request.json()
-        
-        # Debug: Log received features
-        print(f"[DEBUG] Received body keys: {list(body.keys())}")
-        print(f"[DEBUG] Total keys received: {len(body.keys())}")
-        print(f"[DEBUG] V4 features present: avg_hover_duration={body.get('avg_hover_duration')}, avg_overshoot_ratio={body.get('avg_overshoot_ratio')}, mouse_curvature_std={body.get('mouse_curvature_std')}")
-        
-        # Extract features and fingerprint data
-        features = {k: v for k, v in body.items() if k not in ['webdriver_flag', 'user_agent', 'has_touch', 'platform', 'sdkVersion', 'sessionId']}
-        print(f"[DEBUG] Features extracted: {len(features)} keys")
-        print(f"[DEBUG] Feature keys: {list(features.keys())}")
-        fingerprint = {
-            'webdriver_flag': body.get('webdriver_flag', False),
-            'user_agent': body.get('user_agent', ''),
-            'has_touch': body.get('has_touch', False),
-            'platform': body.get('platform', '')
-        }
-        
-        # Get prediction from model
-        result = detector.predict_session(features, fingerprint_data=fingerprint)
-        
-        # Log session telemetry asynchronously (Step 1 of Task List)
-        import uuid
-        session_id = body.get('sessionId')
-        if not session_id:
-            session_id = str(uuid.uuid4())
-            
-        from core.database import insert_session_prediction
-        background_tasks.add_task(
-            insert_session_prediction,
-            session_id=session_id,
-            project_id=key_info['project_id'],
-            device_type=body.get('deviceType', 'desktop' if not body.get('has_touch') else 'mobile'),
-            user_agent=fingerprint.get('user_agent', ''),
-            risk_score=float(result.get('risk_score', 0)),
-            webdriver_flag=fingerprint.get('webdriver_flag', False),
-            label=result.get('action', 'accept')
-        )
-        
-        # Debug: Log the result being returned
-        print(f"[DEBUG] Prediction result: {result}")
-        
-        return result
-        
-    except Exception as e:
-        logger.error(f"Prediction error: {e}")
-        raise HTTPException(status_code=500, detail="Prediction failed")
-
-# Admin API endpoints for API key management
-class UserRegistration(BaseModel):
-    email: str
-    password: str
-    full_name: Optional[str] = None
-    company_name: Optional[str] = None
-
-class UserLogin(BaseModel):
-    email: str
-    password: str
-
-class GoogleLoginRequest(BaseModel):
-    id_token: str
-
-class ProjectCreate(BaseModel):
-    name: str
-    allowed_domains: Optional[List[str]] = None
-
-class APIKeyCreate(BaseModel):
-    project_id: str
-    key_type: str = 'live'  # 'live', 'test', 'admin'
-
-@app.post("/admin/register")
-async def register_user(user_data: UserRegistration):
-    """Register a new user"""
-    try:
-        user = UserManager.create_user(
-            email=user_data.email,
-            password=user_data.password,
-            full_name=user_data.full_name,
-            company_name=user_data.company_name
-        )
-        return {"success": True, "user": user}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-@app.post("/admin/login")
-async def login_user(login_data: UserLogin):
-    """Login user and return user info"""
-    user = UserManager.verify_user(login_data.email, login_data.password)
-    if not user:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    return {"success": True, "user": user}
-
-@app.post("/admin/google-login")
-async def google_login(login_req: GoogleLoginRequest):
-    """Verify Google token, get or create user, and return user info"""
-    import urllib.request
-    import json
-    
-    id_token = login_req.id_token
-    tokeninfo_url = f"https://oauth2.googleapis.com/tokeninfo?id_token={id_token}"
-    
-    try:
-        req = urllib.request.Request(tokeninfo_url)
-        with urllib.request.urlopen(req, timeout=5) as response:
-            if response.status != 200:
-                raise HTTPException(status_code=401, detail="Google token verification failed")
-            
-            payload = json.loads(response.read().decode())
-            
-            # Verify client ID audience if configured in environment
-            client_id = os.getenv("GOOGLE_CLIENT_ID")
-            if client_id and payload.get("aud") != client_id:
-                raise HTTPException(status_code=401, detail="Invalid Google Client ID audience")
-                
-            email = payload.get("email")
-            if not email:
-                raise HTTPException(status_code=400, detail="Email not provided by Google")
-                
-            name = payload.get("name", "")
-            
-            # Fetch or create the user in database
-            user = UserManager.get_or_create_google_user(email=email, name=name)
-            return {"success": True, "user": user}
-            
-    except Exception as e:
-        if isinstance(e, HTTPException):
-            raise e
-        raise HTTPException(status_code=401, detail=f"Google Authentication failed: {e}")
-
-@app.post("/admin/projects")
-async def create_project(project_data: ProjectCreate, user_id: str = Header(...)):
-    """Create a new project for a user"""
-    try:
-        project = UserManager.create_project(
-            user_id=user_id,
-            name=project_data.name,
-            allowed_domains=project_data.allowed_domains
-        )
-        return {"success": True, "project": project}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-@app.get("/admin/projects")
-async def list_projects(user_id: str = Header(...)):
-    """List all projects for a user"""
-    projects = UserManager.list_user_projects(user_id)
-    return {"success": True, "projects": projects}
-
-@app.post("/admin/api-keys")
-async def create_api_key(key_data: APIKeyCreate):
-    """Create a new API key for a project"""
-    try:
-        api_key_info = APIKeyManager.create_api_key(
-            project_id=key_data.project_id,
-            key_type=key_data.key_type
-        )
-        return {"success": True, "api_key": api_key_info}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-@app.get("/admin/api-keys/{project_id}")
-async def list_api_keys(project_id: str):
-    """List all API keys for a project"""
-    api_keys = APIKeyManager.list_api_keys(project_id)
-    return {"success": True, "api_keys": api_keys}
-
-@app.delete("/admin/api-keys/{key_id}")
-async def revoke_api_key(key_id: str):
-    """Revoke an API key"""
-    success = APIKeyManager.revoke_api_key(key_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="API key not found")
-    return {"success": True, "message": "API key revoked"}
 
 if __name__ == "__main__":
     import uvicorn

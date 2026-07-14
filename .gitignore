@@ -14,7 +14,6 @@ venv.bak/
 .pip-cache/
 
 # Environment
-backend/.env
 .env.local
 .env.*.local
 *.env
@@ -78,7 +77,6 @@ desktop.ini
 
 # Data
 data/raw/
-backend/data/
 *.csv
 *.xlsx
 *.json

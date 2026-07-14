@@ -1,5 +1,7 @@
 """
-SmartCaptcha Backend — Pydantic schemas for request validation.
+VeriFlow API — Pydantic schemas for telemetry request validation.
+Shared contract with the browser SDK (sdk/src/core/transport.ts) and the
+demo site's inline collectors.
 """
 
 from pydantic import BaseModel, Field, ConfigDict

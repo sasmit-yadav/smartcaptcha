@@ -1,11 +1,11 @@
 """
-SmartCaptcha Backend — Session routes.
-POST /api/session/start — register a new session.
+VeriFlow API — Session lifecycle routes.
+POST /api/session/start — register a new browsing session.
 POST /api/session/end   — close a session with duration.
 """
 
 from fastapi import APIRouter, Depends
-from typing import Optional
+
 from schemas.telemetry import SessionStartPayload, SessionEndPayload
 from core.database import insert_session, update_session_end
 from core.ingest_auth import verify_ingest_source
@@ -19,9 +19,9 @@ async def session_start(payload: SessionStartPayload):
     meta = payload.meta.model_dump()
     meta['sessionId'] = payload.sessionId
     insert_session(meta)
-    
+
     print(f"[SESSION] Session {payload.sessionId} started")
-    
+
     return {
         "sessionId": payload.sessionId,
         "accepted": True,

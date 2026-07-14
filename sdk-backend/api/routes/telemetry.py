@@ -1,41 +1,38 @@
 """
-SmartCaptcha Backend — Telemetry route.
-POST /api/telemetry — receives batched events from the SDK.
+VeriFlow API — Telemetry route.
+POST /api/telemetry — receives batched behavioral events from the SDK and
+the demo site, and stores them for model training and analytics.
 """
 
-from fastapi import APIRouter, Request, Header, Depends
-from typing import Optional
+import json
+
+from fastapi import APIRouter, Request, Depends
+
 from schemas.telemetry import TelemetryPayload
 from core.database import insert_events_batch
 from core.ingest_auth import verify_ingest_source
-import time
 
 router = APIRouter(dependencies=[Depends(verify_ingest_source)])
 
 
 @router.post("/api/telemetry")
-async def receive_telemetry(
-    request: Request,
-):
+async def receive_telemetry(request: Request):
     """
-    Receive a batch of telemetry events from the SDK.
+    Receive a batch of telemetry events.
     Validates payload, stores events in database.
     """
+    body = None
     try:
-        import json
         body = await request.body()
-        body_str = body.decode('utf-8')
-        payload_dict = json.loads(body_str)
-        
+        payload_dict = json.loads(body.decode('utf-8'))
+
         payload = TelemetryPayload(**payload_dict)
-        
+
         # Store events — use Python field names so DB columns map reliably
         events_data = [e.model_dump(by_alias=False) for e in payload.events]
         count = insert_events_batch(payload.sessionId, events_data)
 
-        event_types = [e.type for e in payload.events]
         print(f"[TELEMETRY] Session {payload.sessionId}: {count} events stored")
-        print(f"[TELEMETRY] Event types: {event_types}")
 
         return {
             "queued": True,

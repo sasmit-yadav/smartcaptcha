@@ -8,10 +8,10 @@
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/veriflow.esm.js",
       "require": "./dist/veriflow.cjs.js",
-      "browser": "./dist/veriflow.min.js",
-      "types": "./dist/index.d.ts"
+      "browser": "./dist/veriflow.min.js"
     }
   },
   "files": ["dist", "README.md", "LICENSE"],
@@ -29,12 +29,13 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/veriflow/sdk"
+    "url": "https://github.com/sasmit-yadav/smartcaptcha.git",
+    "directory": "sdk"
   },
   "bugs": {
-    "url": "https://github.com/veriflow/sdk/issues"
+    "url": "https://github.com/sasmit-yadav/smartcaptcha/issues"
   },
-  "homepage": "https://veriflow.com",
+  "homepage": "https://github.com/sasmit-yadav/smartcaptcha/tree/main/sdk",
   "devDependencies": {
     "@types/node": "^26.1.0",
     "esbuild": "^0.21.0",

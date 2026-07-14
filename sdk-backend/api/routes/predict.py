@@ -7,6 +7,7 @@ returns a bot-detection decision. Requires a valid customer API key.
 import os
 import uuid
 import logging
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Request, HTTPException, Header, BackgroundTasks
 
@@ -15,6 +16,24 @@ from api_key_manager import APIKeyManager
 
 router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
+
+
+def _check_allowed_domain(origin: str, allowed_domains) -> bool:
+    """
+    Check a request Origin against a project's allowed_domains list.
+    A leaked API key should only work from the domains its owner configured
+    — without this, allowed_domains was stored but never enforced.
+    """
+    if not allowed_domains or "*" in allowed_domains:
+        return True
+    if not origin:
+        # No Origin header (server-to-server / non-browser caller) — can't
+        # check, so don't block a legitimate backend integration.
+        return True
+
+    host = urlparse(origin).hostname or origin
+    host = host.lower()
+    return any(host == d.lower() or host.endswith(f".{d.lower()}") for d in allowed_domains)
 
 # Demo mode for testing (set DEMO_MODE=1 to use simple keys)
 DEMO_MODE = os.getenv("DEMO_MODE", "0") == "1"
@@ -52,7 +71,8 @@ async def predict(
     request: Request,
     background_tasks: BackgroundTasks,
     authorization: str = Header(None),
-    x_api_key: str = Header(None, alias="X-API-Key")
+    x_api_key: str = Header(None, alias="X-API-Key"),
+    origin: str = Header(None, alias="Origin")
 ):
     """
     Prediction API for SDK customers
@@ -80,6 +100,10 @@ async def predict(
         raise HTTPException(status_code=403, detail="Invalid or inactive API key")
 
     print(f"[DEBUG] API key verified successfully for project: {key_info['project_name']}")
+
+    if not _check_allowed_domain(origin, key_info.get('allowed_domains')):
+        print(f"[DEBUG] Origin '{origin}' not in allowed_domains for project {key_info['project_name']}")
+        raise HTTPException(status_code=403, detail="Origin not allowed for this API key")
 
     try:
         # Parse request body

@@ -3,17 +3,21 @@ VeriFlow API — Customer account routes.
 User registration/login (email + Google OAuth), project management, and
 API key lifecycle. Used by the website dashboard.
 
-NOTE: these endpoints currently trust the client-supplied user-id header;
-adding real session tokens is tracked as a follow-up security task.
+Auth model: register/login/google-login issue a signed session token
+(core/auth.py). Every /admin/projects and /admin/api-keys route requires
+that token via Depends(get_current_user), and project/key ownership is
+checked against the authenticated user — a caller can only see or modify
+their own projects and keys.
 """
 
 import os
 from typing import Optional, List
 
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api_key_manager import APIKeyManager, UserManager
+from core.auth import create_access_token, get_current_user, CurrentUser
 
 router = APIRouter()
 
@@ -44,9 +48,19 @@ class APIKeyCreate(BaseModel):
     key_type: str = 'live'  # 'live', 'test', 'admin'
 
 
+def _require_project_owner(project_id: str, user: CurrentUser) -> dict:
+    """Fetch a project and raise 403/404 unless the current user owns it."""
+    project = APIKeyManager.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    if str(project["owner_id"]) != str(user.user_id):
+        raise HTTPException(status_code=403, detail="You do not have access to this project")
+    return project
+
+
 @router.post("/admin/register")
 async def register_user(user_data: UserRegistration):
-    """Register a new user"""
+    """Register a new user and issue a session token."""
     try:
         user = UserManager.create_user(
             email=user_data.email,
@@ -54,23 +68,25 @@ async def register_user(user_data: UserRegistration):
             full_name=user_data.full_name,
             company_name=user_data.company_name
         )
-        return {"success": True, "user": user}
+        token = create_access_token(user_id=user["id"], email=user["email"], is_admin=user.get("is_admin", False))
+        return {"success": True, "user": user, "access_token": token}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/admin/login")
 async def login_user(login_data: UserLogin):
-    """Login user and return user info"""
+    """Login user and issue a session token."""
     user = UserManager.verify_user(login_data.email, login_data.password)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    return {"success": True, "user": user}
+    token = create_access_token(user_id=user["id"], email=user["email"], is_admin=user.get("is_admin", False))
+    return {"success": True, "user": user, "access_token": token}
 
 
 @router.post("/admin/google-login")
 async def google_login(login_req: GoogleLoginRequest):
-    """Verify Google token, get or create user, and return user info"""
+    """Verify Google token, get or create user, and issue a session token."""
     import urllib.request
     import json
 
@@ -98,7 +114,8 @@ async def google_login(login_req: GoogleLoginRequest):
 
             # Fetch or create the user in database
             user = UserManager.get_or_create_google_user(email=email, name=name)
-            return {"success": True, "user": user}
+            token = create_access_token(user_id=user["id"], email=user["email"], is_admin=user.get("is_admin", False))
+            return {"success": True, "user": user, "access_token": token}
 
     except Exception as e:
         if isinstance(e, HTTPException):
@@ -107,11 +124,11 @@ async def google_login(login_req: GoogleLoginRequest):
 
 
 @router.post("/admin/projects")
-async def create_project(project_data: ProjectCreate, user_id: str = Header(...)):
-    """Create a new project for a user"""
+async def create_project(project_data: ProjectCreate, user: CurrentUser = Depends(get_current_user)):
+    """Create a new project for the authenticated user."""
     try:
         project = UserManager.create_project(
-            user_id=user_id,
+            user_id=user.user_id,
             name=project_data.name,
             allowed_domains=project_data.allowed_domains
         )
@@ -121,15 +138,16 @@ async def create_project(project_data: ProjectCreate, user_id: str = Header(...)
 
 
 @router.get("/admin/projects")
-async def list_projects(user_id: str = Header(...)):
-    """List all projects for a user"""
-    projects = UserManager.list_user_projects(user_id)
+async def list_projects(user: CurrentUser = Depends(get_current_user)):
+    """List all projects owned by the authenticated user."""
+    projects = UserManager.list_user_projects(user.user_id)
     return {"success": True, "projects": projects}
 
 
 @router.post("/admin/api-keys")
-async def create_api_key(key_data: APIKeyCreate):
-    """Create a new API key for a project"""
+async def create_api_key(key_data: APIKeyCreate, user: CurrentUser = Depends(get_current_user)):
+    """Create a new API key for a project the authenticated user owns."""
+    _require_project_owner(key_data.project_id, user)
     try:
         api_key_info = APIKeyManager.create_api_key(
             project_id=key_data.project_id,
@@ -141,16 +159,22 @@ async def create_api_key(key_data: APIKeyCreate):
 
 
 @router.get("/admin/api-keys/{project_id}")
-async def list_api_keys(project_id: str):
-    """List all API keys for a project"""
+async def list_api_keys(project_id: str, user: CurrentUser = Depends(get_current_user)):
+    """List all API keys for a project the authenticated user owns."""
+    _require_project_owner(project_id, user)
     api_keys = APIKeyManager.list_api_keys(project_id)
     return {"success": True, "api_keys": api_keys}
 
 
 @router.delete("/admin/api-keys/{key_id}")
-async def revoke_api_key(key_id: str):
-    """Revoke an API key"""
-    success = APIKeyManager.revoke_api_key(key_id)
+async def revoke_api_key(key_id: str, user: CurrentUser = Depends(get_current_user)):
+    """Revoke an API key belonging to a project the authenticated user owns."""
+    project_id = APIKeyManager.get_key_project_id(key_id)
+    if not project_id:
+        raise HTTPException(status_code=404, detail="API key not found")
+    _require_project_owner(project_id, user)
+
+    success = APIKeyManager.revoke_api_key(key_id, project_id=project_id)
     if not success:
         raise HTTPException(status_code=404, detail="API key not found")
     return {"success": True, "message": "API key revoked"}

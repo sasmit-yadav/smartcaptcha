@@ -61,7 +61,17 @@ function validateConfig(config: VeriFlowConfig): { valid: boolean; error?: strin
 // Check for browser environment (SSR safety)
 const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined';
 
-const SDK_VERSION = '0.1.0';
+const SDK_VERSION = '0.2.0';
+const DEFAULT_ENDPOINT = 'https://next-captcha-sdk.onrender.com';
+
+/** Run a collector lifecycle call without letting an internal bug crash the host page (S2.1). */
+function safeCall(name: string, fn: () => void): void {
+  try {
+    fn();
+  } catch (error) {
+    console.warn(`[VeriFlow] "${name}" failed and was suppressed:`, error);
+  }
+}
 let initialized = false;
 let debug = false;
 let initConfig: VeriFlowConfig | null = null;
@@ -83,8 +93,8 @@ const VeriFlowSSR: VeriFlowAPI = {
   getSessionId: () => '',
   getSessionMeta: () => ({ sessionId: '', startTime: 0, userAgent: '', platform: '', webdriverFlag: false, hasTouch: false }),
   getDecision: (callback: DecisionCallback) => callback({ error: 'SSR environment', action: 'block', bot_probability: 1, risk_score: 100, confidence: 0, risk_engine_enabled: false, behavior_score: 0, fingerprint_score: 0, overall_risk: 100 }),
-  getDebugSnapshot: () => ({ version: '0.1.0', initialized: false, debug: false, session: { id: '', meta: { sessionId: '', startTime: 0, userAgent: '', platform: '', webdriverFlag: false, hasTouch: false } }, buffer: { eventCount: 0, recentEvents: [] }, collectors: { mouse: false, click: false, keyboard: false, scroll: false, focus: false, touch: false } }),
-  selfTest: (callback: SelfTestCallback) => callback({ version: '0.1.0', tests: [{ name: 'SSR Environment', status: 'warn', error: 'SDK disabled in SSR' }], passed: 0, failed: 0, overall: 'unknown' })
+  getDebugSnapshot: () => ({ version: SDK_VERSION, initialized: false, debug: false, session: { id: '', meta: { sessionId: '', startTime: 0, userAgent: '', platform: '', webdriverFlag: false, hasTouch: false } }, buffer: { eventCount: 0, recentEvents: [] }, collectors: { mouse: false, click: false, keyboard: false, scroll: false, focus: false, touch: false } }),
+  selfTest: (callback: SelfTestCallback) => callback({ version: SDK_VERSION, tests: [{ name: 'SSR Environment', status: 'warn', error: 'SDK disabled in SSR' }], passed: 0, failed: 0, overall: 'unknown' })
 };
 
 const VeriFlow: VeriFlowAPI = {
@@ -120,9 +130,9 @@ const VeriFlow: VeriFlowAPI = {
     // 1. Initialize session with source (default to 'demo' for backward compatibility)
     initSession(config.source || 'demo');
 
-    // 2. Initialize transport - use provided endpoint or default to local development
+    // 2. Initialize transport - use provided endpoint or default to production
     initTransport({
-      endpoint: config.endpoint || 'http://localhost:8001',
+      endpoint: config.endpoint || DEFAULT_ENDPOINT,
       apiKey: config.apiKey,
       debug,
     });
@@ -130,16 +140,16 @@ const VeriFlow: VeriFlowAPI = {
     // 3. Initialize buffer (disable telemetry if configured)
     initBuffer({ debug, disableTelemetry: config.disableTelemetry });
 
-    // 4. Start all collectors
-    startMouseTracking(push);
-    startClickTracking(push);
-    startKeyboardTracking(push);
-    startScrollTracking(push);
-    startFocusTracking(push);
+    // 4. Start all collectors — each wrapped so a collector bug can't crash the host page
+    safeCall('startMouseTracking', () => startMouseTracking(push));
+    safeCall('startClickTracking', () => startClickTracking(push));
+    safeCall('startKeyboardTracking', () => startKeyboardTracking(push));
+    safeCall('startScrollTracking', () => startScrollTracking(push));
+    safeCall('startFocusTracking', () => startFocusTracking(push));
 
     // Touch only on touch devices
     if ('ontouchstart' in window) {
-      startTouchTracking(push);
+      safeCall('startTouchTracking', () => startTouchTracking(push));
     }
 
     // 5. Notify backend of session start (only if telemetry enabled)
@@ -167,14 +177,14 @@ const VeriFlow: VeriFlowAPI = {
    */
   destroy(): void {
     if (!initialized || !isBrowser) return;
-    stopMouseTracking();
-    stopClickTracking();
-    stopKeyboardTracking();
-    stopScrollTracking();
-    stopFocusTracking();
-    stopTouchTracking();
-    stopBuffer();
-    sendSessionEnd();
+    safeCall('stopMouseTracking', stopMouseTracking);
+    safeCall('stopClickTracking', stopClickTracking);
+    safeCall('stopKeyboardTracking', stopKeyboardTracking);
+    safeCall('stopScrollTracking', stopScrollTracking);
+    safeCall('stopFocusTracking', stopFocusTracking);
+    safeCall('stopTouchTracking', stopTouchTracking);
+    safeCall('stopBuffer', stopBuffer);
+    safeCall('sendSessionEnd', () => { sendSessionEnd(); });
     initialized = false;
     if (debug) console.log('[VeriFlow] Destroyed');
   },
@@ -241,8 +251,8 @@ const VeriFlow: VeriFlowAPI = {
         console.log('[VeriFlow] Total request body keys:', Object.keys(requestBody).length);
       }
 
-      // Send to prediction API - use init config or default to local development
-      const endpoint = initConfig?.endpoint || 'http://localhost:8001';
+      // Send to prediction API - use init config or default to production
+      const endpoint = initConfig?.endpoint || DEFAULT_ENDPOINT;
       const apiKey = initConfig?.apiKey || '';
       
       if (!apiKey) {
@@ -252,18 +262,29 @@ const VeriFlow: VeriFlowAPI = {
       
       fetch(`${endpoint}/api/predict`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'X-API-Key': apiKey
         },
         body: JSON.stringify(requestBody)
       })
-      .then(response => response.json())
-      .then((data: DecisionResult) => {
-        if (debug) {
-          console.log('[VeriFlow] Decision received:', data);
+      .then(async response => {
+        const body = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          // Non-2xx: body is an error shape (e.g. FastAPI's {detail: "..."}),
+          // not a DecisionResult — never pass it through as-is (previously
+          // caused a downstream crash when callers read result.action).
+          const message = body?.detail || body?.error || `Request failed with status ${response.status}`;
+          if (debug) console.warn('[VeriFlow] Prediction request failed:', message);
+          callback({ error: message, action: 'block', bot_probability: 1, risk_score: 100, confidence: 0, risk_engine_enabled: false, behavior_score: 0, fingerprint_score: 0, overall_risk: 100 });
+          return;
         }
-        callback(data);
+
+        if (debug) {
+          console.log('[VeriFlow] Decision received:', body);
+        }
+        callback(body as DecisionResult);
       })
       .catch(error => {
         console.error('[VeriFlow] Prediction error:', error);
@@ -355,8 +376,7 @@ const VeriFlow: VeriFlowAPI = {
     }
 
     // Test 4: Network connectivity check - use config.js if available
-    const configEndpoint = (window as any).VERIFLOW_CONFIG?.BACKEND_URL;
-    const endpoint = (window as any).VERIFLOW_CONFIG?.BACKEND_URL || configEndpoint || 'https://next-captcha-sdk.onrender.com';
+    const endpoint = (window as any).VERIFLOW_CONFIG?.BACKEND_URL || initConfig?.endpoint || DEFAULT_ENDPOINT;
     fetch(`${endpoint}/health`, { method: 'GET' })
       .then(response => {
         if (response.ok) {

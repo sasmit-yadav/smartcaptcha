@@ -169,27 +169,48 @@ class APIKeyManager:
             conn.close()
     
     @staticmethod
-    def revoke_api_key(key_id: str) -> bool:
+    def revoke_api_key(key_id: str, project_id: Optional[str] = None) -> bool:
         """
-        Revoke (deactivate) an API key
-        
+        Revoke (deactivate) an API key.
+
         Args:
             key_id: UUID of the API key
-            
+            project_id: If provided, the revoke only applies if the key
+                belongs to this project (ownership check at the call site).
+
         Returns:
             True if successful
         """
         conn = psycopg2.connect(DATABASE_URL)
         try:
             with conn.cursor() as cursor:
-                cursor.execute("""
-                    UPDATE api_keys 
-                    SET is_active = FALSE 
-                    WHERE id = %s
-                """, (key_id,))
+                if project_id:
+                    cursor.execute("""
+                        UPDATE api_keys
+                        SET is_active = FALSE
+                        WHERE id = %s AND project_id = %s
+                    """, (key_id, project_id))
+                else:
+                    cursor.execute("""
+                        UPDATE api_keys
+                        SET is_active = FALSE
+                        WHERE id = %s
+                    """, (key_id,))
                 conn.commit()
                 return cursor.rowcount > 0
-                
+
+        finally:
+            conn.close()
+
+    @staticmethod
+    def get_key_project_id(key_id: str) -> Optional[str]:
+        """Look up which project an API key belongs to (for ownership checks)."""
+        conn = psycopg2.connect(DATABASE_URL)
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute("SELECT project_id FROM api_keys WHERE id = %s", (key_id,))
+                row = cursor.fetchone()
+                return str(row['project_id']) if row else None
         finally:
             conn.close()
     
@@ -378,6 +399,22 @@ class UserManager:
         finally:
             conn.close()
     
+    @staticmethod
+    def get_project(project_id: str) -> Optional[Dict]:
+        """Look up a project by ID (for ownership checks)."""
+        conn = psycopg2.connect(DATABASE_URL)
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute("""
+                    SELECT id, name, owner_id, allowed_domains, created_at
+                    FROM projects
+                    WHERE id = %s
+                """, (project_id,))
+                result = cursor.fetchone()
+                return dict(result) if result else None
+        finally:
+            conn.close()
+
     @staticmethod
     def list_user_projects(user_id: str) -> List[Dict]:
         """

@@ -1,7 +1,11 @@
+import os
+
+import bcrypt
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from fastapi import APIRouter, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException
 from core.database import DATABASE_URL
+from core.auth import create_access_token, get_current_super_admin, CurrentUser
 from typing import Dict, List
 
 router = APIRouter(prefix="/admin", tags=["Super Admin"])
@@ -12,58 +16,46 @@ class AdminLoginRequest(BaseModel):
     username: str
     password: str
 
-def verify_super_admin(user_id: str):
-    """Verify that the user is an active admin in the database"""
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Missing user-id header")
-    
-    # Handle local hardcoded admin fallback ID
-    if user_id == "00000000-0000-0000-0000-000000000000":
-        return
-        
-    conn = psycopg2.connect(DATABASE_URL)
-    try:
-        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute("""
-                SELECT is_admin, is_active FROM users WHERE id = %s
-            """, (user_id,))
-            user = cursor.fetchone()
-            if not user or not user['is_admin'] or not user['is_active']:
-                raise HTTPException(status_code=403, detail="Access denied. Super Admin privileges required.")
-    finally:
-        conn.close()
+# Super-admin login for the internal admin-dashboard. Configured via env vars
+# — never hardcoded. SUPER_ADMIN_PASSWORD_HASH is a bcrypt hash, generated
+# once with: python -c "import bcrypt; print(bcrypt.hashpw(b'yourpassword', bcrypt.gensalt()).decode())"
+SUPER_ADMIN_USERNAME = os.getenv("SUPER_ADMIN_USERNAME")
+SUPER_ADMIN_PASSWORD_HASH = os.getenv("SUPER_ADMIN_PASSWORD_HASH")
+
 
 @router.post("/verify-credentials")
 async def verify_credentials(login_req: AdminLoginRequest):
-    """Verify hardcoded super admin credentials"""
-    if login_req.username == "sasmit_rao" and login_req.password == "sas@1234":
-        conn = psycopg2.connect(DATABASE_URL)
-        try:
-            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                # Find an existing admin user in DB
-                cursor.execute("SELECT id::text, email, full_name, is_admin FROM users WHERE is_admin = TRUE LIMIT 1")
-                admin_user = cursor.fetchone()
-                if admin_user:
-                    return {"success": True, "user": dict(admin_user)}
-                else:
-                    return {
-                        "success": True, 
-                        "user": {
-                            "id": "00000000-0000-0000-0000-000000000000", 
-                            "email": "hulkb690@gmail.com", 
-                            "full_name": "Sasmit Rao",
-                            "is_admin": True
-                        }
-                    }
-        finally:
-            conn.close()
-    else:
+    """Verify super-admin credentials (env-configured) and issue a session token."""
+    if not SUPER_ADMIN_USERNAME or not SUPER_ADMIN_PASSWORD_HASH:
+        raise HTTPException(
+            status_code=503,
+            detail="Super-admin login is not configured (SUPER_ADMIN_USERNAME / SUPER_ADMIN_PASSWORD_HASH unset)"
+        )
+
+    valid = (
+        login_req.username == SUPER_ADMIN_USERNAME
+        and bcrypt.checkpw(login_req.password.encode(), SUPER_ADMIN_PASSWORD_HASH.encode())
+    )
+    if not valid:
         raise HTTPException(status_code=401, detail="Invalid admin credentials")
 
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute("SELECT id::text, email, full_name, is_admin FROM users WHERE is_admin = TRUE LIMIT 1")
+            admin_user = cursor.fetchone()
+    finally:
+        conn.close()
+
+    if not admin_user:
+        raise HTTPException(status_code=500, detail="No admin user record found in database")
+
+    token = create_access_token(user_id=admin_user["id"], email=admin_user["email"], is_admin=True)
+    return {"success": True, "user": dict(admin_user), "access_token": token}
+
+
 @router.get("/global-analytics")
-async def get_global_analytics(user_id: str = Header(..., alias="user-id")):
-    verify_super_admin(user_id)
-    
+async def get_global_analytics(admin: CurrentUser = Depends(get_current_super_admin)):
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -135,9 +127,7 @@ async def get_global_analytics(user_id: str = Header(..., alias="user-id")):
         conn.close()
 
 @router.get("/global-users")
-async def get_global_users(user_id: str = Header(..., alias="user-id")):
-    verify_super_admin(user_id)
-    
+async def get_global_users(admin: CurrentUser = Depends(get_current_super_admin)):
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -164,9 +154,7 @@ async def get_global_users(user_id: str = Header(..., alias="user-id")):
         conn.close()
 
 @router.get("/global-sessions")
-async def get_global_sessions(user_id: str = Header(..., alias="user-id")):
-    verify_super_admin(user_id)
-    
+async def get_global_sessions(admin: CurrentUser = Depends(get_current_super_admin)):
     conn = psycopg2.connect(DATABASE_URL)
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -191,9 +179,7 @@ async def get_global_sessions(user_id: str = Header(..., alias="user-id")):
         conn.close()
 
 @router.post("/users/toggle-status")
-async def toggle_user_status(payload: Dict, user_id: str = Header(..., alias="user-id")):
-    verify_super_admin(user_id)
-    
+async def toggle_user_status(payload: Dict, admin: CurrentUser = Depends(get_current_super_admin)):
     target_user_id = payload.get("target_user_id")
     is_active = payload.get("is_active")
     

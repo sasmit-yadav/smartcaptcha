@@ -68,7 +68,8 @@ export default function AdminDashboard() {
       if (res.status === 200 && data.success) {
         setUser(data.user);
         localStorage.setItem('veriflow_admin', JSON.stringify(data.user));
-        loadAllData(data.user.id);
+        localStorage.setItem('veriflow_admin_token', data.access_token);
+        loadAllData(data.access_token);
       } else {
         setError(data.detail || 'Invalid admin username or password');
       }
@@ -80,6 +81,7 @@ export default function AdminDashboard() {
 
   const handleLogout = () => {
     localStorage.removeItem('veriflow_admin');
+    localStorage.removeItem('veriflow_admin_token');
     setUser(null);
     setAnalytics(null);
     setUsers([]);
@@ -88,32 +90,34 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     const savedAdmin = localStorage.getItem('veriflow_admin');
-    if (savedAdmin) {
-      const parsed = JSON.parse(savedAdmin);
-      setUser(parsed);
-      loadAllData(parsed.id);
+    const savedToken = localStorage.getItem('veriflow_admin_token');
+    if (savedAdmin && savedToken) {
+      setUser(JSON.parse(savedAdmin));
+      loadAllData(savedToken);
     }
   }, []);
 
   // Set up 10-second polling for real-time live threat data
   useEffect(() => {
     if (!user) return;
-    
+    const token = localStorage.getItem('veriflow_admin_token');
+    if (!token) return;
+
     const interval = setInterval(() => {
-      loadAnalytics(user.id);
-      loadSessions(user.id);
+      loadAnalytics(token);
+      loadSessions(token);
     }, 10000); // 10 seconds
-    
+
     return () => clearInterval(interval);
   }, [user]);
 
-  const loadAllData = async (adminId) => {
+  const loadAllData = async (token) => {
     setRefreshing(true);
     try {
       await Promise.all([
-        loadAnalytics(adminId),
-        loadUsers(adminId),
-        loadSessions(adminId)
+        loadAnalytics(token),
+        loadUsers(token),
+        loadSessions(token)
       ]);
     } catch (err) {
       console.error('Failed to load data:', err);
@@ -121,10 +125,10 @@ export default function AdminDashboard() {
     setRefreshing(false);
   };
 
-  const loadAnalytics = async (adminId) => {
+  const loadAnalytics = async (token) => {
     try {
       const res = await fetch(`${API_BASE_URL}/admin/global-analytics`, {
-        headers: { 'user-id': adminId }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
       if (data.success) {
@@ -135,10 +139,10 @@ export default function AdminDashboard() {
     }
   };
 
-  const loadUsers = async (adminId) => {
+  const loadUsers = async (token) => {
     try {
       const res = await fetch(`${API_BASE_URL}/admin/global-users`, {
-        headers: { 'user-id': adminId }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
       if (data.success) {
@@ -149,10 +153,10 @@ export default function AdminDashboard() {
     }
   };
 
-  const loadSessions = async (adminId) => {
+  const loadSessions = async (token) => {
     try {
       const res = await fetch(`${API_BASE_URL}/admin/global-sessions`, {
-        headers: { 'user-id': adminId }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await res.json();
       if (data.success) {
@@ -165,13 +169,14 @@ export default function AdminDashboard() {
 
   const toggleUserStatus = async (targetUserId, currentStatus) => {
     if (!confirm(`Are you sure you want to ${currentStatus ? 'suspend' : 'activate'} this developer?`)) return;
-    
+
+    const token = localStorage.getItem('veriflow_admin_token');
     try {
       const res = await fetch(`${API_BASE_URL}/admin/users/toggle-status`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'user-id': user.id
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           target_user_id: targetUserId,
@@ -182,7 +187,7 @@ export default function AdminDashboard() {
       if (data.success) {
         setSuccess(data.message);
         setTimeout(() => setSuccess(''), 3000);
-        loadUsers(user.id);
+        loadUsers(token);
       }
     } catch (err) {
       setError('Failed to update developer status');

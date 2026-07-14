@@ -64,7 +64,8 @@ export default function Dashboard() {
       if (data.success) {
         setUser(data.user);
         localStorage.setItem('veriflow_user', JSON.stringify(data.user));
-        loadProjects(data.user.id);
+        localStorage.setItem('veriflow_token', data.access_token);
+        loadProjects(data.access_token);
       } else {
         setError(data.detail || 'Google Authentication failed');
       }
@@ -91,7 +92,8 @@ export default function Dashboard() {
       if (data.success) {
         setUser(data.user);
         localStorage.setItem('veriflow_user', JSON.stringify(data.user));
-        loadProjects(data.user.id);
+        localStorage.setItem('veriflow_token', data.access_token);
+        loadProjects(data.access_token);
       } else {
         setError(data.detail || 'Mock Authentication failed');
       }
@@ -104,9 +106,10 @@ export default function Dashboard() {
   // Check for logged in user and load Google SDK
   useEffect(() => {
     const savedUser = localStorage.getItem('veriflow_user');
-    if (savedUser) {
+    const savedToken = localStorage.getItem('veriflow_token');
+    if (savedUser && savedToken) {
       setUser(JSON.parse(savedUser));
-      loadProjects(JSON.parse(savedUser).id);
+      loadProjects(savedToken);
     } else {
       if (!document.getElementById('google-jssdk')) {
         const script = document.createElement('script');
@@ -124,10 +127,10 @@ export default function Dashboard() {
     }
   }, []);
 
-  const loadProjects = async (userId) => {
+  const loadProjects = async (token) => {
     try {
       const response = await fetch(`${API_BASE_URL}/admin/projects`, {
-        headers: { 'user-id': userId }
+        headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
       if (data.success && data.projects.length > 0) {
@@ -143,7 +146,10 @@ export default function Dashboard() {
 
   const loadApiKeys = async (projectId) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/admin/api-keys/${projectId}`);
+      const token = localStorage.getItem('veriflow_token');
+      const response = await fetch(`${API_BASE_URL}/admin/api-keys/${projectId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
       const data = await response.json();
       if (data.success) {
         setApiKeys(prev => ({ ...prev, [projectId]: data.api_keys }));
@@ -157,12 +163,13 @@ export default function Dashboard() {
     setLoading(true);
     setError('');
     try {
+      const token = localStorage.getItem('veriflow_token');
       const domains = newProjectDomains.split(',').map(d => d.trim()).filter(d => d);
       const response = await fetch(`${API_BASE_URL}/admin/projects`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          'user-id': user.id
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           name: newProjectName,
@@ -175,7 +182,7 @@ export default function Dashboard() {
         setNewProjectName('');
         setNewProjectDomains('');
         setShowCreateProject(false);
-        loadProjects(user.id);
+        loadProjects(token);
       } else {
         setError(data.detail || 'Failed to create project');
       }
@@ -189,9 +196,13 @@ export default function Dashboard() {
     setLoading(true);
     setError('');
     try {
+      const token = localStorage.getItem('veriflow_token');
       const response = await fetch(`${API_BASE_URL}/admin/api-keys`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({
           project_id: selectedProject,
           key_type: newKeyType
@@ -214,11 +225,13 @@ export default function Dashboard() {
 
   const handleRevokeKey = async (keyId) => {
     if (!confirm('Are you sure you want to revoke this API key?')) return;
-    
+
     setLoading(true);
     try {
+      const token = localStorage.getItem('veriflow_token');
       const response = await fetch(`${API_BASE_URL}/admin/api-keys/${keyId}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
       if (data.success) {
@@ -241,6 +254,7 @@ export default function Dashboard() {
 
   const handleLogout = () => {
     localStorage.removeItem('veriflow_user');
+    localStorage.removeItem('veriflow_token');
     setUser(null);
     window.location.href = '/';
   };

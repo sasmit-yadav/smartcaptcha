@@ -63,7 +63,7 @@ export default function Dashboard() {
       const data = await res.json();
       if (data.success) {
         setUser(data.user);
-        localStorage.setItem('nextcaptcha_user', JSON.stringify(data.user));
+        localStorage.setItem('veriflow_user', JSON.stringify(data.user));
         loadProjects(data.user.id);
       } else {
         setError(data.detail || 'Google Authentication failed');
@@ -86,7 +86,7 @@ export default function Dashboard() {
       const data = await res.json();
       if (data.success) {
         setUser(data.user);
-        localStorage.setItem('nextcaptcha_user', JSON.stringify(data.user));
+        localStorage.setItem('veriflow_user', JSON.stringify(data.user));
         loadProjects(data.user.id);
       } else {
         setError(data.detail || 'Mock Authentication failed');
@@ -99,7 +99,7 @@ export default function Dashboard() {
 
   // Check for logged in user and load Google SDK
   useEffect(() => {
-    const savedUser = localStorage.getItem('nextcaptcha_user');
+    const savedUser = localStorage.getItem('veriflow_user');
     if (savedUser) {
       setUser(JSON.parse(savedUser));
       loadProjects(JSON.parse(savedUser).id);
@@ -236,7 +236,7 @@ export default function Dashboard() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('nextcaptcha_user');
+    localStorage.removeItem('veriflow_user');
     setUser(null);
     window.location.href = '/';
   };
@@ -247,7 +247,7 @@ export default function Dashboard() {
         <div className="max-w-md w-full p-8">
           <div className="text-center mb-8">
             <Shield className="w-16 h-16 text-primary mx-auto mb-4" />
-            <h1 className="text-3xl font-bold mb-2">NextCaptcha Dashboard</h1>
+            <h1 className="text-3xl font-bold mb-2">VeriFlow Dashboard</h1>
             <p className="text-textSecondary">Manage your API keys and projects</p>
           </div>
           
@@ -295,7 +295,7 @@ export default function Dashboard() {
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Shield className="w-8 h-8 text-primary" />
-            <span className="text-xl font-bold">NextCaptcha</span>
+            <span className="text-xl font-bold">VeriFlow</span>
           </div>
           
           <div className="flex items-center gap-4">
@@ -436,7 +436,7 @@ export default function Dashboard() {
                   </thead>
                   <tbody>
                     {(apiKeys[selectedProject] || []).map((key) => {
-                      const isLive = key.key_prefix.startsWith('sc_live_');
+                      const isLive = key.key_prefix.startsWith('vf_live_') || key.key_prefix.startsWith('sc_live_');
                       return (
                         <tr key={key.id} className="border-b border-border text-sm hover:bg-surface2/40 transition-colors">
                           <td className="py-4 px-6 font-medium">

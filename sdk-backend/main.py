@@ -72,7 +72,7 @@ async def verify_api_key(credentials: HTTPAuthorizationCredentials = Depends(sec
     Falls back to demo keys if DEMO_MODE is enabled
     """
     api_key = credentials.credentials
-    print(f"[DEBUG] Received API key: {api_key[:20]}...")
+    print(f"[DEBUG] Received API key: {api_key[:12]}...")
     
     # Demo mode fallback
     if DEMO_MODE and api_key in DEMO_API_KEYS:
@@ -133,17 +133,17 @@ async def predict(
     Prediction API for SDK customers
     Takes behavioral features and returns bot detection decision
     """
-    print(f"[DEBUG] Authorization header: {authorization}")
-    print(f"[DEBUG] X-API-Key header: {x_api_key}")
-    
+    # Never log full credential headers — key prefix only
+    print(f"[DEBUG] Auth headers present: authorization={bool(authorization)}, x_api_key={bool(x_api_key)}")
+
     # Extract API key from X-API-Key header (SDK sends it this way)
     api_key = x_api_key
-    
+
     # Fallback to Authorization header
     if not api_key and authorization and authorization.startswith("Bearer "):
         api_key = authorization[7:]
-    
-    print(f"[DEBUG] Extracted API key: {api_key[:20] if api_key else None}...")
+
+    print(f"[DEBUG] Extracted API key: {api_key[:12] if api_key else None}...")
     
     # Verify API key
     if not api_key:
@@ -151,7 +151,7 @@ async def predict(
     
     key_info = APIKeyManager.verify_api_key(api_key)
     if not key_info:
-        print(f"[DEBUG] API key verification failed for: {api_key[:20]}...")
+        print(f"[DEBUG] API key verification failed for: {api_key[:12]}...")
         raise HTTPException(status_code=403, detail="Invalid or inactive API key")
     
     print(f"[DEBUG] API key verified successfully for project: {key_info['project_name']}")

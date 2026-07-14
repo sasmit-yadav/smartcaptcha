@@ -4,12 +4,13 @@ POST /api/session/start — register a new session.
 POST /api/session/end   — close a session with duration.
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from typing import Optional
 from schemas.telemetry import SessionStartPayload, SessionEndPayload
 from core.database import insert_session, update_session_end
+from core.ingest_auth import verify_ingest_source
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(verify_ingest_source)])
 
 
 @router.post("/api/session/start")

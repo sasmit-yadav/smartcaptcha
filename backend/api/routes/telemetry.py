@@ -3,13 +3,14 @@ SmartCaptcha Backend — Telemetry route.
 POST /api/telemetry — receives batched events from the SDK.
 """
 
-from fastapi import APIRouter, Request, Header
+from fastapi import APIRouter, Request, Header, Depends
 from typing import Optional
 from schemas.telemetry import TelemetryPayload
 from core.database import insert_events_batch
+from core.ingest_auth import verify_ingest_source
 import time
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(verify_ingest_source)])
 
 
 @router.post("/api/telemetry")

@@ -74,7 +74,11 @@ export default function Dashboard() {
     setLoading(false);
   };
 
+  // Local-only bypass: compiled out of production builds (NODE_ENV is inlined at build time)
+  const MOCK_LOGIN_ENABLED = process.env.NODE_ENV === 'development';
+
   const handleMockLogin = async () => {
+    if (!MOCK_LOGIN_ENABLED) return;
     setLoading(true);
     setError('');
     try {
@@ -255,19 +259,23 @@ export default function Dashboard() {
             {/* Google Identity Services button container */}
             <div id="google-btn-container" className="w-full flex justify-center py-1 min-h-[50px]"></div>
             
-            <div className="w-full flex items-center gap-3">
-              <div className="h-[1px] bg-border flex-1"></div>
-              <span className="text-xs text-textSecondary font-medium uppercase tracking-wider">Or</span>
-              <div className="h-[1px] bg-border flex-1"></div>
-            </div>
+            {MOCK_LOGIN_ENABLED && (
+              <>
+                <div className="w-full flex items-center gap-3">
+                  <div className="h-[1px] bg-border flex-1"></div>
+                  <span className="text-xs text-textSecondary font-medium uppercase tracking-wider">Or</span>
+                  <div className="h-[1px] bg-border flex-1"></div>
+                </div>
 
-            <button
-              onClick={handleMockLogin}
-              disabled={loading}
-              className="w-full bg-surface2 hover:bg-surface text-textSecondary hover:text-text py-3 rounded-lg font-medium transition-colors border border-border flex items-center justify-center gap-2"
-            >
-              {loading ? 'Authenticating...' : 'Continue as Mock Developer (Local Bypass)'}
-            </button>
+                <button
+                  onClick={handleMockLogin}
+                  disabled={loading}
+                  className="w-full bg-surface2 hover:bg-surface text-textSecondary hover:text-text py-3 rounded-lg font-medium transition-colors border border-border flex items-center justify-center gap-2"
+                >
+                  {loading ? 'Authenticating...' : 'Continue as Mock Developer (Local Bypass)'}
+                </button>
+              </>
+            )}
           </div>
           
           {error && (

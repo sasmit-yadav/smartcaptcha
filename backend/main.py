@@ -17,12 +17,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.routes.telemetry import router as telemetry_router
 from api.routes.session import router as session_router
 from core.database import init_db, get_session_stats
+from core.ingest_auth import get_allowed_origins
 from fastapi.exceptions import RequestValidationError
 from starlette.responses import JSONResponse
 import logging
-
-print("DATABASE URL:")
-print(os.getenv("DATABASE_URL"))
 
 app = FastAPI(title="EcoHub API", version="0.1.0")
 
@@ -41,10 +39,10 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
                  request.method, request.url.path, exc.errors(), body_text)
     return JSONResponse(status_code=422, content={"detail": "Request validation error", "errors": exc.errors()})
 
-# CORS - allow all origins for development/testing
+# CORS — restricted to ALLOWED_ORIGINS (falls back to localhost dev origins)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=get_allowed_origins(),
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

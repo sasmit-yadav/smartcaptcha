@@ -11,10 +11,13 @@ import psycopg2
 from psycopg2 import pool
 from psycopg2.extras import execute_values
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://postgres.xroqpyuenhowuaueiiwu:sasyrao%401234@aws-1-ap-south-1.pooler.supabase.com:6543/postgres",
-)
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL environment variable is not set. "
+        "Set it to your PostgreSQL connection string (e.g. in backend/.env locally "
+        "or the Render dashboard in production). Credentials must never be hardcoded."
+    )
 
 _conn_pool = None
 

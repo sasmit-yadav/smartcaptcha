@@ -195,6 +195,9 @@ Catcha_roadmap.txt
 docs/_build/
 docs/.doctrees/
 
+# Local working notes — never tracked/pushed (see docs/current_task.md)
+/docs/
+
 # Misc
 *.pid
 *.seed

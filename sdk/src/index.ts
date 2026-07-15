@@ -8,7 +8,7 @@
  *     debug: true
  *   })
  *
- * Version: 0.3.0
+ * Version: 0.1.0
  */
 
 import { initSession, getSessionId, getSessionMeta } from './core/session.js';
@@ -74,7 +74,7 @@ function validateConfig(config: VeriFlowConfig): { valid: boolean; error?: strin
 // Check for browser environment (SSR safety)
 const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined';
 
-const SDK_VERSION = '0.3.0';
+const SDK_VERSION = '0.1.1';
 const DEFAULT_ENDPOINT = 'https://next-captcha-sdk.onrender.com';
 
 /** Run a collector lifecycle call without letting an internal bug crash the host page (S2.1). */

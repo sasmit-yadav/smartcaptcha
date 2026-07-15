@@ -11,7 +11,8 @@ import {
   reactSnippet, nextjsSnippet, vueSnippet,
   siteverifyCurlSnippet, siteverifyNodeSnippet, siteverifyPythonFlaskSnippet,
   siteverifyPythonDjangoSnippet, siteverifyPhpSnippet,
-  siteverifySuccessResponse, siteverifyErrorResponse, CDN_URL,
+  siteverifyJavaSnippet, siteverifyRubySnippet, siteverifyGoSnippet, siteverifyCsharpSnippet,
+  siteverifySuccessResponse, siteverifyBlockedResponse, siteverifyErrorResponse, CDN_URL,
 } from '../../components/docs/docSnippets';
 
 const NAV = [
@@ -121,9 +122,30 @@ export default function DocsPage() {
           { label: 'Python (Flask)', code: siteverifyPythonFlaskSnippet() },
           { label: 'Python (Django)', code: siteverifyPythonDjangoSnippet() },
           { label: 'PHP', code: siteverifyPhpSnippet() },
+          { label: 'Java (Spring)', code: siteverifyJavaSnippet() },
+          { label: 'Ruby (Rails)', code: siteverifyRubySnippet() },
+          { label: 'Go', code: siteverifyGoSnippet() },
+          { label: 'C# (.NET)', code: siteverifyCsharpSnippet() },
         ]} />
+        <p className="text-textSecondary text-sm">
+          The <code className="text-accent">curl</code> tab only shows the request —
+          it can't check the response for you. Every other tab shows the full
+          pattern, including the <code className="text-accent">action</code> check below.
+          Don't wire up your own handler from the curl example alone.
+        </p>
 
         <H3>Interpreting the result</H3>
+        <Callout variant="danger">
+          <strong><code>success: true</code> does not mean the visitor is human.</strong> It
+          only means the token is genuine, unexpired, and hasn't been redeemed
+          before — the same way a valid-but-expired coupon code is still a
+          &quot;real&quot; code. A detected bot is still issued a validly-signed
+          token; <code>/api/siteverify</code> will happily return
+          <code> success: true</code> for it. You must check
+          <code className="text-accent"> action !== &apos;block&apos;</code> yourself,
+          every time, before trusting the request. Skipping this check means
+          every bot VeriFlow detects gets through anyway.
+        </Callout>
         <P>
           Check <code className="text-accent">action</code> (<code className="text-accent">allow</code> / <code className="text-accent">block</code>) and
           <code className="text-accent"> risk_score</code> (0-100). Most integrations trust <code className="text-accent">action</code> directly;
@@ -147,11 +169,20 @@ export default function DocsPage() {
           <div className="space-y-3">
             <p className="text-textSecondary text-sm">Accepts JSON <code className="text-accent">{'{ "token": "..." }'}</code> or classic form-encoded <code className="text-accent">secret=...&amp;response=...</code> (reCAPTCHA-compatible). Failures return HTTP 200 — check <code className="text-accent">success</code>, not the status code.</p>
             <div>
-              <h4 className="font-semibold text-sm text-textSecondary mb-1">Success response</h4>
+              <h4 className="font-semibold text-sm text-textSecondary mb-1">Success response — visitor allowed</h4>
               <CodeBlock code={siteverifySuccessResponse} />
             </div>
             <div>
-              <h4 className="font-semibold text-sm text-textSecondary mb-1">Error response</h4>
+              <h4 className="font-semibold text-sm text-textSecondary mb-1">Success response — bot blocked (note: still <code className="text-accent">success: true</code>)</h4>
+              <CodeBlock code={siteverifyBlockedResponse} />
+              <p className="text-textSecondary text-xs mt-2">
+                This is the response for a bot VeriFlow correctly detected. <code className="text-accent">success</code> is
+                still <code className="text-accent">true</code> — only <code className="text-accent">action</code> tells
+                you it was blocked. See the danger callout in Server Verification.
+              </p>
+            </div>
+            <div>
+              <h4 className="font-semibold text-sm text-textSecondary mb-1">Error response — invalid or expired token</h4>
               <CodeBlock code={siteverifyErrorResponse} />
               <p className="text-textSecondary text-xs mt-2">Codes: <code className="text-accent">missing-input-secret</code>, <code className="text-accent">invalid-input-secret</code>, <code className="text-accent">missing-input-response</code>, <code className="text-accent">invalid-input-response</code>, <code className="text-accent">timeout-or-duplicate</code>.</p>
             </div>

@@ -7,7 +7,7 @@ Behavioral telemetry SDK for invisible bot detection and fraud prevention.
 ### Script tag — zero JS (any HTML site: WordPress, Django templates, Rails views, ...)
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/veriflow-sdk@0.3.0/dist/veriflow.min.js"
+<script src="https://cdn.jsdelivr.net/npm/veriflow-sdk@0.1.1/dist/veriflow.min.js"
         data-site-key="vf_site_..."
         async defer></script>
 ```
@@ -181,7 +181,7 @@ Run self-test to verify SDK integration.
 **Result:**
 ```javascript
 {
-  version: '0.3.0',
+  version: '0.1.1',
   tests: [
     { name: 'SDK Initialized', status: 'pass' },
     { name: 'API Key Valid', status: 'pass' },

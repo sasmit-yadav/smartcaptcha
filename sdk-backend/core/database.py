@@ -463,6 +463,13 @@ def insert_events_batch(session_id: str, events: list):
     conn = get_connection()
     try:
         cursor = conn.cursor()
+        # events.session_id has a NOT NULL FK to sessions(id). Ensure the row
+        # exists so telemetry never 500s on a session/start that failed,
+        # raced, or was never sent (telemetry is fire-and-forget by design).
+        cursor.execute(
+            "INSERT INTO sessions (id) VALUES (%s) ON CONFLICT (id) DO NOTHING",
+            (session_id,),
+        )
         rows = []
         for e in events:
             etype = e.get('type', 'unknown')

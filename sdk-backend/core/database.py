@@ -172,7 +172,7 @@ def init_db():
         cursor.execute("""
             UPDATE users 
             SET is_admin = TRUE 
-            WHERE email IN ('developer@veriflow.com', 'developer@nextcaptcha.com', 'hulkb690@gmail.com')
+            WHERE email IN ('developer@veilproof.com', 'developer@nextcaptcha.com', 'hulkb690@gmail.com')
         """)
         
         # Create sessions table (Phase 3.2 + extended fields + event_count + V2 telemetry)

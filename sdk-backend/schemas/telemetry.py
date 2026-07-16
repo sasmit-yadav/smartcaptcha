@@ -1,5 +1,5 @@
 """
-VeriFlow API — Pydantic schemas for telemetry request validation.
+VeilProof API — Pydantic schemas for telemetry request validation.
 Shared contract with the browser SDK (sdk/src/core/transport.ts) and the
 demo site's inline collectors.
 """

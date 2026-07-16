@@ -1,5 +1,5 @@
 """
-VeriFlow API — Telemetry route.
+VeilProof API — Telemetry route.
 POST /api/telemetry — receives batched behavioral events from the SDK and
 the demo site, and stores them for model training and analytics.
 """

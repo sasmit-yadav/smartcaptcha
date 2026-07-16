@@ -1,21 +1,17 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
 import {
-  Shield,
   Key,
   Plus,
   Copy,
   Trash2,
   CheckCircle2,
   XCircle,
-  LogOut,
-  Building2,
-  Globe,
   BookOpen
 } from 'lucide-react';
 import CodeBlock from '../../components/docs/CodeBlock';
+import SiteNav from '../../components/chrome/SiteNav';
 import { scriptTagSnippet, siteverifyCurlSnippet } from '../../components/docs/docSnippets';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://next-captcha-sdk.onrender.com';
@@ -47,7 +43,7 @@ export default function Dashboard() {
       if (buttonContainer) {
         window.google.accounts.id.renderButton(
           buttonContainer,
-          { theme: 'filled_dark', size: 'large', width: 380, shape: 'pill' }
+          { theme: 'filled_black', size: 'large', width: 380, shape: 'rectangular' }
         );
       }
     }
@@ -65,8 +61,8 @@ export default function Dashboard() {
       const data = await res.json();
       if (data.success) {
         setUser(data.user);
-        localStorage.setItem('veriflow_user', JSON.stringify(data.user));
-        localStorage.setItem('veriflow_token', data.access_token);
+        localStorage.setItem('veilproof_user', JSON.stringify(data.user));
+        localStorage.setItem('veilproof_token', data.access_token);
         loadProjects(data.access_token);
       } else {
         setError(data.detail || 'Google Authentication failed');
@@ -93,8 +89,8 @@ export default function Dashboard() {
       const data = await res.json();
       if (data.success) {
         setUser(data.user);
-        localStorage.setItem('veriflow_user', JSON.stringify(data.user));
-        localStorage.setItem('veriflow_token', data.access_token);
+        localStorage.setItem('veilproof_user', JSON.stringify(data.user));
+        localStorage.setItem('veilproof_token', data.access_token);
         loadProjects(data.access_token);
       } else {
         setError(data.detail || 'Mock Authentication failed');
@@ -107,8 +103,8 @@ export default function Dashboard() {
 
   // Check for logged in user and load Google SDK
   useEffect(() => {
-    const savedUser = localStorage.getItem('veriflow_user');
-    const savedToken = localStorage.getItem('veriflow_token');
+    const savedUser = localStorage.getItem('veilproof_user');
+    const savedToken = localStorage.getItem('veilproof_token');
     if (savedUser && savedToken) {
       setUser(JSON.parse(savedUser));
       loadProjects(savedToken);
@@ -148,7 +144,7 @@ export default function Dashboard() {
 
   const loadApiKeys = async (projectId) => {
     try {
-      const token = localStorage.getItem('veriflow_token');
+      const token = localStorage.getItem('veilproof_token');
       const response = await fetch(`${API_BASE_URL}/admin/api-keys/${projectId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -162,10 +158,11 @@ export default function Dashboard() {
   };
 
   const handleCreateProject = async () => {
+    if (!newProjectName.trim()) return;
     setLoading(true);
     setError('');
     try {
-      const token = localStorage.getItem('veriflow_token');
+      const token = localStorage.getItem('veilproof_token');
       const domains = newProjectDomains.split(',').map(d => d.trim()).filter(d => d);
       const response = await fetch(`${API_BASE_URL}/admin/projects`, {
         method: 'POST',
@@ -198,7 +195,7 @@ export default function Dashboard() {
     setLoading(true);
     setError('');
     try {
-      const token = localStorage.getItem('veriflow_token');
+      const token = localStorage.getItem('veilproof_token');
       const response = await fetch(`${API_BASE_URL}/admin/api-keys/pair`, {
         method: 'POST',
         headers: {
@@ -227,7 +224,7 @@ export default function Dashboard() {
 
     setLoading(true);
     try {
-      const token = localStorage.getItem('veriflow_token');
+      const token = localStorage.getItem('veilproof_token');
       const response = await fetch(`${API_BASE_URL}/admin/api-keys/${keyId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
@@ -252,128 +249,185 @@ export default function Dashboard() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('veriflow_user');
-    localStorage.removeItem('veriflow_token');
+    localStorage.removeItem('veilproof_user');
+    localStorage.removeItem('veilproof_token');
     setUser(null);
     window.location.href = '/';
   };
 
+  const selectProject = (projectId) => {
+    setSelectedProject(projectId);
+    if (!apiKeys[projectId]) loadApiKeys(projectId);
+  };
+
   if (!user) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="max-w-md w-full p-8">
+      <div className="min-h-screen bg-canvas text-ink">
+        <SiteNav />
+        <div className="dashboard-login min-h-[calc(100vh-64px)] flex items-center justify-center px-6">
+          <div className="dashboard-login-panel max-w-md w-full card p-8">
           <div className="text-center mb-8">
-            <Shield className="w-16 h-16 text-primary mx-auto mb-4" />
-            <h1 className="text-3xl font-bold mb-2">VeriFlow Dashboard</h1>
-            <p className="text-textSecondary">Manage your API keys and projects</p>
+            <span className="veilproof-icon-crop">
+              <img src="/veilproof.png" alt="VeilProof" />
+            </span>
+            <h1 className="text-2xl font-semibold mb-2">
+              <span className="font-brand font-bold uppercase tracking-wide">VeilProof</span> Dashboard
+            </h1>
+            <p className="text-mute text-sm">Manage your API keys and projects</p>
           </div>
-          
+
           <div className="space-y-6 flex flex-col items-center">
             {/* Google Identity Services button container */}
             <div id="google-btn-container" className="w-full flex justify-center py-1 min-h-[50px]"></div>
-            
+
             {MOCK_LOGIN_ENABLED && (
               <>
                 <div className="w-full flex items-center gap-3">
-                  <div className="h-[1px] bg-border flex-1"></div>
-                  <span className="text-xs text-textSecondary font-medium uppercase tracking-wider">Or</span>
-                  <div className="h-[1px] bg-border flex-1"></div>
+                  <div className="h-px bg-hairline flex-1"></div>
+                  <span className="text-xs text-mute font-bold uppercase tracking-wider">Or</span>
+                  <div className="h-px bg-hairline flex-1"></div>
                 </div>
 
                 <button
                   onClick={handleMockLogin}
                   disabled={loading}
-                  className="w-full bg-surface2 hover:bg-surface text-textSecondary hover:text-text py-3 rounded-lg font-medium transition-colors border border-border flex items-center justify-center gap-2"
+                  className="w-full border border-hairline text-mute hover:text-ink hover:bg-white/5 py-3 rounded-lg font-semibold text-sm transition-colors"
                 >
                   {loading ? 'Authenticating...' : 'Continue as Mock Developer (Local Bypass)'}
                 </button>
               </>
             )}
           </div>
-          
+
           {error && (
-            <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm flex items-center gap-2">
-              <XCircle className="w-4 h-4" />
+            <div className="mt-4 p-3 bg-dangerSoft border border-danger/25 rounded-lg text-danger text-sm flex items-center gap-2">
+              <XCircle className="w-4 h-4 shrink-0" />
               {error}
             </div>
           )}
-          
+
           {success && (
-            <div className="mt-4 p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-green-500 text-sm flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4" />
+            <div className="mt-4 p-3 bg-primarySoft border border-primary/25 rounded-lg text-primary text-sm flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
               {success}
             </div>
           )}
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <nav className="border-b border-border bg-surface">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Shield className="w-8 h-8 text-primary" />
-            <span className="text-xl font-bold">VeriFlow</span>
-          </div>
-          
-          <div className="flex items-center gap-4">
-            <span className="text-textSecondary">{user.email}</span>
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-2 text-textSecondary hover:text-text transition-colors"
-            >
-              <LogOut className="w-4 h-4" />
-              Sign Out
-            </button>
-          </div>
-        </div>
-      </nav>
+    <div className="dashboard-shell min-h-screen bg-canvas text-ink">
+      <SiteNav user={user} onLogout={handleLogout} />
 
-      <div className="max-w-7xl mx-auto px-6 py-8">
+      <div className="dashboard-content max-w-[1280px] mx-auto px-6 py-10">
         {/* Success/Error Messages */}
         {error && (
-          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-500 text-sm flex items-center gap-2">
-            <XCircle className="w-4 h-4" />
+          <div className="mb-4 p-3 bg-dangerSoft border border-danger/25 rounded-lg text-danger text-sm flex items-center gap-2">
+            <XCircle className="w-4 h-4 shrink-0" />
             {error}
           </div>
         )}
-        
+
         {success && (
-          <div className="mb-4 p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-green-500 text-sm flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4" />
+          <div className="mb-4 p-3 bg-primarySoft border border-primary/25 rounded-lg text-primary text-sm flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
             {success}
           </div>
         )}
 
-        {/* Generated Key Pair Modal */}
+        <div className="mb-6 card p-4 flex flex-col md:flex-row md:items-center gap-3">
+          <div className="flex-1 flex flex-wrap gap-2">
+            {projects.map((project) => (
+              <button
+                key={project.id}
+                onClick={() => selectProject(project.id)}
+                className={`px-4 h-10 rounded-md text-sm font-semibold border transition-all ${
+                  selectedProject === project.id
+                    ? 'bg-primarySoft text-primary border-primary/30'
+                    : 'bg-canvas text-mute border-hairline hover:text-ink hover:border-hairlineStrong'
+                }`}
+              >
+                {project.name}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setShowCreateProject(!showCreateProject)}
+            className="flex items-center justify-center gap-2 bg-primary hover:bg-primaryDark text-white px-5 h-10 rounded-md font-bold transition-colors text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Create Project
+          </button>
+        </div>
+
+        {showCreateProject && (
+          <div className="mb-6 card p-6">
+            <h3 className="font-bold text-base mb-4">Create Project</h3>
+            <div className="grid md:grid-cols-2 gap-4">
+              <label className="text-xs font-bold text-mute uppercase tracking-wider">
+                Project name
+                <input
+                  value={newProjectName}
+                  onChange={(event) => setNewProjectName(event.target.value)}
+                  className="mt-2 w-full h-11 px-4 bg-canvas border border-hairline rounded-md text-ink normal-case tracking-normal font-normal outline-none focus:border-primary/60"
+                />
+              </label>
+              <label className="text-xs font-bold text-mute uppercase tracking-wider">
+                Allowed domains
+                <input
+                  value={newProjectDomains}
+                  onChange={(event) => setNewProjectDomains(event.target.value)}
+                  className="mt-2 w-full h-11 px-4 bg-canvas border border-hairline rounded-md text-ink normal-case tracking-normal font-normal outline-none focus:border-primary/60"
+                />
+              </label>
+            </div>
+            <div className="mt-4 flex gap-3">
+              <button
+                onClick={handleCreateProject}
+                disabled={loading || !newProjectName.trim()}
+                className="bg-primary hover:bg-primaryDark disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 h-10 rounded-md font-bold transition-colors text-sm"
+              >
+                {loading ? 'Creating...' : 'Create Project'}
+              </button>
+              <button
+                onClick={() => setShowCreateProject(false)}
+                className="bg-canvas hover:bg-surfaceSoft text-ink px-5 h-10 rounded-md font-bold transition-colors border border-hairline text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Generated Key Pair Panel */}
         {generatedPair && (
-          <div className="mb-6 p-6 bg-primary/10 border border-primary/20 rounded-lg">
-            <h3 className="font-semibold mb-2 flex items-center gap-2">
+          <div className="mb-6 p-6 bg-primarySoft border border-primary/25 rounded-lg">
+            <h3 className="font-bold mb-2 flex items-center gap-2">
               <Key className="w-5 h-5 text-primary" />
               API Key Pair Generated
             </h3>
-            <p className="text-textSecondary text-sm mb-4">
+            <p className="text-mute text-sm mb-4">
               Copy these now — the secret key won't be shown again.
             </p>
 
             <div className="space-y-3 mb-6">
               <div>
-                <label className="block text-xs font-semibold text-textSecondary uppercase tracking-wider mb-1">Site key (browser)</label>
+                <label className="block text-xs font-bold text-mute uppercase tracking-wider mb-1">Site key (browser)</label>
                 <div className="flex gap-2">
-                  <input type="text" value={generatedPair.siteKey} readOnly className="flex-1 px-4 py-2 bg-surface2 border border-border rounded-lg font-mono text-sm" />
-                  <button onClick={() => copyToClipboard(generatedPair.siteKey)} className="px-4 py-2 bg-primary hover:bg-primaryDark text-white rounded-lg transition-colors flex items-center gap-2">
+                  <input type="text" value={generatedPair.siteKey} readOnly className="flex-1 px-4 py-2 bg-canvas border border-hairline rounded-lg font-mono text-sm" />
+                  <button onClick={() => copyToClipboard(generatedPair.siteKey)} className="px-4 py-2 bg-primary hover:bg-primaryDark text-white rounded-lg transition-colors flex items-center gap-2 text-sm font-semibold">
                     <Copy className="w-4 h-4" /> Copy
                   </button>
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-textSecondary uppercase tracking-wider mb-1">Secret key (server only — never expose in browser code)</label>
+                <label className="block text-xs font-bold text-mute uppercase tracking-wider mb-1">Secret key (server only — never expose in browser code)</label>
                 <div className="flex gap-2">
-                  <input type="text" value={generatedPair.secretKey} readOnly className="flex-1 px-4 py-2 bg-surface2 border border-border rounded-lg font-mono text-sm" />
-                  <button onClick={() => copyToClipboard(generatedPair.secretKey)} className="px-4 py-2 bg-primary hover:bg-primaryDark text-white rounded-lg transition-colors flex items-center gap-2">
+                  <input type="text" value={generatedPair.secretKey} readOnly className="flex-1 px-4 py-2 bg-canvas border border-hairline rounded-lg font-mono text-sm" />
+                  <button onClick={() => copyToClipboard(generatedPair.secretKey)} className="px-4 py-2 bg-primary hover:bg-primaryDark text-white rounded-lg transition-colors flex items-center gap-2 text-sm font-semibold">
                     <Copy className="w-4 h-4" /> Copy
                   </button>
                 </div>
@@ -382,45 +436,45 @@ export default function Dashboard() {
 
             <div className="space-y-4">
               <div>
-                <p className="text-xs font-semibold text-textSecondary uppercase tracking-wider mb-2">Next steps: drop this in your HTML</p>
+                <p className="text-xs font-bold text-mute uppercase tracking-wider mb-2">Next steps: drop this in your HTML</p>
                 <CodeBlock language="html" code={scriptTagSnippet(generatedPair.siteKey)} />
               </div>
               <div>
-                <p className="text-xs font-semibold text-textSecondary uppercase tracking-wider mb-2">Then verify server-side</p>
+                <p className="text-xs font-bold text-mute uppercase tracking-wider mb-2">Then verify server-side</p>
                 <CodeBlock language="bash" code={siteverifyCurlSnippet(generatedPair.secretKey)} />
               </div>
-              <a href="/docs" className="inline-flex items-center gap-2 text-primary hover:underline text-sm font-medium">
+              <a href="/docs#client" className="inline-flex items-center gap-2 text-primary hover:underline text-sm font-semibold">
                 <BookOpen className="w-4 h-4" /> Integration guide →
               </a>
             </div>
 
             <button
               onClick={() => setGeneratedPair(null)}
-              className="mt-6 text-textSecondary hover:text-text text-sm"
+              className="mt-6 text-mute hover:text-ink text-sm font-semibold"
             >
               Close
             </button>
           </div>
         )}
 
-        {/* API Keys Console (Stripe-inspired) */}
+        {/* API Keys Console */}
         {selectedProject && (
-          <div className="bg-surface border border-border rounded-2xl shadow-xl overflow-hidden">
+          <div className="card overflow-hidden">
             {/* Header info */}
-            <div className="p-8 border-b border-border flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="p-8 border-b border-hairline flex flex-col md:flex-row md:items-center md:justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-bold mb-1">API Keys</h2>
-                <p className="text-textSecondary text-sm max-w-xl">
+                <h2 className="text-xl font-bold mb-1">API Keys</h2>
+                <p className="text-mute text-sm max-w-xl">
                   Site keys authenticate your client SDK; secret keys verify decisions server-side. Keep secret keys out of public repositories and browser code.
                 </p>
-                <a href="/docs" className="inline-flex items-center gap-1.5 text-primary hover:underline text-sm font-medium mt-2">
+                <a href="/docs#client" className="inline-flex items-center gap-1.5 text-primary hover:underline text-sm font-semibold mt-2">
                   <BookOpen className="w-4 h-4" /> Integration guide →
                 </a>
               </div>
               <div>
                 <button
                   onClick={() => setShowCreateKey(true)}
-                  className="flex items-center gap-2 bg-primary hover:bg-primaryDark text-white px-5 py-2.5 rounded-lg font-semibold transition-colors text-sm shadow-md"
+                  className="flex items-center gap-2 bg-primary hover:bg-primaryDark text-white px-5 h-11 rounded-lg font-bold transition-colors text-sm"
                 >
                   <Plus className="w-4 h-4" />
                   Create API Key Pair
@@ -430,23 +484,23 @@ export default function Dashboard() {
 
             {/* Generate Key Pair Panel */}
             {showCreateKey && (
-              <div className="p-8 bg-surface2 border-b border-border">
+              <div className="p-8 bg-surfaceSoft border-b border-hairline">
                 <div className="max-w-md">
-                  <h3 className="font-bold text-lg mb-2">Generate API Key Pair</h3>
-                  <p className="text-textSecondary text-sm mb-4">
+                  <h3 className="font-bold text-base mb-2">Generate API Key Pair</h3>
+                  <p className="text-mute text-sm mb-4">
                     Creates a site key (for your browser SDK) and a secret key (for server-side verification), shown once.
                   </p>
                   <div className="flex gap-3 pt-2">
                     <button
                       onClick={handleCreateKeyPair}
                       disabled={loading}
-                      className="flex-1 bg-primary hover:bg-primaryDark text-white py-2.5 rounded-lg font-semibold transition-colors text-sm"
+                      className="flex-1 bg-primary hover:bg-primaryDark text-white h-11 rounded-lg font-bold transition-colors text-sm"
                     >
                       {loading ? 'Generating...' : 'Create Key Pair'}
                     </button>
                     <button
                       onClick={() => setShowCreateKey(false)}
-                      className="flex-1 bg-surface hover:bg-surface2 text-text py-2.5 rounded-lg font-semibold transition-colors border border-border text-sm"
+                      className="flex-1 bg-canvas hover:bg-surfaceSoft text-ink h-11 rounded-lg font-bold transition-colors border border-hairline text-sm"
                     >
                       Cancel
                     </button>
@@ -460,53 +514,53 @@ export default function Dashboard() {
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="border-b border-border text-xs uppercase tracking-wider text-textSecondary bg-surface2">
-                      <th className="py-4 px-6 font-semibold">Name</th>
-                      <th className="py-4 px-6 font-semibold">Key Token</th>
-                      <th className="py-4 px-6 font-semibold">Created</th>
-                      <th className="py-4 px-6 font-semibold">Last Used</th>
-                      <th className="py-4 px-6 font-semibold">Status</th>
-                      <th className="py-4 px-6 font-semibold text-right">Actions</th>
+                    <tr className="border-b border-hairline text-xs uppercase tracking-wider text-mute bg-surfaceSoft">
+                      <th className="py-4 px-6 font-bold">Name</th>
+                      <th className="py-4 px-6 font-bold">Key Token</th>
+                      <th className="py-4 px-6 font-bold">Created</th>
+                      <th className="py-4 px-6 font-bold">Last Used</th>
+                      <th className="py-4 px-6 font-bold">Status</th>
+                      <th className="py-4 px-6 font-bold text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {(apiKeys[selectedProject] || []).map((key) => {
                       const keyType = key.key_type || 'legacy';
                       const badgeClasses = {
-                        site: 'bg-primary/10 text-primary border-primary/20',
-                        secret: 'bg-rose-500/10 text-rose-500 border-rose-500/20',
-                        legacy: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
-                        live: 'bg-primary/10 text-primary border-primary/20',
-                        test: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
-                      }[keyType] || 'bg-amber-500/10 text-amber-500 border-amber-500/20';
+                        site: 'bg-primarySoft text-primary border-primary/25',
+                        secret: 'bg-dangerSoft text-danger border-danger/25',
+                        legacy: 'bg-warningSoft text-warning border-warning/25',
+                        live: 'bg-primarySoft text-primary border-primary/25',
+                        test: 'bg-warningSoft text-warning border-warning/25',
+                      }[keyType] || 'bg-warningSoft text-warning border-warning/25';
                       return (
-                        <tr key={key.id} className="border-b border-border text-sm hover:bg-surface2/40 transition-colors">
+                        <tr key={key.id} className="border-b border-hairline text-sm hover:bg-surfaceSoft/60 transition-colors">
                           <td className="py-4 px-6 font-medium">
-                            <span className={`px-2 py-1 rounded-full text-xs font-semibold uppercase border ${badgeClasses}`}>
+                            <span className={`px-2 py-1 rounded-lg text-xs font-bold uppercase border ${badgeClasses}`}>
                               {keyType}
                             </span>
                           </td>
-                          <td className="py-4 px-6 font-mono text-xs text-textSecondary">
+                          <td className="py-4 px-6 font-mono text-xs text-mute">
                             <div className="flex items-center gap-2">
-                              <span>{key.key_prefix}...</span>
-                              <button 
+                              <span title="Only the prefix is stored — the full key was shown once at creation and can't be retrieved again">{key.key_prefix}...</span>
+                              <button
                                 onClick={() => copyToClipboard(key.key_prefix)}
-                                className="text-textSecondary hover:text-text p-1 rounded hover:bg-surface transition-colors"
-                                title="Copy Prefix"
+                                className="text-mute hover:text-ink p-1 rounded-lg hover:bg-surfaceSoft transition-colors"
+                                title="Copy prefix only — full key was shown once at creation and isn't retrievable again"
                               >
                                 <Copy className="w-3 h-3" />
                               </button>
                             </div>
                           </td>
-                          <td className="py-4 px-6 text-textSecondary">
+                          <td className="py-4 px-6 text-mute">
                             {new Date(key.created_at).toLocaleDateString()}
                           </td>
-                          <td className="py-4 px-6 text-textSecondary">
+                          <td className="py-4 px-6 text-mute">
                             {key.last_used_at ? new Date(key.last_used_at).toLocaleDateString() : 'Never'}
                           </td>
                           <td className="py-4 px-6">
-                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                              key.is_active ? 'bg-green-500/10 text-green-500 border border-green-500/20' : 'bg-red-500/10 text-red-500 border border-red-500/20'
+                            <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold ${
+                              key.is_active ? 'bg-successSoft text-success border border-success/25' : 'bg-dangerSoft text-danger border border-danger/25'
                             }`}>
                               {key.is_active ? 'Active' : 'Revoked'}
                             </span>
@@ -515,7 +569,7 @@ export default function Dashboard() {
                             {key.is_active && (
                               <button
                                 onClick={() => handleRevokeKey(key.id)}
-                                className="p-1.5 hover:bg-red-500/10 text-red-500 rounded-lg transition-colors inline-flex items-center gap-1.5 text-xs font-semibold"
+                                className="p-1.5 hover:bg-dangerSoft text-danger rounded-lg transition-colors inline-flex items-center gap-1.5 text-xs font-bold"
                               >
                                 <Trash2 className="w-4 h-4" /> Revoke
                               </button>
@@ -528,15 +582,15 @@ export default function Dashboard() {
                 </table>
               </div>
             ) : (
-              <div className="text-center py-16 bg-surface2/30">
-                <Key className="w-12 h-12 mx-auto mb-4 text-textSecondary opacity-30" />
-                <h3 className="font-bold text-lg mb-1">No API keys yet</h3>
-                <p className="text-sm text-textSecondary mb-6 max-w-sm mx-auto">
+              <div className="text-center py-16 bg-surfaceSoft/50">
+                <Key className="w-10 h-10 mx-auto mb-4 text-mute opacity-40" />
+                <h3 className="font-bold text-base mb-1">No API keys yet</h3>
+                <p className="text-sm text-mute mb-6 max-w-sm mx-auto">
                   Get started by generating your first live or test API credentials.
                 </p>
                 <button
                   onClick={() => setShowCreateKey(true)}
-                  className="bg-primary hover:bg-primaryDark text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+                  className="bg-primary hover:bg-primaryDark text-white px-5 h-11 rounded-lg text-sm font-bold transition-colors"
                 >
                   Create API Key
                 </button>

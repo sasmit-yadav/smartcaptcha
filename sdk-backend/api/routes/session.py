@@ -1,5 +1,5 @@
 """
-VeriFlow API — Session lifecycle routes.
+VeilProof API — Session lifecycle routes.
 POST /api/session/start — register a new browsing session.
 POST /api/session/end   — close a session with duration.
 """

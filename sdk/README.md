@@ -1,4 +1,4 @@
-# VeriFlow SDK
+# VeilProof SDK
 
 Behavioral telemetry SDK for invisible bot detection and fraud prevention.
 
@@ -7,8 +7,8 @@ Behavioral telemetry SDK for invisible bot detection and fraud prevention.
 ### Script tag — zero JS (any HTML site: WordPress, Django templates, Rails views, ...)
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/veriflow-sdk@0.1.1/dist/veriflow.min.js"
-        data-site-key="vf_site_..."
+<script src="https://cdn.jsdelivr.net/npm/veilproof@1.0.0/dist/veilproof.min.js"
+        data-site-key="vp_site_..."
         async defer></script>
 ```
 
@@ -16,11 +16,11 @@ That's it — the SDK auto-initializes from the `data-site-key` attribute. Add
 `data-debug="true"` for console logging, or `data-endpoint="..."` to override
 the API host.
 
-For a classic HTML `<form>` that posts to your server, add `data-veriflow`
-and the SDK injects a hidden `veriflow-token` field before the real submit:
+For a classic HTML `<form>` that posts to your server, add `data-veilproof`
+and the SDK injects a hidden `veilproof-token` field before the real submit:
 
 ```html
-<form data-veriflow action="/signup" method="post">
+<form data-veilproof action="/signup" method="post">
   <input name="email" type="email" required>
   <button type="submit">Sign up</button>
 </form>
@@ -28,23 +28,23 @@ and the SDK injects a hidden `veriflow-token` field before the real submit:
 
 Your server then redeems that token with your **secret key** at
 `POST /api/siteverify` — see [Server-side verification](#server-side-verification-siteverify) below. **Never put your secret key
-(`vf_secret_...`) in browser code** — the SDK will refuse to initialize with one.
+(`vp_secret_...`) in browser code** — the SDK will refuse to initialize with one.
 
 ### Via npm (React/Vue/Next.js)
 
 ```bash
-npm install veriflow-sdk
+npm install veilproof
 ```
 
 ```javascript
-import VeriFlow from 'veriflow-sdk';
+import VeilProof from 'veilproof';
 
 // Read the site key from your bundler's env convention (NEXT_PUBLIC_*,
 // VITE_*, REACT_APP_*, webpack DefinePlugin, ...) rather than a string
 // literal — not a secret, since it ships in the browser bundle either way,
 // but a literal scattered across source files is still sloppy config hygiene.
-VeriFlow.init({
-  apiKey: process.env.NEXT_PUBLIC_VERIFLOW_SITE_KEY // your site key — never your secret key
+VeilProof.init({
+  apiKey: process.env.NEXT_PUBLIC_VEILPROOF_SITE_KEY // your site key — never your secret key
 });
 ```
 
@@ -52,17 +52,17 @@ VeriFlow.init({
 
 ```javascript
 // Initialize the SDK with your site key
-VeriFlow.init({
-  apiKey: process.env.NEXT_PUBLIC_VERIFLOW_SITE_KEY,
+VeilProof.init({
+  apiKey: process.env.NEXT_PUBLIC_VEILPROOF_SITE_KEY,
   debug: true // Enable for development
 });
 
 // Get a token and send it to your server for verification
-VeriFlow.getToken((result) => {
+VeilProof.getToken((result) => {
   fetch('/my-api/submit', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ veriflowToken: result.token, /* ...your form data */ })
+    body: JSON.stringify({ veilproofToken: result.token, /* ...your form data */ })
   });
 });
 ```
@@ -71,12 +71,12 @@ VeriFlow.getToken((result) => {
 
 The browser's decision is not a trust boundary — a bot can ignore or fake
 it. Your **server** must redeem the token with your **secret key**
-(`vf_secret_...`, never exposed to the browser) at `POST /api/siteverify`
+(`vp_secret_...`, never exposed to the browser) at `POST /api/siteverify`
 before trusting the request:
 
 ```bash
 curl -X POST https://next-captcha-sdk.onrender.com/api/siteverify \
-  -H "X-API-Key: vf_secret_..." \
+  -H "X-API-Key: vp_secret_..." \
   -H "Content-Type: application/json" \
   -d '{"token": "<token from the browser>"}'
 ```
@@ -91,17 +91,17 @@ convention) — check `success`, not the status code.
 
 ## API Reference
 
-### `VeriFlow.init(config)`
+### `VeilProof.init(config)`
 
 Initialize the SDK with your configuration.
 
 **Parameters:**
-- `config.apiKey` (string, required) - Your **site key** (`vf_site_...`) from the dashboard. Never pass a secret key (`vf_secret_...`) here — the SDK rejects it.
+- `config.apiKey` (string, required) - Your **site key** (`vp_site_...`) from the dashboard. Never pass a secret key (`vp_secret_...`) here — the SDK rejects it.
 - `config.endpoint` (string, optional) - Backend API URL (default: `https://next-captcha-sdk.onrender.com`)
 - `config.debug` (boolean, optional) - Enable debug logging (default: false)
 - `config.disableTelemetry` (boolean, optional) - Disable telemetry sending (default: false)
 
-### `VeriFlow.getDecision(callback)`
+### `VeilProof.getDecision(callback)`
 
 Get a bot detection decision based on collected behavioral data.
 
@@ -128,7 +128,7 @@ out, or the API key/domain is rejected, the callback receives
 `{ action: 'block', risk_score: 100, error: '<reason>' }` rather than an
 uncaught exception.
 
-### `VeriFlow.getToken(callback?)`
+### `VeilProof.getToken(callback?)`
 
 Get a verification token for your server to redeem at `/api/siteverify`.
 Wraps `getDecision` — same failure semantics. Supports both a callback and a
@@ -136,12 +136,12 @@ Promise:
 
 ```javascript
 // Callback style
-VeriFlow.getToken((result) => {
+VeilProof.getToken((result) => {
   // result.token, result.decision, result.error
 });
 
 // Promise style
-const result = await VeriFlow.getToken();
+const result = await VeilProof.getToken();
 ```
 
 **Result:**
@@ -153,25 +153,25 @@ const result = await VeriFlow.getToken();
 }
 ```
 
-### `VeriFlow.getSessionId()`
+### `VeilProof.getSessionId()`
 
 Get the current session ID.
 
 **Returns:** (string) Session identifier
 
-### `VeriFlow.getSessionMeta()`
+### `VeilProof.getSessionMeta()`
 
 Get session metadata including start time and platform info.
 
 **Returns:** (object) Session metadata
 
-### `VeriFlow.getDebugSnapshot()`
+### `VeilProof.getDebugSnapshot()`
 
 Get current SDK state for troubleshooting.
 
 **Returns:** (object) Debug snapshot with version, session info, buffer state, and recent events
 
-### `VeriFlow.selfTest(callback)`
+### `VeilProof.selfTest(callback)`
 
 Run self-test to verify SDK integration.
 
@@ -181,7 +181,7 @@ Run self-test to verify SDK integration.
 **Result:**
 ```javascript
 {
-  version: '0.1.1',
+  version: '1.0.0',
   tests: [
     { name: 'SDK Initialized', status: 'pass' },
     { name: 'API Key Valid', status: 'pass' },
@@ -194,7 +194,7 @@ Run self-test to verify SDK integration.
 }
 ```
 
-### `VeriFlow.destroy()`
+### `VeilProof.destroy()`
 
 Stop all tracking and flush remaining events.
 

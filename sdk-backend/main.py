@@ -1,5 +1,5 @@
 """
-VeriFlow API — single production backend.
+VeilProof API — single production backend.
 
 Serves:
 - /api/predict          bot-detection decisions (API key required)
@@ -37,7 +37,7 @@ from api.routes.admin import router as admin_router
 from api.routes.siteverify import router as siteverify_router
 from core.admin_api import router as super_admin_router
 
-app = FastAPI(title="VeriFlow API", version="1.0.0")
+app = FastAPI(title="VeilProof API", version="1.0.0")
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -84,25 +84,25 @@ async def startup():
         get_detector()
 
         port = os.getenv("PORT", "8001")
-        print(f"[VeriFlow API] Started on port {port}")
-        print(f"[VeriFlow API] V4 Model with Risk Engine loaded")
-        print(f"[VeriFlow API] Production API key verification enabled")
-        print(f"[VeriFlow API] Telemetry storage enabled")
+        print(f"[VeilProof API] Started on port {port}")
+        print(f"[VeilProof API] V4 Model with Risk Engine loaded")
+        print(f"[VeilProof API] Production API key verification enabled")
+        print(f"[VeilProof API] Telemetry storage enabled")
     except Exception as e:
-        print(f"[VeriFlow API] Startup failed: {e}")
+        print(f"[VeilProof API] Startup failed: {e}")
         raise
 
 
 @app.api_route("/health", methods=["GET", "HEAD"])
 @app.api_route("/api/health", methods=["GET", "HEAD"])
 async def health():
-    return {"status": "ok", "service": "veriflow-api"}
+    return {"status": "ok", "service": "veilproof-api"}
 
 
 @app.get("/")
 async def root():
     return {
-        "service": "VeriFlow API",
+        "service": "VeilProof API",
         "status": "running",
         "version": "4.0"
     }

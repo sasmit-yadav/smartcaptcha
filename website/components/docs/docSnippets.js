@@ -2,7 +2,7 @@
 // Keeping the backend-shape coupling (siteverify request/response, script
 // tag attributes) in one file so both surfaces stay in sync.
 
-export const CDN_URL = 'https://cdn.jsdelivr.net/npm/veriflow-sdk@0.1.1/dist/veriflow.min.js';
+export const CDN_URL = 'https://cdn.jsdelivr.net/npm/veilproof@1.0.0/dist/veilproof.min.js';
 export const API_HOST = 'https://next-captcha-sdk.onrender.com';
 
 // Note on the pattern below: `siteKey` is only passed explicitly by the
@@ -15,86 +15,86 @@ export const API_HOST = 'https://next-captcha-sdk.onrender.com';
 // not a literal in every file that calls init().
 
 export const scriptTagSnippet = (siteKey) => `<script src="${CDN_URL}"
-        data-site-key="${siteKey || '{{ VERIFLOW_SITE_KEY }}'}"
+        data-site-key="${siteKey || '{{ VEILPROOF_SITE_KEY }}'}"
         async defer></script>
 ${siteKey ? '' : '\n<!-- Render data-site-key from your server-side template/config (Django, EJS, Blade, WordPress option, etc.) — don\'t hardcode it in a committed HTML file. -->'}`;
 
 export const scriptTagFormSnippet = (siteKey) => `<script src="${CDN_URL}"
-        data-site-key="${siteKey || '{{ VERIFLOW_SITE_KEY }}'}"
+        data-site-key="${siteKey || '{{ VEILPROOF_SITE_KEY }}'}"
         async defer></script>
 
-<form data-veriflow action="/signup" method="post">
+<form data-veilproof action="/signup" method="post">
   <input name="email" type="email" required>
   <button type="submit">Sign up</button>
 </form>`;
 
-export const npmInstallSnippet = () => `npm install veriflow-sdk`;
+export const npmInstallSnippet = () => `npm install veilproof`;
 
-export const npmInitSnippet = (siteKey) => `import VeriFlow from 'veriflow-sdk';
+export const npmInitSnippet = (siteKey) => `import VeilProof from 'veilproof';
 
 // Read from your bundler's env convention (webpack DefinePlugin, dotenv, etc.)
 // — never hardcode the key as a string literal in source.
-VeriFlow.init({ apiKey: ${siteKey ? `'${siteKey}'` : 'process.env.VERIFLOW_SITE_KEY'} });
+VeilProof.init({ apiKey: ${siteKey ? `'${siteKey}'` : 'process.env.VEILPROOF_SITE_KEY'} });
 
-const result = await VeriFlow.getToken();
+const result = await VeilProof.getToken();
 // send result.token to your server for /api/siteverify`;
 
 export const reactSnippet = (siteKey) => `import { useEffect } from 'react';
-import VeriFlow from 'veriflow-sdk';
+import VeilProof from 'veilproof';
 
-// Vite: import.meta.env.VITE_VERIFLOW_SITE_KEY · CRA: process.env.REACT_APP_VERIFLOW_SITE_KEY
+// Vite: import.meta.env.VITE_VEILPROOF_SITE_KEY · CRA: process.env.REACT_APP_VEILPROOF_SITE_KEY
 useEffect(() => {
-  VeriFlow.init({ apiKey: ${siteKey ? `'${siteKey}'` : 'import.meta.env.VITE_VERIFLOW_SITE_KEY'} });
+  VeilProof.init({ apiKey: ${siteKey ? `'${siteKey}'` : 'import.meta.env.VITE_VEILPROOF_SITE_KEY'} });
 }, []);
 
 async function handleSubmit(formData) {
-  const { token } = await VeriFlow.getToken();
+  const { token } = await VeilProof.getToken();
   await fetch('/api/signup', {
     method: 'POST',
-    body: JSON.stringify({ ...formData, veriflowToken: token }),
+    body: JSON.stringify({ ...formData, veilproofToken: token }),
   });
 }`;
 
 export const nextjsSnippet = (siteKey) => `'use client';
 import { useEffect } from 'react';
-import VeriFlow from 'veriflow-sdk';
+import VeilProof from 'veilproof';
 
-export function VeriFlowInit() {
+export function VeilProofInit() {
   useEffect(() => {
     // NEXT_PUBLIC_* vars are inlined at build time — set this in .env.local,
     // never commit the literal key to source.
-    VeriFlow.init({ apiKey: ${siteKey ? `'${siteKey}'` : 'process.env.NEXT_PUBLIC_VERIFLOW_SITE_KEY'} }); // client component only — SDK is SSR-safe (no-ops on the server)
+    VeilProof.init({ apiKey: ${siteKey ? `'${siteKey}'` : 'process.env.NEXT_PUBLIC_VEILPROOF_SITE_KEY'} }); // client component only — SDK is SSR-safe (no-ops on the server)
   }, []);
   return null;
 }`;
 
 export const vueSnippet = (siteKey) => `<script setup>
 import { onMounted } from 'vue';
-import VeriFlow from 'veriflow-sdk';
+import VeilProof from 'veilproof';
 
 onMounted(() => {
-  // Vite exposes import.meta.env.VITE_* — set VITE_VERIFLOW_SITE_KEY in .env
-  VeriFlow.init({ apiKey: ${siteKey ? `'${siteKey}'` : 'import.meta.env.VITE_VERIFLOW_SITE_KEY'} });
+  // Vite exposes import.meta.env.VITE_* — set VITE_VEILPROOF_SITE_KEY in .env
+  VeilProof.init({ apiKey: ${siteKey ? `'${siteKey}'` : 'import.meta.env.VITE_VEILPROOF_SITE_KEY'} });
 });
 
 async function handleSubmit() {
-  const { token } = await VeriFlow.getToken();
+  const { token } = await VeilProof.getToken();
   // send token to your server
 }
 </script>`;
 
-export const siteverifyCurlSnippet = (secretKey = 'vf_secret_your_secret_key') => `curl -X POST ${API_HOST}/api/siteverify \\
+export const siteverifyCurlSnippet = (secretKey = 'vp_secret_your_secret_key') => `curl -X POST ${API_HOST}/api/siteverify \\
   -H "X-API-Key: ${secretKey}" \\
   -H "Content-Type: application/json" \\
   -d '{"token": "<token from the browser>"}'`;
 
-export const siteverifyNodeSnippet = (secretKey = 'vf_secret_your_secret_key') => `const response = await fetch('${API_HOST}/api/siteverify', {
+export const siteverifyNodeSnippet = (secretKey = 'vp_secret_your_secret_key') => `const response = await fetch('${API_HOST}/api/siteverify', {
   method: 'POST',
   headers: {
     'X-API-Key': '${secretKey}',
     'Content-Type': 'application/json',
   },
-  body: JSON.stringify({ token: req.body.veriflowToken }),
+  body: JSON.stringify({ token: req.body.veilproofToken }),
 });
 const result = await response.json();
 
@@ -102,40 +102,40 @@ if (!result.success) {
   return res.status(400).json({ error: result['error-codes'] });
 }
 if (result.action === 'block') {
-  return res.status(403).json({ error: 'Blocked by VeriFlow' });
+  return res.status(403).json({ error: 'Blocked by VeilProof' });
 }
 // proceed — result.risk_score, result.action are trustworthy here`;
 
-export const siteverifyPythonFlaskSnippet = (secretKey = 'vf_secret_your_secret_key') => `import requests
+export const siteverifyPythonFlaskSnippet = (secretKey = 'vp_secret_your_secret_key') => `import requests
 
 resp = requests.post(
     "${API_HOST}/api/siteverify",
     headers={"X-API-Key": "${secretKey}"},
-    json={"token": request.json["veriflowToken"]},
+    json={"token": request.json["veilproofToken"]},
 )
 result = resp.json()
 
 if not result["success"]:
     return jsonify(error=result["error-codes"]), 400
 if result["action"] == "block":
-    return jsonify(error="Blocked by VeriFlow"), 403
+    return jsonify(error="Blocked by VeilProof"), 403
 # proceed — result["risk_score"], result["action"] are trustworthy here`;
 
-export const siteverifyPythonDjangoSnippet = (secretKey = 'vf_secret_your_secret_key') => `import requests
+export const siteverifyPythonDjangoSnippet = (secretKey = 'vp_secret_your_secret_key') => `import requests
 from django.http import JsonResponse
 
 def signup(request):
     resp = requests.post(
         "${API_HOST}/api/siteverify",
         headers={"X-API-Key": "${secretKey}"},
-        json={"token": request.POST.get("veriflow_token")},
+        json={"token": request.POST.get("veilproof_token")},
     )
     result = resp.json()
     if not result["success"] or result["action"] == "block":
         return JsonResponse({"error": "verification failed"}, status=403)
     # proceed with signup`;
 
-export const siteverifyPhpSnippet = (secretKey = 'vf_secret_your_secret_key') => `<?php
+export const siteverifyPhpSnippet = (secretKey = 'vp_secret_your_secret_key') => `<?php
 $ch = curl_init("${API_HOST}/api/siteverify");
 curl_setopt($ch, CURLOPT_POST, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, [
@@ -143,7 +143,7 @@ curl_setopt($ch, CURLOPT_HTTPHEADER, [
     "Content-Type: application/json",
 ]);
 curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([
-    "token" => $_POST["veriflow_token"],
+    "token" => $_POST["veilproof_token"],
 ]));
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 $result = json_decode(curl_exec($ch), true);
@@ -156,12 +156,12 @@ if (!$result["success"] || $result["action"] === "block") {
 // proceed with signup
 ?>`;
 
-export const siteverifyJavaSnippet = (secretKey = 'vf_secret_your_secret_key') => `RestTemplate rest = new RestTemplate();
+export const siteverifyJavaSnippet = (secretKey = 'vp_secret_your_secret_key') => `RestTemplate rest = new RestTemplate();
 HttpHeaders headers = new HttpHeaders();
 headers.set("X-API-Key", "${secretKey}");
 headers.setContentType(MediaType.APPLICATION_JSON);
 
-Map<String, String> body = Map.of("token", request.getParameter("veriflowToken"));
+Map<String, String> body = Map.of("token", request.getParameter("veilproofToken"));
 ResponseEntity<Map> res = rest.postForEntity(
     "${API_HOST}/api/siteverify",
     new HttpEntity<>(body, headers),
@@ -170,11 +170,11 @@ ResponseEntity<Map> res = rest.postForEntity(
 Map result = res.getBody();
 
 if (!(boolean) result.get("success") || "block".equals(result.get("action"))) {
-    return ResponseEntity.status(403).body(Map.of("error", "Blocked by VeriFlow"));
+    return ResponseEntity.status(403).body(Map.of("error", "Blocked by VeilProof"));
 }
 // proceed — result.get("risk_score"), result.get("action") are trustworthy here`;
 
-export const siteverifyRubySnippet = (secretKey = 'vf_secret_your_secret_key') => `require 'net/http'
+export const siteverifyRubySnippet = (secretKey = 'vp_secret_your_secret_key') => `require 'net/http'
 require 'json'
 
 uri = URI("${API_HOST}/api/siteverify")
@@ -182,15 +182,15 @@ req = Net::HTTP::Post.new(uri, {
   'X-API-Key' => '${secretKey}',
   'Content-Type' => 'application/json'
 })
-req.body = { token: params[:veriflow_token] }.to_json
+req.body = { token: params[:veilproof_token] }.to_json
 result = JSON.parse(Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(req) }.body)
 
 if !result['success'] || result['action'] == 'block'
-  render json: { error: 'Blocked by VeriFlow' }, status: 403 and return
+  render json: { error: 'Blocked by VeilProof' }, status: 403 and return
 end
 # proceed — result['risk_score'], result['action'] are trustworthy here`;
 
-export const siteverifyGoSnippet = (secretKey = 'vf_secret_your_secret_key') => `body, _ := json.Marshal(map[string]string{"token": r.FormValue("veriflowToken")})
+export const siteverifyGoSnippet = (secretKey = 'vp_secret_your_secret_key') => `body, _ := json.Marshal(map[string]string{"token": r.FormValue("veilproofToken")})
 req, _ := http.NewRequest("POST", "${API_HOST}/api/siteverify", bytes.NewBuffer(body))
 req.Header.Set("X-API-Key", "${secretKey}")
 req.Header.Set("Content-Type", "application/json")
@@ -200,15 +200,15 @@ var result map[string]interface{}
 json.NewDecoder(resp.Body).Decode(&result)
 
 if success, _ := result["success"].(bool); !success || result["action"] == "block" {
-    http.Error(w, "Blocked by VeriFlow", http.StatusForbidden)
+    http.Error(w, "Blocked by VeilProof", http.StatusForbidden)
     return
 }
 // proceed — result["risk_score"], result["action"] are trustworthy here`;
 
-export const siteverifyCsharpSnippet = (secretKey = 'vf_secret_your_secret_key') => `using var client = new HttpClient();
+export const siteverifyCsharpSnippet = (secretKey = 'vp_secret_your_secret_key') => `using var client = new HttpClient();
 client.DefaultRequestHeaders.Add("X-API-Key", "${secretKey}");
 
-var payload = JsonSerializer.Serialize(new { token = Request.Form["veriflowToken"] });
+var payload = JsonSerializer.Serialize(new { token = Request.Form["veilproofToken"] });
 var response = await client.PostAsync(
     "${API_HOST}/api/siteverify",
     new StringContent(payload, Encoding.UTF8, "application/json")
@@ -219,7 +219,7 @@ var result = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
 
 if (!result["success"].GetBoolean() || result["action"].GetString() == "block")
 {
-    return StatusCode(403, new { error = "Blocked by VeriFlow" });
+    return StatusCode(403, new { error = "Blocked by VeilProof" });
 }
 // proceed — result["risk_score"], result["action"] are trustworthy here`;
 

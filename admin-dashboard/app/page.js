@@ -67,8 +67,8 @@ export default function AdminDashboard() {
       const data = await res.json();
       if (res.status === 200 && data.success) {
         setUser(data.user);
-        localStorage.setItem('veriflow_admin', JSON.stringify(data.user));
-        localStorage.setItem('veriflow_admin_token', data.access_token);
+        localStorage.setItem('veilproof_admin', JSON.stringify(data.user));
+        localStorage.setItem('veilproof_admin_token', data.access_token);
         loadAllData(data.access_token);
       } else {
         setError(data.detail || 'Invalid admin username or password');
@@ -80,8 +80,8 @@ export default function AdminDashboard() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('veriflow_admin');
-    localStorage.removeItem('veriflow_admin_token');
+    localStorage.removeItem('veilproof_admin');
+    localStorage.removeItem('veilproof_admin_token');
     setUser(null);
     setAnalytics(null);
     setUsers([]);
@@ -89,8 +89,8 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    const savedAdmin = localStorage.getItem('veriflow_admin');
-    const savedToken = localStorage.getItem('veriflow_admin_token');
+    const savedAdmin = localStorage.getItem('veilproof_admin');
+    const savedToken = localStorage.getItem('veilproof_admin_token');
     if (savedAdmin && savedToken) {
       setUser(JSON.parse(savedAdmin));
       loadAllData(savedToken);
@@ -100,7 +100,7 @@ export default function AdminDashboard() {
   // Set up 10-second polling for real-time live threat data
   useEffect(() => {
     if (!user) return;
-    const token = localStorage.getItem('veriflow_admin_token');
+    const token = localStorage.getItem('veilproof_admin_token');
     if (!token) return;
 
     const interval = setInterval(() => {
@@ -170,7 +170,7 @@ export default function AdminDashboard() {
   const toggleUserStatus = async (targetUserId, currentStatus) => {
     if (!confirm(`Are you sure you want to ${currentStatus ? 'suspend' : 'activate'} this developer?`)) return;
 
-    const token = localStorage.getItem('veriflow_admin_token');
+    const token = localStorage.getItem('veilproof_admin_token');
     try {
       const res = await fetch(`${API_BASE_URL}/admin/users/toggle-status`, {
         method: 'POST',
@@ -206,7 +206,7 @@ export default function AdminDashboard() {
               <Shield className="w-6 h-6 text-cfOrange" />
             </div>
             <h1 className="text-xl font-bold text-slate-100 tracking-tight">Super Admin Console</h1>
-            <p className="text-slate-400 text-xs mt-1">VeriFlow Mitigation Control Center</p>
+            <p className="text-slate-400 text-xs mt-1">VeilProof Mitigation Control Center</p>
           </div>
 
           <form onSubmit={handleAdminLogin} className="space-y-4 w-full">
@@ -279,7 +279,7 @@ export default function AdminDashboard() {
             </div>
             {!sidebarCollapsed && (
               <div>
-                <h2 className="font-bold text-slate-100 text-sm leading-none tracking-tight">VeriFlow</h2>
+                <h2 className="font-bold text-slate-100 text-sm leading-none tracking-tight">VeilProof</h2>
                 <span className="text-[9px] text-cfOrange font-bold tracking-wider uppercase">Super Admin</span>
               </div>
             )}
@@ -637,7 +637,7 @@ export default function AdminDashboard() {
                               </span>
                             </td>
                             <td className="py-4 px-6 text-right">
-                              {dev.email !== 'developer@veriflow.com' && dev.email !== 'developer@nextcaptcha.com' && dev.email !== user.email && (
+                              {dev.email !== 'developer@veilproof.com' && dev.email !== 'developer@nextcaptcha.com' && dev.email !== user.email && (
                                 <button
                                   onClick={() => toggleUserStatus(dev.id, dev.is_active)}
                                   className={`px-2.5 py-1.5 rounded-lg text-[10px] font-bold uppercase transition-all inline-flex items-center gap-1.5 ${

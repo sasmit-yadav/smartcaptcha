@@ -1,5 +1,5 @@
 """
-VeriFlow API — Prediction route.
+VeilProof API — Prediction route.
 POST /api/predict — takes behavioral features + fingerprint from the SDK and
 returns a bot-detection decision. Requires a valid customer API key.
 """

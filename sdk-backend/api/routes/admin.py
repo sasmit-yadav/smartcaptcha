@@ -1,5 +1,5 @@
 """
-VeriFlow API — Customer account routes.
+VeilProof API — Customer account routes.
 User registration/login (email + Google OAuth), project management, and
 API key lifecycle. Used by the website dashboard.
 

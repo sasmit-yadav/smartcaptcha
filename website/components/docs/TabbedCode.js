@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import CodeBlock from './CodeBlock';
 
-const STORAGE_KEY = 'veriflow_docs_lang';
+const STORAGE_KEY = 'veilproof_docs_lang';
 
 export default function TabbedCode({ tabs }) {
   // tabs: [{ label, code }]
@@ -23,13 +23,15 @@ export default function TabbedCode({ tabs }) {
 
   return (
     <div>
-      <div className="flex gap-1 mb-2 flex-wrap">
+      <div className="inline-flex gap-1 mb-2 flex-wrap bg-surface border border-hairline rounded-lg p-1" role="tablist">
         {tabs.map(t => (
           <button
             key={t.label}
             onClick={() => select(t.label)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-              active === t.label ? 'bg-primary/10 text-primary' : 'text-textSecondary hover:bg-surface2'
+            role="tab"
+            aria-selected={active === t.label}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+              active === t.label ? 'bg-white/10 text-ink' : 'text-mute hover:text-ink'
             }`}
           >
             {t.label}

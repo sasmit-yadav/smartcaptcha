@@ -6,29 +6,49 @@ import { Copy, Check } from 'lucide-react';
 export default function CodeBlock({ code, language }) {
   const [copied, setCopied] = useState(false);
 
-  const copy = () => {
-    navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      const textarea = document.createElement('textarea');
+      textarea.value = code;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      textarea.remove();
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   return (
-    <div className="relative group">
+    <div className="border border-hairline rounded-xl overflow-hidden bg-surfaceElevated">
       {language && (
-        <div className="absolute left-4 top-3 text-xs text-textSecondary font-mono uppercase tracking-wide">
-          {language}
+        <div className="flex items-center justify-between px-4 h-10 border-b border-hairline">
+          <span className="text-xs text-mute font-mono uppercase tracking-wide">{language}</span>
+          <button onClick={copy} aria-label="Copy code" className="text-mute hover:text-ink transition-colors">
+            {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
+          </button>
         </div>
       )}
-      <pre className={`bg-surface2 border border-border rounded-xl p-4 ${language ? 'pt-9' : ''} font-mono text-xs overflow-x-auto text-textSecondary leading-relaxed`}>
-        <code>{code}</code>
-      </pre>
-      <button
-        onClick={copy}
-        aria-label="Copy code"
-        className="absolute right-3 top-3 text-textSecondary hover:text-text transition-colors"
-      >
-        {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-      </button>
+      <div className="relative group">
+        <pre className="p-4 font-mono text-xs overflow-x-auto text-mute leading-relaxed">
+          <code>{code}</code>
+        </pre>
+        {!language && (
+          <button
+            onClick={copy}
+            aria-label="Copy code"
+            className="absolute right-3 top-3 text-mute hover:text-ink transition-colors"
+          >
+            {copied ? <Check className="w-4 h-4 text-success" /> : <Copy className="w-4 h-4" />}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

@@ -1,19 +1,19 @@
 /**
  * Script-tag auto-init + classic <form> integration.
  *
- * Lets any HTML page use VeriFlow with zero JS:
- *   <script src=".../veriflow.min.js" data-site-key="vf_site_..." async defer></script>
- *   <form data-veriflow action="/submit" method="post">...</form>
+ * Lets any HTML page use VeilProof with zero JS:
+ *   <script src=".../veilproof.min.js" data-site-key="vp_site_..." async defer></script>
+ *   <form data-veilproof action="/submit" method="post">...</form>
  *
- * Programmatic `VeriFlow.init(...)` callers are unaffected: this only fires
+ * Programmatic `VeilProof.init(...)` callers are unaffected: this only fires
  * when a `data-site-key` attribute is actually present, and `init()`'s
  * existing `initialized` guard prevents a double-init if both are used.
  */
 
-import type { VeriFlowConfig, TokenResult } from './types.js';
+import type { VeilProofConfig, TokenResult } from './types.js';
 
 interface AutoInitHost {
-  init(config: VeriFlowConfig): void;
+  init(config: VeilProofConfig): void;
   getToken(callback: (result: TokenResult) => void): void;
 }
 
@@ -25,11 +25,11 @@ function findAutoInitScript(): HTMLScriptElement | null {
   // Fallback for browsers/bundling setups where currentScript isn't available
   // (e.g. dynamically injected scripts after the fact).
   const candidates = Array.from(document.querySelectorAll('script[data-site-key]')) as HTMLScriptElement[];
-  return candidates.find(s => (s.src || '').includes('veriflow')) || candidates[0] || null;
+  return candidates.find(s => (s.src || '').includes('veilproof')) || candidates[0] || null;
 }
 
 function wireFormInterception(host: AutoInitHost, tokenField: string, debug: boolean): void {
-  const forms = document.querySelectorAll('form[data-veriflow]');
+  const forms = document.querySelectorAll('form[data-veilproof]');
   forms.forEach(formEl => {
     const form = formEl as HTMLFormElement;
     const fieldName = form.dataset.tokenField || tokenField;
@@ -40,10 +40,10 @@ function wireFormInterception(host: AutoInitHost, tokenField: string, debug: boo
       event.preventDefault();
 
       host.getToken((result) => {
-        if (debug) console.log('[VeriFlow] Form token result:', result);
+        if (debug) console.log('[VeilProof] Form token result:', result);
 
         // Fail open: if token acquisition errors out, submit anyway rather
-        // than blocking the user on a VeriFlow outage — documented behavior.
+        // than blocking the user on a VeilProof outage — documented behavior.
         let input = form.querySelector<HTMLInputElement>(`input[name="${fieldName}"]`);
         if (!input) {
           input = document.createElement('input');
@@ -69,7 +69,7 @@ export function runAutoInit(host: AutoInitHost): void {
   const siteKey = script.dataset.siteKey;
   const endpoint = script.dataset.endpoint || undefined;
   const debug = script.dataset.debug === 'true';
-  const tokenField = script.dataset.tokenField || 'veriflow-token';
+  const tokenField = script.dataset.tokenField || 'veilproof-token';
 
   host.init({
     apiKey: siteKey,

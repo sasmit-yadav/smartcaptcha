@@ -1,31 +1,31 @@
 {
-  "version": "0.1.1",
-  "name": "veriflow-sdk",
-  "description": "VeriFlow behavioral telemetry SDK for bot detection",
-  "main": "dist/veriflow.cjs.js",
-  "module": "dist/veriflow.esm.js",
-  "browser": "dist/veriflow.min.js",
+  "version": "1.0.0",
+  "name": "veilproof",
+  "description": "VeilProof behavioral telemetry SDK for bot detection",
+  "main": "dist/veilproof.cjs.js",
+  "module": "dist/veilproof.esm.js",
+  "browser": "dist/veilproof.min.js",
   "types": "dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/veriflow.esm.js",
-      "require": "./dist/veriflow.cjs.js",
-      "browser": "./dist/veriflow.min.js"
+      "import": "./dist/veilproof.esm.js",
+      "require": "./dist/veilproof.cjs.js",
+      "browser": "./dist/veilproof.min.js"
     }
   },
   "files": ["dist", "README.md", "LICENSE"],
   "scripts": {
     "build": "npm run build:umd && npm run build:esm && npm run build:cjs && npm run build:ts",
-    "build:umd": "esbuild ./src/index.ts --bundle --minify --outfile=dist/veriflow.min.js --format=iife",
-    "build:esm": "esbuild ./src/index.ts --bundle --outfile=dist/veriflow.esm.js --format=esm",
-    "build:cjs": "esbuild ./src/index.ts --bundle --outfile=dist/veriflow.cjs.js --format=cjs",
+    "build:umd": "esbuild ./src/index.ts --bundle --minify --outfile=dist/veilproof.min.js --format=iife",
+    "build:esm": "esbuild ./src/index.ts --bundle --outfile=dist/veilproof.esm.js --format=esm",
+    "build:cjs": "esbuild ./src/index.ts --bundle --outfile=dist/veilproof.cjs.js --format=cjs",
     "build:ts": "tsc",
-    "dev": "esbuild ./src/index.ts --bundle --outfile=dist/veriflow.js --format=iife --watch",
+    "dev": "esbuild ./src/index.ts --bundle --outfile=dist/veilproof.js --format=iife --watch",
     "prepublishOnly": "npm run build"
   },
   "keywords": ["captcha", "bot-detection", "behavioral-biometrics", "fraud-prevention", "telemetry"],
-  "author": "VeriFlow",
+  "author": "VeilProof",
   "license": "MIT",
   "repository": {
     "type": "git",

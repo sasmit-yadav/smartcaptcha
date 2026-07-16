@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-07-15
+
+### Changed — package renamed veriflow-sdk → veilproof
+"VeriFlow" is a name already in use by another organization; the project is
+rebranding to **VeilProof** before the customer base grows. Breaking changes:
+- npm package: `veriflow-sdk` → `veilproof`. Install with `npm install veilproof`.
+- Global: `window.VeriFlow` → `window.VeilProof`; `VeriFlowConfig` type →
+  `VeilProofConfig`.
+- Script-tag integration: `data-veriflow` → `data-veilproof`; the
+  auto-injected hidden field defaults to `veilproof-token` (was
+  `veriflow-token`), still overridable via `data-token-field`.
+- Dist filenames: `veriflow.min.js`/`.esm.js`/`.cjs.js` →
+  `veilproof.min.js`/`.esm.js`/`.cjs.js`.
+- API key prefixes: `vf_site_`/`vf_secret_`/`vf_live_`/`vf_test_`/`vf_admin_`
+  → `vp_site_`/`vp_secret_`/`vp_live_`/`vp_test_`/`vp_admin_`. Existing
+  `vf_*` keys issued before this release are re-issued as `vp_*` — there was
+  no live customer base yet, so no migration/dual-accept window was needed.
+- `window.VERIFLOW_CONFIG` legacy global → `window.VEILPROOF_CONFIG`.
+
+The prior `veriflow-sdk@0.1.1` package on npm is deprecated in favor of
+`veilproof`; it is not unpublished (npm doesn't allow removing a package
+that already has zero external dependents cleanly re-added later, and this
+avoids breaking anyone who already installed it).
+
 ## [0.3.0] - 2026-07-14
 
 ### Added

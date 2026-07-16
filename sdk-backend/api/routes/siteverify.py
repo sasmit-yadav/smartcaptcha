@@ -1,5 +1,5 @@
 """
-VeriFlow API — Server-side verification route.
+VeilProof API — Server-side verification route.
 POST /api/siteverify — the customer's *server* redeems a verify token
 (issued by /api/predict) with a secret key. This is the actual trust
 boundary: the browser response from /api/predict is not one, since a bot

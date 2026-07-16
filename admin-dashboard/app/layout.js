@@ -12,7 +12,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "VeriFlow | Super Admin Portal",
+  title: "VeilProof | Super Admin Portal",
   description: "Global threat intelligence, mitigation telemetry, and developer account console.",
 };
 

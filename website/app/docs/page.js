@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { Shield, Rocket, Code, Server, Layers, ShieldCheck, BookOpen, ArrowLeft } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Rocket, Code, Server, Layers, ShieldCheck, BookOpen } from 'lucide-react';
+import SiteNav from '../../components/chrome/SiteNav';
+import SiteFooter from '../../components/chrome/SiteFooter';
 import CodeBlock from '../../components/docs/CodeBlock';
 import TabbedCode from '../../components/docs/TabbedCode';
 import Callout from '../../components/docs/Callout';
@@ -27,51 +29,67 @@ const NAV = [
 function Section({ title, children }) {
   return (
     <div className="space-y-6">
-      <h2 className="text-3xl font-bold">{title}</h2>
+      <h2 className="text-2xl font-bold">{title}</h2>
       {children}
     </div>
   );
 }
 
 function H3({ children }) {
-  return <h3 className="text-xl font-semibold mt-8 mb-3">{children}</h3>;
+  return <h3 className="text-lg font-bold mt-8 mb-3">{children}</h3>;
 }
 
 function P({ children }) {
-  return <p className="text-textSecondary leading-relaxed">{children}</p>;
+  return <p className="text-mute leading-relaxed">{children}</p>;
 }
 
 export default function DocsPage() {
   const [active, setActive] = useState('start');
 
+  useEffect(() => {
+    const syncFromUrl = () => {
+      const hash = window.location.hash.replace('#', '');
+      if (NAV.some((item) => item.id === hash)) setActive(hash);
+    };
+    syncFromUrl();
+    window.addEventListener('hashchange', syncFromUrl);
+    return () => window.removeEventListener('hashchange', syncFromUrl);
+  }, []);
+
+  const selectSection = (id) => {
+    setActive(id);
+    window.history.replaceState(null, '', `#${id}`);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const content = {
     start: (
       <Section title="Getting Started">
         <P>
-          VeriFlow is an invisible bot-detection layer: a browser SDK collects
+          VeilProof is an invisible bot-detection layer: a browser SDK collects
           behavioral signals (mouse, keyboard, scroll), your customer's server
           decides who to trust — not the browser. Three steps to integrate:
         </P>
-        <div className="grid md:grid-cols-3 gap-6">
-          <div className="bg-surface p-6 rounded-xl border border-border">
-            <div className="text-primary font-bold text-lg mb-2">1. Get keys</div>
-            <p className="text-textSecondary text-sm">Create a project in the dashboard — you get a <strong className="text-text">site key</strong> (browser) and a <strong className="text-text">secret key</strong> (server), always as a pair.</p>
+        <div className="grid md:grid-cols-3 gap-4">
+          <div className="card p-5">
+            <div className="text-primary font-bold text-sm uppercase tracking-wide mb-2">1. Get keys</div>
+            <p className="text-mute text-sm">Create a project in the dashboard — you get a <strong className="text-ink">site key</strong> (browser) and a <strong className="text-ink">secret key</strong> (server), always as a pair.</p>
           </div>
-          <div className="bg-surface p-6 rounded-xl border border-border">
-            <div className="text-primary font-bold text-lg mb-2">2. Drop in the script</div>
-            <p className="text-textSecondary text-sm">Add one script tag (or <code className="text-accent">npm install</code>) with your site key. No JS required for plain HTML forms.</p>
+          <div className="card p-5">
+            <div className="text-primary font-bold text-sm uppercase tracking-wide mb-2">2. Drop in the script</div>
+            <p className="text-mute text-sm">Add one script tag (or <code className="text-primary">npm install</code>) with your site key. No JS required for plain HTML forms.</p>
           </div>
-          <div className="bg-surface p-6 rounded-xl border border-border">
-            <div className="text-primary font-bold text-lg mb-2">3. Verify server-side</div>
-            <p className="text-textSecondary text-sm">Your server redeems the token with your secret key at <code className="text-accent">/api/siteverify</code> before trusting the request.</p>
+          <div className="card p-5">
+            <div className="text-primary font-bold text-sm uppercase tracking-wide mb-2">3. Verify server-side</div>
+            <p className="text-mute text-sm">Your server redeems the token with your secret key at <code className="text-primary">/api/siteverify</code> before trusting the request.</p>
           </div>
         </div>
 
         <H3>Site key vs. secret key</H3>
         <Callout variant="danger">
           <strong>Never put your secret key in browser code.</strong> The site
-          key (<code>vf_site_...</code>) is public — it's meant to sit in your
-          HTML/JS. The secret key (<code>vf_secret_...</code>) only ever runs
+          key (<code>vp_site_...</code>) is public — it's meant to sit in your
+          HTML/JS. The secret key (<code>vp_secret_...</code>) only ever runs
           on your server, to call <code>/api/siteverify</code>. The SDK
           refuses to initialize with a secret key.
         </Callout>
@@ -90,12 +108,12 @@ export default function DocsPage() {
         </P>
 
         <H3>Script tag — any HTML site (WordPress, Django templates, Rails views...)</H3>
-        <P>Zero JS required. Auto-initializes from <code className="text-accent">data-site-key</code>:</P>
+        <P>Zero JS required. Auto-initializes from <code className="text-primary">data-site-key</code>:</P>
         <CodeBlock language="html" code={scriptTagSnippet()} />
-        <p className="text-textSecondary text-sm">Add <code className="text-accent">data-debug=&quot;true&quot;</code> for console logging, or <code className="text-accent">data-endpoint</code> to override the API host.</p>
+        <p className="text-mute text-sm">Add <code className="text-primary">data-debug=&quot;true&quot;</code> for console logging, or <code className="text-primary">data-endpoint</code> to override the API host.</p>
 
         <H3>Classic HTML form — no JS at all</H3>
-        <P>Add <code className="text-accent">data-veriflow</code> to any form — the SDK injects a hidden token field before it submits:</P>
+        <P>Add <code className="text-primary">data-veilproof</code> to any form — the SDK injects a hidden token field before it submits:</P>
         <CodeBlock language="html" code={scriptTagFormSnippet()} />
 
         <H3>npm / ESM (React, Vue, Next.js)</H3>
@@ -113,7 +131,7 @@ export default function DocsPage() {
       <Section title="Server Verification (siteverify)">
         <P>
           This is the actual trust boundary. Your server redeems the token
-          the browser received with your <strong className="text-text">secret key</strong> —
+          the browser received with your <strong className="text-ink">secret key</strong> —
           only then is the decision trustworthy.
         </P>
         <TabbedCode tabs={[
@@ -127,10 +145,10 @@ export default function DocsPage() {
           { label: 'Go', code: siteverifyGoSnippet() },
           { label: 'C# (.NET)', code: siteverifyCsharpSnippet() },
         ]} />
-        <p className="text-textSecondary text-sm">
-          The <code className="text-accent">curl</code> tab only shows the request —
+        <p className="text-mute text-sm">
+          The <code className="text-primary">curl</code> tab only shows the request —
           it can't check the response for you. Every other tab shows the full
-          pattern, including the <code className="text-accent">action</code> check below.
+          pattern, including the <code className="text-primary">action</code> check below.
           Don't wire up your own handler from the curl example alone.
         </p>
 
@@ -142,14 +160,14 @@ export default function DocsPage() {
           &quot;real&quot; code. A detected bot is still issued a validly-signed
           token; <code>/api/siteverify</code> will happily return
           <code> success: true</code> for it. You must check
-          <code className="text-accent"> action !== &apos;block&apos;</code> yourself,
+          <code className="text-primary"> action !== &apos;block&apos;</code> yourself,
           every time, before trusting the request. Skipping this check means
-          every bot VeriFlow detects gets through anyway.
+          every bot VeilProof detects gets through anyway.
         </Callout>
         <P>
-          Check <code className="text-accent">action</code> (<code className="text-accent">allow</code> / <code className="text-accent">block</code>) and
-          <code className="text-accent"> risk_score</code> (0-100). Most integrations trust <code className="text-accent">action</code> directly;
-          if you want finer control, threshold on <code className="text-accent">risk_score</code> yourself.
+          Check <code className="text-primary">action</code> (<code className="text-primary">allow</code> / <code className="text-primary">block</code>) and
+          <code className="text-primary"> risk_score</code> (0-100). Most integrations trust <code className="text-primary">action</code> directly;
+          if you want finer control, threshold on <code className="text-primary">risk_score</code> yourself.
         </P>
         <Callout variant="warn">
           <strong>Fail-open vs. fail-closed:</strong> if <code>/api/siteverify</code> is
@@ -159,7 +177,7 @@ export default function DocsPage() {
         </Callout>
 
         <H3>Tokens are single-use and expire in 120 seconds</H3>
-        <P>A replayed or expired token returns <code className="text-accent">timeout-or-duplicate</code>. Don't cache or retry a token across requests.</P>
+        <P>A replayed or expired token returns <code className="text-primary">timeout-or-duplicate</code>. Don't cache or retry a token across requests.</P>
       </Section>
     ),
 
@@ -167,30 +185,30 @@ export default function DocsPage() {
       <Section title="API Reference">
         <EndpointCard method="POST" path="/api/siteverify" auth="Secret key (X-API-Key header or `secret` form field)">
           <div className="space-y-3">
-            <p className="text-textSecondary text-sm">Accepts JSON <code className="text-accent">{'{ "token": "..." }'}</code> or classic form-encoded <code className="text-accent">secret=...&amp;response=...</code> (reCAPTCHA-compatible). Failures return HTTP 200 — check <code className="text-accent">success</code>, not the status code.</p>
+            <p className="text-mute text-sm">Accepts JSON <code className="text-primary">{'{ "token": "..." }'}</code> or classic form-encoded <code className="text-primary">secret=...&amp;response=...</code> (reCAPTCHA-compatible). Failures return HTTP 200 — check <code className="text-primary">success</code>, not the status code.</p>
             <div>
-              <h4 className="font-semibold text-sm text-textSecondary mb-1">Success response — visitor allowed</h4>
+              <h4 className="font-semibold text-sm text-mute mb-1">Success response — visitor allowed</h4>
               <CodeBlock code={siteverifySuccessResponse} />
             </div>
             <div>
-              <h4 className="font-semibold text-sm text-textSecondary mb-1">Success response — bot blocked (note: still <code className="text-accent">success: true</code>)</h4>
+              <h4 className="font-semibold text-sm text-mute mb-1">Success response — bot blocked (note: still <code className="text-primary">success: true</code>)</h4>
               <CodeBlock code={siteverifyBlockedResponse} />
-              <p className="text-textSecondary text-xs mt-2">
-                This is the response for a bot VeriFlow correctly detected. <code className="text-accent">success</code> is
-                still <code className="text-accent">true</code> — only <code className="text-accent">action</code> tells
+              <p className="text-mute text-xs mt-2">
+                This is the response for a bot VeilProof correctly detected. <code className="text-primary">success</code> is
+                still <code className="text-primary">true</code> — only <code className="text-primary">action</code> tells
                 you it was blocked. See the danger callout in Server Verification.
               </p>
             </div>
             <div>
-              <h4 className="font-semibold text-sm text-textSecondary mb-1">Error response — invalid or expired token</h4>
+              <h4 className="font-semibold text-sm text-mute mb-1">Error response — invalid or expired token</h4>
               <CodeBlock code={siteverifyErrorResponse} />
-              <p className="text-textSecondary text-xs mt-2">Codes: <code className="text-accent">missing-input-secret</code>, <code className="text-accent">invalid-input-secret</code>, <code className="text-accent">missing-input-response</code>, <code className="text-accent">invalid-input-response</code>, <code className="text-accent">timeout-or-duplicate</code>.</p>
+              <p className="text-mute text-xs mt-2">Codes: <code className="text-primary">missing-input-secret</code>, <code className="text-primary">invalid-input-secret</code>, <code className="text-primary">missing-input-response</code>, <code className="text-primary">invalid-input-response</code>, <code className="text-primary">timeout-or-duplicate</code>.</p>
             </div>
           </div>
         </EndpointCard>
 
         <EndpointCard method="POST" path="/api/predict" auth="Site key (SDK-internal)">
-          <p className="text-textSecondary text-sm">Called automatically by the SDK — you shouldn't call this directly. Returns the risk decision plus a <code className="text-accent">verification_token</code> for <code className="text-accent">/api/siteverify</code>.</p>
+          <p className="text-mute text-sm">Called automatically by the SDK — you shouldn't call this directly. Returns the risk decision plus a <code className="text-primary">verification_token</code> for <code className="text-primary">/api/siteverify</code>.</p>
         </EndpointCard>
       </Section>
     ),
@@ -217,30 +235,30 @@ export default function DocsPage() {
         <H3>Tokens: replay and TTL</H3>
         <P>Verification tokens are single-use and expire after 120 seconds. Don't log or store them beyond the verification call.</P>
         <H3>Content-Security-Policy</H3>
-        <P>If you set a CSP, allow the SDK's origin in <code className="text-accent">connect-src</code>:</P>
+        <P>If you set a CSP, allow the SDK's origin in <code className="text-primary">connect-src</code>:</P>
         <CodeBlock code={`Content-Security-Policy: connect-src 'self' https://next-captcha-sdk.onrender.com; script-src 'self' https://cdn.jsdelivr.net;`} />
       </Section>
     ),
 
     sdk: (
       <Section title="SDK Reference">
-        <P>Full method list — see the <a className="text-primary underline" href="https://www.npmjs.com/package/veriflow-sdk" target="_blank" rel="noreferrer">npm README</a> for details.</P>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border border-border rounded-xl overflow-hidden">
-            <thead className="bg-surface2 text-textSecondary">
-              <tr><th className="text-left p-3">Method</th><th className="text-left p-3">Purpose</th></tr>
+        <P>Full method list — see the <a className="text-primary underline" href="https://www.npmjs.com/package/veilproof" target="_blank" rel="noreferrer">npm README</a> for details.</P>
+        <div className="overflow-x-auto card">
+          <table className="w-full text-sm">
+            <thead className="bg-surfaceSoft text-mute">
+              <tr><th className="text-left p-3 font-bold">Method</th><th className="text-left p-3 font-bold">Purpose</th></tr>
             </thead>
-            <tbody className="text-textSecondary">
+            <tbody className="text-mute">
               {[
-                ['VeriFlow.init(config)', 'Initialize with your site key (auto-called by script-tag)'],
-                ['VeriFlow.getToken(callback?)', 'Get a verification token — callback or Promise'],
-                ['VeriFlow.getDecision(callback)', 'Raw decision result (used internally by getToken)'],
-                ['VeriFlow.getSessionId()', 'Current session ID'],
-                ['VeriFlow.selfTest(callback)', 'Diagnose init/network/event-collection issues'],
-                ['VeriFlow.destroy()', 'Stop tracking and flush remaining events'],
+                ['VeilProof.init(config)', 'Initialize with your site key (auto-called by script-tag)'],
+                ['VeilProof.getToken(callback?)', 'Get a verification token — callback or Promise'],
+                ['VeilProof.getDecision(callback)', 'Raw decision result (used internally by getToken)'],
+                ['VeilProof.getSessionId()', 'Current session ID'],
+                ['VeilProof.selfTest(callback)', 'Diagnose init/network/event-collection issues'],
+                ['VeilProof.destroy()', 'Stop tracking and flush remaining events'],
               ].map(([m, d]) => (
-                <tr key={m} className="border-t border-border">
-                  <td className="p-3 font-mono text-accent">{m}</td>
+                <tr key={m} className="border-t border-hairline">
+                  <td className="p-3 font-mono text-primary">{m}</td>
                   <td className="p-3">{d}</td>
                 </tr>
               ))}
@@ -248,49 +266,39 @@ export default function DocsPage() {
           </table>
         </div>
         <H3>Troubleshooting with selfTest()</H3>
-        <CodeBlock code={`VeriFlow.selfTest((results) => console.log(results));\n// { tests: [...], passed, failed, overall }`} />
-        <p className="text-textSecondary text-xs">CDN: <code className="text-accent">{CDN_URL}</code></p>
+        <CodeBlock code={`VeilProof.selfTest((results) => console.log(results));\n// { tests: [...], passed, failed, overall }`} />
+        <p className="text-mute text-xs">CDN: <code className="text-primary">{CDN_URL}</code></p>
       </Section>
     ),
   };
 
   return (
-    <div className="min-h-screen bg-background text-text">
-      <header className="border-b border-border bg-surface sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => window.location.href = '/'}>
-            <Shield className="w-8 h-8 text-primary" />
-            <span className="text-xl font-bold">VeriFlow Docs</span>
-          </div>
-          <button
-            onClick={() => window.location.href = '/'}
-            className="flex items-center gap-2 text-sm text-textSecondary hover:text-text transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" /> Back to Home
-          </button>
-        </div>
-      </header>
+    <div className="interior-shell min-h-screen bg-canvas text-ink">
+      <SiteNav active="Docs" />
 
-      <div className="max-w-7xl mx-auto px-6 py-10 grid md:grid-cols-4 gap-8">
-        <aside className="md:col-span-1 space-y-2">
+      <div className="docs-layout max-w-[1280px] mx-auto px-6 py-10 grid md:grid-cols-4 gap-8">
+        <aside className="docs-sidebar md:col-span-1 space-y-1">
           {NAV.map(({ id, title, icon: Icon }) => (
             <button
               key={id}
-              onClick={() => setActive(id)}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-all ${
-                active === id ? 'bg-primary/10 text-primary border-l-4 border-primary' : 'text-textSecondary hover:bg-surface'
+              onClick={() => selectSection(id)}
+              aria-current={active === id ? 'page' : undefined}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-sm text-left text-sm font-semibold transition-colors ${
+                active === id ? 'bg-white/10 text-ink' : 'text-mute hover:bg-surface'
               }`}
             >
-              <Icon className="w-5 h-5" />
+              <Icon className="w-4 h-4" />
               {title}
             </button>
           ))}
         </aside>
 
-        <main className="md:col-span-3 bg-surface border border-border rounded-2xl p-8 shadow-xl">
+        <main id={active} className="md:col-span-3 card p-8 docs-content">
           {content[active]}
         </main>
       </div>
+
+      <SiteFooter />
     </div>
   );
 }

@@ -48,5 +48,5 @@ jobs:
           draft: false
           prerelease: false
 
-      # No CDN upload step: jsDelivr (https://cdn.jsdelivr.net/npm/veriflow-sdk)
+      # No CDN upload step: jsDelivr (https://cdn.jsdelivr.net/npm/veilproof)
       # mirrors npm automatically — nothing to push separately.

@@ -1,14 +1,14 @@
 /**
- * VeriFlow SDK — Main Entry Point
+ * VeilProof SDK — Main Entry Point
  *
  * Usage:
- *   VeriFlow.init({
+ *   VeilProof.init({
  *     apiKey: "your-api-key",
- *     endpoint: "https://api.veriflow.com",
+ *     endpoint: "https://api.veilproof.com",
  *     debug: true
  *   })
  *
- * Version: 0.1.0
+ * Version: 1.0.0
  */
 
 import { initSession, getSessionId, getSessionMeta } from './core/session.js';
@@ -24,7 +24,7 @@ import { computeFeatures } from './core/features.js';
 import { runAutoInit } from './autoinit.js';
 
 import type {
-  VeriFlowConfig,
+  VeilProofConfig,
   DecisionResult,
   DebugSnapshot,
   SelfTestResult,
@@ -37,27 +37,27 @@ import type {
 /**
  * Validate configuration and provide helpful error messages
  */
-function validateConfig(config: VeriFlowConfig): { valid: boolean; error?: string } {
+function validateConfig(config: VeilProofConfig): { valid: boolean; error?: string } {
   if (!config.apiKey || typeof config.apiKey !== 'string') {
     return { valid: false, error: 'apiKey is required and must be a string' };
   }
 
-  // Secret keys (vf_secret_...) are for server-side /api/siteverify calls
+  // Secret keys (vp_secret_...) are for server-side /api/siteverify calls
   // only. A secret key in browser JS/HTML would be visible to every visitor
   // — hard-reject rather than silently accepting a dangerous misconfiguration.
-  if (config.apiKey.startsWith('vf_secret_')) {
+  if (config.apiKey.startsWith('vp_secret_')) {
     return {
       valid: false,
-      error: 'Secret keys must never be used in the browser. Use your site key (vf_site_...) here, and your secret key only on your server for /api/siteverify.'
+      error: 'Secret keys must never be used in the browser. Use your site key (vp_site_...) here, and your secret key only on your server for /api/siteverify.'
     };
   }
 
-  // Validate API key format (production keys start with vf_ or sc_ prefixes)
-  const validPrefixes = ['vf_site_', 'vf_live_', 'vf_test_', 'vf_admin_', 'sc_live_', 'sc_test_', 'sc_admin_'];
+  // Validate API key format (production keys start with vp_ or sc_ prefixes)
+  const validPrefixes = ['vp_site_', 'vp_live_', 'vp_test_', 'vp_admin_', 'sc_live_', 'sc_test_', 'sc_admin_'];
   const hasValidPrefix = validPrefixes.some(prefix => config.apiKey.startsWith(prefix));
 
   if (!hasValidPrefix && config.apiKey !== 'demo-key') {
-    return { valid: false, error: 'Invalid API key format. Production keys must start with vf_site_ (or legacy vf_live_/vf_test_) prefixes' };
+    return { valid: false, error: 'Invalid API key format. Production keys must start with vp_site_ (or legacy vp_live_/vp_test_) prefixes' };
   }
 
   if (config.endpoint && typeof config.endpoint !== 'string') {
@@ -74,7 +74,7 @@ function validateConfig(config: VeriFlowConfig): { valid: boolean; error?: strin
 // Check for browser environment (SSR safety)
 const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined';
 
-const SDK_VERSION = '0.1.1';
+const SDK_VERSION = '1.0.0';
 const DEFAULT_ENDPOINT = 'https://next-captcha-sdk.onrender.com';
 
 /** Run a collector lifecycle call without letting an internal bug crash the host page (S2.1). */
@@ -82,15 +82,15 @@ function safeCall(name: string, fn: () => void): void {
   try {
     fn();
   } catch (error) {
-    console.warn(`[VeriFlow] "${name}" failed and was suppressed:`, error);
+    console.warn(`[VeilProof] "${name}" failed and was suppressed:`, error);
   }
 }
 let initialized = false;
 let debug = false;
-let initConfig: VeriFlowConfig | null = null;
+let initConfig: VeilProofConfig | null = null;
 
-interface VeriFlowAPI {
-  init(config: VeriFlowConfig): void;
+interface VeilProofAPI {
+  init(config: VeilProofConfig): void;
   destroy(): void;
   getSessionId(): string;
   getSessionMeta(): import('./types.js').SessionMeta;
@@ -104,8 +104,8 @@ interface VeriFlowAPI {
 const SSR_DECISION: DecisionResult = { error: 'SSR environment', action: 'block', bot_probability: 1, risk_score: 100, confidence: 0, risk_engine_enabled: false, behavior_score: 0, fingerprint_score: 0, overall_risk: 100 };
 
 // No-op version for SSR/Node environments
-const VeriFlowSSR: VeriFlowAPI = {
-  init: () => console.warn('[VeriFlow] Running in SSR environment - SDK disabled'),
+const VeilProofSSR: VeilProofAPI = {
+  init: () => console.warn('[VeilProof] Running in SSR environment - SDK disabled'),
   destroy: () => {},
   getSessionId: () => '',
   getSessionMeta: () => ({ sessionId: '', startTime: 0, userAgent: '', platform: '', webdriverFlag: false, hasTouch: false }),
@@ -119,25 +119,25 @@ const VeriFlowSSR: VeriFlowAPI = {
   selfTest: (callback: SelfTestCallback) => callback({ version: SDK_VERSION, tests: [{ name: 'SSR Environment', status: 'warn', error: 'SDK disabled in SSR' }], passed: 0, failed: 0, overall: 'unknown' })
 };
 
-const VeriFlow: VeriFlowAPI = {
+const VeilProof: VeilProofAPI = {
   /**
-   * Initialize VeriFlow SDK.
+   * Initialize VeilProof SDK.
    */
-  init(config: VeriFlowConfig = { apiKey: '' }) {
+  init(config: VeilProofConfig = { apiKey: '' }) {
     if (!isBrowser) {
-      console.warn('[VeriFlow] Running in SSR environment - SDK disabled');
+      console.warn('[VeilProof] Running in SSR environment - SDK disabled');
       return;
     }
 
     if (initialized) {
-      if (debug) console.warn('[VeriFlow] Already initialized');
+      if (debug) console.warn('[VeilProof] Already initialized');
       return;
     }
 
     // Validate configuration
     const validation = validateConfig(config);
     if (!validation.valid) {
-      const errorMsg = `[VeriFlow] Configuration error: ${validation.error}. Get an API key at https://veriflow.com/dashboard`;
+      const errorMsg = `[VeilProof] Configuration error: ${validation.error}. Get an API key at https://veilproof.com/dashboard`;
       if (debug) {
         throw new Error(errorMsg);
       } else {
@@ -187,10 +187,10 @@ const VeriFlow: VeriFlowAPI = {
     initialized = true;
 
     if (debug) {
-      console.log(`[VeriFlow] v${SDK_VERSION} Initialized ✓`);
-      console.log(`[VeriFlow] Session: ${getSessionId().slice(-8)}`);
-      console.log(`[VeriFlow] Endpoint: ${config.endpoint}`);
-      console.log('[VeriFlow] Collectors: mouse, click, keyboard, scroll, focus' + ('ontouchstart' in window ? ', touch' : ''));
+      console.log(`[VeilProof] v${SDK_VERSION} Initialized ✓`);
+      console.log(`[VeilProof] Session: ${getSessionId().slice(-8)}`);
+      console.log(`[VeilProof] Endpoint: ${config.endpoint}`);
+      console.log('[VeilProof] Collectors: mouse, click, keyboard, scroll, focus' + ('ontouchstart' in window ? ', touch' : ''));
     }
   },
 
@@ -208,7 +208,7 @@ const VeriFlow: VeriFlowAPI = {
     safeCall('stopBuffer', stopBuffer);
     safeCall('sendSessionEnd', () => { sendSessionEnd(); });
     initialized = false;
-    if (debug) console.log('[VeriFlow] Destroyed');
+    if (debug) console.log('[VeilProof] Destroyed');
   },
 
   /** Get current session ID */
@@ -221,12 +221,12 @@ const VeriFlow: VeriFlowAPI = {
    */
   getDecision(callback: DecisionCallback): void {
     if (!isBrowser) {
-      VeriFlowSSR.getDecision(callback);
+      VeilProofSSR.getDecision(callback);
       return;
     }
 
     if (!initialized) {
-      callback({ error: 'VeriFlow not initialized. Call init() first.', action: 'block', bot_probability: 1, risk_score: 100, confidence: 0, risk_engine_enabled: false, behavior_score: 0, fingerprint_score: 0, overall_risk: 100 });
+      callback({ error: 'VeilProof not initialized. Call init() first.', action: 'block', bot_probability: 1, risk_score: 100, confidence: 0, risk_engine_enabled: false, behavior_score: 0, fingerprint_score: 0, overall_risk: 100 });
       return;
     }
 
@@ -236,17 +236,17 @@ const VeriFlow: VeriFlowAPI = {
       const sessionMeta = getSessionMeta();
       
       if (debug) {
-        console.log('[VeriFlow] Getting decision...');
-        console.log(`[VeriFlow] Events collected: ${events.length}`);
+        console.log('[VeilProof] Getting decision...');
+        console.log(`[VeilProof] Events collected: ${events.length}`);
       }
 
       // Extract features from events (V4 feature set)
       const features = computeFeatures(events, sessionMeta);
       
       if (debug) {
-        console.log('[VeriFlow] Computed features:', Object.keys(features).slice(0, 10), '...');
-        console.log('[VeriFlow] Total feature count:', Object.keys(features).length);
-        console.log('[VeriFlow] Sample feature values:', {
+        console.log('[VeilProof] Computed features:', Object.keys(features).slice(0, 10), '...');
+        console.log('[VeilProof] Total feature count:', Object.keys(features).length);
+        console.log('[VeilProof] Sample feature values:', {
           avg_hover_duration: features.avg_hover_duration,
           avg_overshoot_ratio: features.avg_overshoot_ratio,
           mouse_curvature_std: features.mouse_curvature_std,
@@ -269,8 +269,8 @@ const VeriFlow: VeriFlowAPI = {
       };
       
       if (debug) {
-        console.log('[VeriFlow] Request body keys:', Object.keys(requestBody).slice(0, 25));
-        console.log('[VeriFlow] Total request body keys:', Object.keys(requestBody).length);
+        console.log('[VeilProof] Request body keys:', Object.keys(requestBody).slice(0, 25));
+        console.log('[VeilProof] Total request body keys:', Object.keys(requestBody).length);
       }
 
       // Send to prediction API - use init config or default to production
@@ -298,23 +298,23 @@ const VeriFlow: VeriFlowAPI = {
           // not a DecisionResult — never pass it through as-is (previously
           // caused a downstream crash when callers read result.action).
           const message = body?.detail || body?.error || `Request failed with status ${response.status}`;
-          if (debug) console.warn('[VeriFlow] Prediction request failed:', message);
+          if (debug) console.warn('[VeilProof] Prediction request failed:', message);
           callback({ error: message, action: 'block', bot_probability: 1, risk_score: 100, confidence: 0, risk_engine_enabled: false, behavior_score: 0, fingerprint_score: 0, overall_risk: 100 });
           return;
         }
 
         if (debug) {
-          console.log('[VeriFlow] Decision received:', body);
+          console.log('[VeilProof] Decision received:', body);
         }
         callback(body as DecisionResult);
       })
       .catch(error => {
-        console.error('[VeriFlow] Prediction error:', error);
+        console.error('[VeilProof] Prediction error:', error);
         callback({ error: (error as Error).message, action: 'block', bot_probability: 1, risk_score: 100, confidence: 0, risk_engine_enabled: false, behavior_score: 0, fingerprint_score: 0, overall_risk: 100 });
       });
 
     } catch (error) {
-      console.error('[VeriFlow] getDecision error:', error);
+      console.error('[VeilProof] getDecision error:', error);
       callback({ error: (error as Error).message, action: 'block', bot_probability: 1, risk_score: 100, confidence: 0, risk_engine_enabled: false, behavior_score: 0, fingerprint_score: 0, overall_risk: 100 });
     }
   },
@@ -327,7 +327,7 @@ const VeriFlow: VeriFlowAPI = {
    */
   getToken: ((callback?: TokenCallback) => {
     const run = (cb: TokenCallback) => {
-      VeriFlow.getDecision((decision: DecisionResult) => {
+      VeilProof.getDecision((decision: DecisionResult) => {
         cb({
           token: decision.verification_token || null,
           decision,
@@ -349,7 +349,7 @@ const VeriFlow: VeriFlowAPI = {
    */
   getDebugSnapshot(): DebugSnapshot {
     if (!isBrowser) {
-      return VeriFlowSSR.getDebugSnapshot();
+      return VeilProofSSR.getDebugSnapshot();
     }
 
     return {
@@ -381,7 +381,7 @@ const VeriFlow: VeriFlowAPI = {
    */
   selfTest(callback: SelfTestCallback): void {
     if (!isBrowser) {
-      VeriFlowSSR.selfTest(callback);
+      VeilProofSSR.selfTest(callback);
       return;
     }
 
@@ -403,9 +403,9 @@ const VeriFlow: VeriFlowAPI = {
     }
 
     // Test 2: API key check — prefer the actual init() config over the
-    // legacy window.VERIFLOW_CONFIG global, which script-tag/npm callers
+    // legacy window.VEILPROOF_CONFIG global, which script-tag/npm callers
     // never set.
-    const apiKey = initConfig?.apiKey || (window as any).VERIFLOW_CONFIG?.API_KEY;
+    const apiKey = initConfig?.apiKey || (window as any).VEILPROOF_CONFIG?.API_KEY;
     if (apiKey) {
       results.tests.push({ name: 'API Key Valid', status: 'pass' });
       results.passed++;
@@ -424,7 +424,7 @@ const VeriFlow: VeriFlowAPI = {
     }
 
     // Test 4: Network connectivity check - use config.js if available
-    const endpoint = (window as any).VERIFLOW_CONFIG?.BACKEND_URL || initConfig?.endpoint || DEFAULT_ENDPOINT;
+    const endpoint = (window as any).VEILPROOF_CONFIG?.BACKEND_URL || initConfig?.endpoint || DEFAULT_ENDPOINT;
     fetch(`${endpoint}/health`, { method: 'GET' })
       .then(response => {
         if (response.ok) {
@@ -435,24 +435,24 @@ const VeriFlow: VeriFlowAPI = {
           results.failed++;
         }
         results.overall = results.failed === 0 ? 'pass' : 'fail';
-        if (debug) console.log('[VeriFlow] Self-test results:', results);
+        if (debug) console.log('[VeilProof] Self-test results:', results);
         callback(results);
       })
       .catch(error => {
         results.tests.push({ name: 'Network Reachable', status: 'fail', error: (error as Error).message });
         results.failed++;
         results.overall = results.failed === 0 ? 'pass' : 'fail';
-        if (debug) console.log('[VeriFlow] Self-test results:', results);
+        if (debug) console.log('[VeilProof] Self-test results:', results);
         callback(results);
       });
   },
 };
 
 // Export for esbuild to handle global exposure
-export default VeriFlow;
+export default VeilProof;
 
 // Manual global exposure for browser usage (outside of esbuild's control)
 if (typeof window !== 'undefined') {
-  (window as any).VeriFlow = VeriFlow;
-  runAutoInit(VeriFlow);
+  (window as any).VeilProof = VeilProof;
+  runAutoInit(VeilProof);
 }

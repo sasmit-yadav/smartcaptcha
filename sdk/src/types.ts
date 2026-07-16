@@ -1,8 +1,8 @@
 /**
- * NextCaptcha SDK Type Definitions
+ * VeilProof SDK Type Definitions
  */
 
-export interface VeriFlowConfig {
+export interface VeilProofConfig {
   apiKey: string;
   endpoint?: string;
   debug?: boolean;

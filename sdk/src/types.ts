@@ -103,14 +103,16 @@ export interface FingerprintData {
 }
 
 export interface DecisionResult {
-  action: 'allow' | 'block' | 'challenge';
-  bot_probability: number;
+  /** Binary verdict — there is no 'challenge' tier; nothing in the product implements a challenge flow. */
+  action: 'allow' | 'block';
+  /** Combined 0-100 risk score (the same number the API calls risk_score). */
   risk_score: number;
-  confidence: number;
-  risk_engine_enabled: boolean;
+  /** 0-100, derived from the ML model's behavioral prediction. */
   behavior_score: number;
+  /** 0-100, derived from rule-based device/automation signals (e.g. navigator.webdriver). */
   fingerprint_score: number;
-  overall_risk: number;
+  /** 0-1, how far risk_score sits from the 50-point decision boundary. */
+  confidence: number;
   error?: string;
   /** Short-lived, single-use token for server-side /api/siteverify redemption. */
   verification_token?: string;

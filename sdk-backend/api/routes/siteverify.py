@@ -5,10 +5,10 @@ POST /api/siteverify — the customer's *server* redeems a verify token
 boundary: the browser response from /api/predict is not one, since a bot
 can ignore or fake it.
 
-reCAPTCHA-compatible: accepts JSON ({"token": "..."} + a key header) or
-classic form-encoded (`secret=...&response=...`), and failures are returned
-as HTTP 200 with `{"success": false, "error-codes": [...]}` rather than a
-4xx, matching the reCAPTCHA siteverify convention customers already expect.
+Accepts JSON ({"token": "..."} + a key header) or classic form-encoded
+(`secret=...&response=...`), and failures are returned as HTTP 200 with
+`{"success": false, "error-codes": [...]}` rather than a 4xx, matching the
+widely-used siteverify-style convention customers already expect.
 """
 
 import logging

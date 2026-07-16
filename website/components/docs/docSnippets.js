@@ -245,3 +245,21 @@ export const siteverifyErrorResponse = `{
   "success": false,
   "error-codes": ["timeout-or-duplicate"]
 }`;
+
+export const predictAllowResponse = `{
+  "action": "allow",
+  "risk_score": 10,
+  "behavior_score": 26,
+  "fingerprint_score": 0,
+  "confidence": 0.8,
+  "verification_token": "eyJhbGciOiJIUzI1NiIs..."
+}`;
+
+export const predictBlockResponse = `{
+  "action": "block",
+  "risk_score": 97,
+  "behavior_score": 92,
+  "fingerprint_score": 100,
+  "confidence": 0.94,
+  "verification_token": "eyJhbGciOiJIUzI1NiIs..."
+}`;

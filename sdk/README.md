@@ -86,8 +86,8 @@ curl -X POST https://next-captcha-sdk.onrender.com/api/siteverify \
 ```
 
 Tokens are single-use and expire after 120 seconds. On failure, the response
-is still HTTP 200 with `{"success": false, "error-codes": [...]}` (reCAPTCHA
-convention) — check `success`, not the status code.
+is still HTTP 200 with `{"success": false, "error-codes": [...]}` — check
+`success`, not the status code.
 
 ## API Reference
 
@@ -111,14 +111,11 @@ Get a bot detection decision based on collected behavioral data.
 **Result:**
 ```javascript
 {
-  action: 'allow' | 'block' | 'challenge',
-  bot_probability: 0.0-1.0,
-  risk_score: 0-100,
-  confidence: 0.0-1.0,
-  risk_engine_enabled: true,
-  behavior_score: 0-100,
-  fingerprint_score: 0-100,
-  overall_risk: 0-100,
+  action: 'allow' | 'block', // binary — no 'challenge' tier is implemented anywhere in the product
+  risk_score: 0-100,         // combined risk score; >=50 blocks
+  behavior_score: 0-100,     // ML model's behavioral prediction
+  fingerprint_score: 0-100,  // rule-based device/automation signals (e.g. navigator.webdriver)
+  confidence: 0.0-1.0,       // distance of risk_score from the 50-point decision boundary
   error: undefined // present with action: 'block' if the request itself failed
 }
 ```

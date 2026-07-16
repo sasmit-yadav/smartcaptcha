@@ -101,7 +101,7 @@ interface VeilProofAPI {
   selfTest(callback: SelfTestCallback): void;
 }
 
-const SSR_DECISION: DecisionResult = { error: 'SSR environment', action: 'block', bot_probability: 1, risk_score: 100, confidence: 0, risk_engine_enabled: false, behavior_score: 0, fingerprint_score: 0, overall_risk: 100 };
+const SSR_DECISION: DecisionResult = { error: 'SSR environment', action: 'block', risk_score: 100, behavior_score: 100, fingerprint_score: 100, confidence: 0 };
 
 // No-op version for SSR/Node environments
 const VeilProofSSR: VeilProofAPI = {
@@ -226,7 +226,7 @@ const VeilProof: VeilProofAPI = {
     }
 
     if (!initialized) {
-      callback({ error: 'VeilProof not initialized. Call init() first.', action: 'block', bot_probability: 1, risk_score: 100, confidence: 0, risk_engine_enabled: false, behavior_score: 0, fingerprint_score: 0, overall_risk: 100 });
+      callback({ error: 'VeilProof not initialized. Call init() first.', action: 'block', risk_score: 100, behavior_score: 100, fingerprint_score: 100, confidence: 0 });
       return;
     }
 
@@ -278,7 +278,7 @@ const VeilProof: VeilProofAPI = {
       const apiKey = initConfig?.apiKey || '';
       
       if (!apiKey) {
-        callback({ error: 'API key not provided', action: 'block', bot_probability: 1, risk_score: 100, confidence: 0, risk_engine_enabled: false, behavior_score: 0, fingerprint_score: 0, overall_risk: 100 });
+        callback({ error: 'API key not provided', action: 'block', risk_score: 100, behavior_score: 100, fingerprint_score: 100, confidence: 0 });
         return;
       }
       
@@ -299,7 +299,7 @@ const VeilProof: VeilProofAPI = {
           // caused a downstream crash when callers read result.action).
           const message = body?.detail || body?.error || `Request failed with status ${response.status}`;
           if (debug) console.warn('[VeilProof] Prediction request failed:', message);
-          callback({ error: message, action: 'block', bot_probability: 1, risk_score: 100, confidence: 0, risk_engine_enabled: false, behavior_score: 0, fingerprint_score: 0, overall_risk: 100 });
+          callback({ error: message, action: 'block', risk_score: 100, behavior_score: 100, fingerprint_score: 100, confidence: 0 });
           return;
         }
 
@@ -310,12 +310,12 @@ const VeilProof: VeilProofAPI = {
       })
       .catch(error => {
         console.error('[VeilProof] Prediction error:', error);
-        callback({ error: (error as Error).message, action: 'block', bot_probability: 1, risk_score: 100, confidence: 0, risk_engine_enabled: false, behavior_score: 0, fingerprint_score: 0, overall_risk: 100 });
+        callback({ error: (error as Error).message, action: 'block', risk_score: 100, behavior_score: 100, fingerprint_score: 100, confidence: 0 });
       });
 
     } catch (error) {
       console.error('[VeilProof] getDecision error:', error);
-      callback({ error: (error as Error).message, action: 'block', bot_probability: 1, risk_score: 100, confidence: 0, risk_engine_enabled: false, behavior_score: 0, fingerprint_score: 0, overall_risk: 100 });
+      callback({ error: (error as Error).message, action: 'block', risk_score: 100, behavior_score: 100, fingerprint_score: 100, confidence: 0 });
     }
   },
 

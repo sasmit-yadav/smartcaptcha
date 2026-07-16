@@ -11,14 +11,11 @@ from models.risk_engine import create_risk_engine, RiskEngine
 
 ROOT = Path(__file__).resolve().parents[1]
 
-DEFAULT_THRESHOLD = 0.50
-DEFAULT_CHALLENGE_LOW = 0.35
-
 
 class BotDetector:
     """Bot detection model for inference with Risk Engine integration."""
 
-    def __init__(self, model_path=None, scaler_path=None, metadata_path=None, use_risk_engine=True):
+    def __init__(self, model_path=None, scaler_path=None, metadata_path=None):
         artifacts_dir = ROOT / "models" / "artifacts" / "v3"
         if model_path is None:
             selected = self._selected_artifacts_from_latest_comparison(artifacts_dir)
@@ -53,21 +50,11 @@ class BotDetector:
         
         # Filter incoming features to only use what the model expects
         print(f"[DEBUG] Will filter incoming features to match model's {len(self.feature_columns)} expected features")
-        
-        self.threshold = float(self.metadata.get("decision_threshold", DEFAULT_THRESHOLD))
-        self.challenge_low = float(self.metadata.get("challenge_low", DEFAULT_CHALLENGE_LOW))
-        self.challenge_high = float(self.metadata.get("challenge_high", self.threshold))
-        
-        # Stage 5: Initialize Risk Engine for multi-factor scoring
-        self.use_risk_engine = use_risk_engine
-        if use_risk_engine:
-            self.risk_engine = create_risk_engine()
-            # Use binary threshold (50% cutoff) - no challenges
-            self.binary_threshold = 0.50
-            print(f"Risk Engine enabled with binary threshold: {self.binary_threshold}")
-        
+
+        self.risk_engine = create_risk_engine()
+
         print(f"BotDetector initialized with model: {model_path}")
-        print(f"Feature count: {len(self.feature_columns)}, threshold: {self.threshold:.2f}")
+        print(f"Feature count: {len(self.feature_columns)}")
 
     def _selected_artifacts_from_latest_comparison(self, artifacts_dir):
         comparison_files = list(artifacts_dir.glob("model_comparison_*.json"))
@@ -186,78 +173,47 @@ class BotDetector:
             boost += 0.08
         return min(boost, 0.35)
 
-    def predict_session(self, features: Dict[str, Any], 
-                       fingerprint_data: Optional[Dict[str, Any]] = None,
-                       challenge_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def predict_session(self, features: Dict[str, Any],
+                       fingerprint_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        Predict bot probability for a session with optional Risk Engine integration.
-        
+        Predict bot risk for a session, combining the ML model's behavioral
+        prediction with rule-based fingerprint signals (see RiskEngine).
+
         Args:
             features: Behavioral features dictionary
-            fingerprint_data: Optional fingerprint data (webdriver_flag, user_agent, etc.)
-            challenge_data: Optional challenge results (completed, time_ms, accuracy)
-        
+            fingerprint_data: Optional fingerprint data (webdriver_flag, user_agent, has_touch, platform)
+
         Returns:
-            Dictionary with prediction results and risk scores
+            Dictionary with the risk_score, action, and component scores.
         """
         feature_df = self._validate_features(features, fingerprint_data)
         features_scaled = self.scaler.transform(feature_df)
         model_probability = float(self.model.predict_proba(features_scaled)[0, 1])
         rule_boost = self._rule_risk_boost(features)
         bot_probability = min(1.0, model_probability + rule_boost)
-        
-        # Stage 5: Use Risk Engine for multi-factor scoring if enabled and data available
-        if self.use_risk_engine and fingerprint_data:
-            risk_result = self.risk_engine.evaluate_session(
-                ml_probability=bot_probability,
-                webdriver_flag=fingerprint_data.get('webdriver_flag', False),
-                user_agent=fingerprint_data.get('user_agent', ''),
-                has_touch=fingerprint_data.get('has_touch', False),
-                platform=fingerprint_data.get('platform', ''),
-                challenge_completed=challenge_data.get('completed', False) if challenge_data else False,
-                challenge_time_ms=challenge_data.get('time_ms') if challenge_data else None,
-                challenge_accuracy=challenge_data.get('accuracy') if challenge_data else None
-            )
-            
-            # Use risk engine decision
-            action = risk_result['decision']
-            overall_risk = risk_result['overall_risk']
-            
-            return {
-                "bot_probability": round(bot_probability, 4),
-                "model_probability": round(model_probability, 4),
-                "rule_boost": round(rule_boost, 4),
-                "risk_score": int(round(overall_risk)),
-                "action": action,
-                "behavior_score": risk_result['behavior_score'],
-                "fingerprint_score": risk_result['fingerprint_score'],
-                "challenge_score": risk_result['challenge_score'],
-                "overall_risk": overall_risk,
-                "confidence": round(1.0 - abs(bot_probability - 0.5), 4),  # Simplified confidence
-                "risk_engine_enabled": True
-            }
-        else:
-            # Fallback to original behavior-only scoring
-            risk_score = int(round(bot_probability * 100))
-            
-            if bot_probability < self.challenge_low:
-                action = "accept"
-            elif bot_probability < self.challenge_high:
-                action = "challenge"
-            else:
-                action = "reject"
 
-            distance = abs(bot_probability - self.threshold)
-            confidence = min(1.0, distance / max(self.threshold, 1 - self.threshold, 0.01))
-            return {
-                "bot_probability": round(bot_probability, 4),
-                "model_probability": round(model_probability, 4),
-                "rule_boost": round(rule_boost, 4),
-                "risk_score": risk_score,
-                "action": action,
-                "confidence": round(confidence, 4),
-                "risk_engine_enabled": False
-            }
+        fingerprint_data = fingerprint_data or {}
+        risk_result = self.risk_engine.evaluate_session(
+            ml_probability=bot_probability,
+            webdriver_flag=fingerprint_data.get('webdriver_flag', False),
+            user_agent=fingerprint_data.get('user_agent', ''),
+            has_touch=fingerprint_data.get('has_touch', False),
+            platform=fingerprint_data.get('platform', ''),
+        )
+
+        overall_risk = risk_result['overall_risk']
+        # Distance from the 50-point decision boundary — how far this
+        # session sits from the allow/block cutoff, not a statistical
+        # confidence interval.
+        confidence = round(min(1.0, abs(overall_risk - 50) / 50), 4)
+
+        return {
+            "action": risk_result['decision'],
+            "risk_score": int(round(overall_risk)),
+            "behavior_score": round(risk_result['behavior_score'], 2),
+            "fingerprint_score": round(risk_result['fingerprint_score'], 2),
+            "confidence": confidence,
+        }
 
     def predict_batch(self, features_list):
         return [self.predict_session(features) for features in features_list]

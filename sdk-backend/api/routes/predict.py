@@ -48,7 +48,7 @@ def get_detector() -> BotDetector:
     """Lazily create the model singleton (warmed at startup from main.py)."""
     global _detector
     if _detector is None:
-        _detector = BotDetector(use_risk_engine=True)
+        _detector = BotDetector()
     return _detector
 
 
@@ -146,7 +146,7 @@ async def predict(
             user_agent=fingerprint.get('user_agent', ''),
             risk_score=float(result.get('risk_score', 0)),
             webdriver_flag=fingerprint.get('webdriver_flag', False),
-            label=result.get('action', 'accept'),
+            label=result.get('action', 'block'),
             api_key_id=key_info['key_id'],
         )
         background_tasks.add_task(APIKeyManager.update_last_used, key_info['key_id'])
@@ -159,7 +159,7 @@ async def predict(
             project_id=key_info['project_id'],
             session_id=session_id,
             risk_score=float(result.get('risk_score', 0)),
-            action=result.get('action', 'accept'),
+            action=result.get('action', 'block'),
             hostname=(urlparse(origin).hostname if origin else None),
             site_key_id=key_info['key_id'],
         )

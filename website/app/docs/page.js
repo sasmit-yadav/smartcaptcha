@@ -14,7 +14,8 @@ import {
   siteverifyCurlSnippet, siteverifyNodeSnippet, siteverifyPythonFlaskSnippet,
   siteverifyPythonDjangoSnippet, siteverifyPhpSnippet,
   siteverifyJavaSnippet, siteverifyRubySnippet, siteverifyGoSnippet, siteverifyCsharpSnippet,
-  siteverifySuccessResponse, siteverifyBlockedResponse, siteverifyErrorResponse, CDN_URL,
+  siteverifySuccessResponse, siteverifyBlockedResponse, siteverifyErrorResponse,
+  predictAllowResponse, predictBlockResponse, CDN_URL,
 } from '../../components/docs/docSnippets';
 
 const NAV = [
@@ -185,7 +186,7 @@ export default function DocsPage() {
       <Section title="API Reference">
         <EndpointCard method="POST" path="/api/siteverify" auth="Secret key (X-API-Key header or `secret` form field)">
           <div className="space-y-3">
-            <p className="text-mute text-sm">Accepts JSON <code className="text-primary">{'{ "token": "..." }'}</code> or classic form-encoded <code className="text-primary">secret=...&amp;response=...</code> (reCAPTCHA-compatible). Failures return HTTP 200 — check <code className="text-primary">success</code>, not the status code.</p>
+            <p className="text-mute text-sm">Accepts JSON <code className="text-primary">{'{ "token": "..." }'}</code> or classic form-encoded <code className="text-primary">secret=...&amp;response=...</code>. Failures return HTTP 200 — check <code className="text-primary">success</code>, not the status code.</p>
             <div>
               <h4 className="font-semibold text-sm text-mute mb-1">Success response — visitor allowed</h4>
               <CodeBlock code={siteverifySuccessResponse} />
@@ -208,7 +209,42 @@ export default function DocsPage() {
         </EndpointCard>
 
         <EndpointCard method="POST" path="/api/predict" auth="Site key (SDK-internal)">
-          <p className="text-mute text-sm">Called automatically by the SDK — you shouldn't call this directly. Returns the risk decision plus a <code className="text-primary">verification_token</code> for <code className="text-primary">/api/siteverify</code>.</p>
+          <div className="space-y-3">
+            <p className="text-mute text-sm">Called automatically by the SDK — you shouldn't call this directly. Returns the risk decision plus a <code className="text-primary">verification_token</code> for <code className="text-primary">/api/siteverify</code>.</p>
+            <div>
+              <h4 className="font-semibold text-sm text-mute mb-1">Response — visitor allowed</h4>
+              <CodeBlock code={predictAllowResponse} />
+            </div>
+            <div>
+              <h4 className="font-semibold text-sm text-mute mb-1">Response — bot blocked</h4>
+              <CodeBlock code={predictBlockResponse} />
+            </div>
+            <table className="w-full text-sm mt-2">
+              <thead className="bg-surfaceSoft text-mute">
+                <tr><th className="text-left p-2 font-bold">Field</th><th className="text-left p-2 font-bold">Meaning</th></tr>
+              </thead>
+              <tbody className="text-mute">
+                {[
+                  ['action', '"allow" or "block" — the verdict. Binary only; there is no "challenge" state.'],
+                  ['risk_score', '0–100 combined risk score. ≥ 50 blocks.'],
+                  ['behavior_score', '0–100, from the ML model reading mouse/keyboard/scroll behavior.'],
+                  ['fingerprint_score', '0–100, from device signals (e.g. navigator.webdriver, suspicious user-agent strings) — rule-based, not ML.'],
+                  ['confidence', '0–1, how far risk_score sits from the 50-point decision boundary — not a statistical confidence interval.'],
+                  ['verification_token', 'Short-lived (120s), single-use token to redeem at /api/siteverify.'],
+                ].map(([f, m]) => (
+                  <tr key={f} className="border-t border-hairline">
+                    <td className="p-2"><code className="text-primary">{f}</code></td>
+                    <td className="p-2">{m}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="text-mute text-xs">
+              <code className="text-primary">risk_score</code> is a <code className="text-primary">max</code> of
+              <code className="text-primary"> behavior_score</code>, <code className="text-primary">fingerprint_score</code>,
+              and their average — either signal alone can justify a block; they don't dilute each other.
+            </p>
+          </div>
         </EndpointCard>
       </Section>
     ),

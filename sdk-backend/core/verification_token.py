@@ -36,7 +36,7 @@ _SIGNING_KEY = hashlib.sha256(f"{SECRET_KEY}|{PURPOSE}".encode()).hexdigest()
 
 
 class TokenError(Exception):
-    """Raised with a reCAPTCHA-style error-code string for siteverify to surface."""
+    """Raised with a siteverify-style error-code string for siteverify to surface."""
 
     def __init__(self, code: str):
         self.code = code
@@ -72,7 +72,7 @@ def decode_token(token: str) -> dict:
     """
     Decode and validate a verify token's signature, expiry, and purpose claim.
     Does NOT check single-use — call core.database.consume_token_jti(jti)
-    separately. Raises TokenError with a reCAPTCHA-style code on failure.
+    separately. Raises TokenError with a siteverify-style code on failure.
     """
     if not token:
         raise TokenError("missing-input-response")

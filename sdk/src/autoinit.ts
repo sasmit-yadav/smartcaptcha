@@ -11,6 +11,7 @@
  */
 
 import type { VeilProofConfig, TokenResult } from './types.js';
+import { injectHoneypot } from './core/honeypot.js';
 
 interface AutoInitHost {
   init(config: VeilProofConfig): void;
@@ -34,6 +35,10 @@ function wireFormInterception(host: AutoInitHost, tokenField: string, debug: boo
     const form = formEl as HTMLFormElement;
     const fieldName = form.dataset.tokenField || tokenField;
     let submitting = false;
+
+    // Honeypot (strategy step 7): add a hidden trap field invisible to humans.
+    // Its filled-state is read by getDecision() and sent as honeypot_triggered.
+    injectHoneypot(form);
 
     form.addEventListener('submit', (event) => {
       if (submitting) return; // second, programmatic submit() call below

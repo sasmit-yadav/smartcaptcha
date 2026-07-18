@@ -120,8 +120,13 @@ async def predict(
 
         logger.debug("Received body keys: %s", list(body.keys()))
 
+        # Honeypot (strategy step 7): a hidden field the customer's form marks
+        # filled is a near-certain bot — decisive on its own, independent of
+        # behaviour/fingerprint. Kept out of `features` (not a model input).
+        honeypot_triggered = bool(body.get('honeypot_triggered', False))
+
         # Extract features and fingerprint data
-        features = {k: v for k, v in body.items() if k not in ['webdriver_flag', 'user_agent', 'has_touch', 'platform', 'sdkVersion', 'sessionId']}
+        features = {k: v for k, v in body.items() if k not in ['webdriver_flag', 'user_agent', 'has_touch', 'platform', 'sdkVersion', 'sessionId', 'honeypot_triggered']}
         fingerprint = {
             'webdriver_flag': body.get('webdriver_flag', False),
             'user_agent': body.get('user_agent', ''),
@@ -129,8 +134,41 @@ async def predict(
             'platform': body.get('platform', '')
         }
 
+        # Network-layer signals (strategy step 2): IP/ASN reputation +
+        # non-browser UA now, JA4 the moment an edge forwards it. Header keys
+        # are lower-cased for the evaluator; the direct socket peer is the
+        # fallback client IP when no proxy/edge sets X-Forwarded-For.
+        from core.network_signals import evaluate_network
+        from core.velocity import record_and_score
+        lower_headers = {k.lower(): v for k, v in request.headers.items()}
+        direct_ip = request.client.host if request.client else None
+        net = evaluate_network(lower_headers, direct_ip=direct_ip)
+
+        # Cross-session velocity (strategy step 6 / §B.5): rolling counts keyed
+        # by IP, /24, ASN, and a stable client fingerprint hash, plus UA
+        # rotation and inter-arrival regularity. Same un-forgeable network axis
+        # as the per-request signals above, so fuse by max — any can raise it.
+        import hashlib
+        fp_basis = "|".join(str(fingerprint.get(k, '')) for k in
+                            ('user_agent', 'platform', 'has_touch'))
+        fingerprint_hash = hashlib.sha256(fp_basis.encode()).hexdigest()[:16] if fp_basis.strip('|') else None
+        vel = record_and_score(
+            net.client_ip,
+            user_agent=fingerprint.get('user_agent', ''),
+            asn=net.asn,
+            fingerprint_hash=fingerprint_hash,
+        )
+        network_score = max(net.network_score, vel.velocity_score)
+        # A tripped honeypot is decisive — push the (un-forgeable) network axis
+        # to 100 so the session blocks regardless of how human the behaviour and
+        # fingerprint look.
+        if honeypot_triggered:
+            network_score = 100.0
+
         # Get prediction from model
-        result = get_detector().predict_session(features, fingerprint_data=fingerprint)
+        result = get_detector().predict_session(
+            features, fingerprint_data=fingerprint, network_score=network_score
+        )
 
         # Log session telemetry asynchronously
         session_id = body.get('sessionId')

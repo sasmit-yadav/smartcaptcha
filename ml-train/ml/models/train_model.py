@@ -1,4 +1,35 @@
-"""Train V2 supervised ML models for bot detection."""
+"""Train the v4 bot-detection models.
+
+Single pipeline (the previous version of this file contained two concatenated
+implementations; the older, broken one ran on __main__ — see
+docs/MODEL_IMPROVEMENT_STRATEGY.md Finding 1).
+
+What this produces (artifacts/v4/):
+- A **calibrated** supervised classifier (RandomForest and XGBoost are both
+  trained and compared; the better one is recorded in the comparison file).
+  Calibration is sigmoid/Platt via CalibratedClassifierCV — the right choice
+  at this data volume (isotonic needs ~1000+ samples and overfits below that).
+- An **IsolationForest** anomaly detector trained on human sessions only —
+  the orthogonal second detector on the behaviour axis (strategy §B.7).
+- A StandardScaler fit on the full training set.
+- Metadata containing the **decision_threshold picked from calibrated
+  out-of-fold probabilities** — serving must consume this instead of a
+  hard-coded 0.50 (Finding 2).
+
+Evaluation methodology (strategy §B.6):
+- Out-of-fold predictions via StratifiedGroupKFold where bot sessions are
+  grouped by (heuristic) bot family, so no family straddles train/eval.
+- Metrics reported at fixed human FPR (zero false positives on the OOF set),
+  not at whatever operating point maximises F1.
+- A "stealth" re-evaluation with webdriver_flag zeroed for all bots, to
+  measure how much recall survives when the single easiest tell is hidden.
+- **No hyperparameter search.** On ~100 rows a RandomizedSearchCV fits noise;
+  fixed conservative hyperparameters are more honest and reproducible.
+
+All metric printing carries the caveat that with ~40 human sessions, one
+mislabeled human swings FPR by ~2.5 points — treat every number as coarse.
+"""
+import argparse
 import json
 import sys
 from datetime import datetime
@@ -7,32 +38,32 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
-from dotenv import load_dotenv
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import (
-    classification_report,
-    confusion_matrix,
-    f1_score,
-    precision_score,
-    recall_score,
-    roc_auc_score,
-)
-from sklearn.model_selection import RandomizedSearchCV, StratifiedKFold, train_test_split
-from sklearn.preprocessing import StandardScaler
-import xgboost as xgb
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "ml"))
 
-from core.database import get_connection, init_db, release_connection
+from sklearn.base import clone
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.ensemble import IsolationForest, RandomForestClassifier, VotingClassifier
+from sklearn.metrics import brier_score_loss, confusion_matrix, roc_auc_score
+from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
+from sklearn.preprocessing import StandardScaler
+import xgboost as xgb
+
 from features.feature_columns import FEATURE_COLUMNS
 
-load_dotenv(ROOT / ".env")
+ARTIFACT_VERSION = "v4"
 
+
+# ---------------------------------------------------------------------------
+# Data loading
+# ---------------------------------------------------------------------------
 
 def load_data():
-    """Load desktop session features from PostgreSQL."""
+    """Load labeled desktop session features from PostgreSQL."""
+    from core.database import get_connection, init_db, release_connection
+
     init_db()
     conn = get_connection()
     try:
@@ -42,258 +73,9 @@ def load_data():
             f"""
             SELECT {", ".join(selected_columns)}
             FROM session_features
-            WHERE label IS NOT NULL
-            """
-        )
-        rows = cursor.fetchall()
-        columns = [desc[0] for desc in cursor.description]
-        df = pd.DataFrame(rows, columns=columns)
-    finally:
-        release_connection(conn)
-
-    print(f"Loaded {len(df)} desktop sessions")
-    if not df.empty:
-        print(f"Label distribution:\n{df['label'].value_counts()}")
-    if len(df) < 200:
-        print("Warning: dataset is small; treat perfect scores as suspicious.")
-    if df.empty or df["label"].nunique() < 2:
-        raise ValueError("Need at least one human and one bot session to train.")
-    return df
-
-
-def preprocess_data(df):
-    """Fill missing numeric features and encode labels."""
-    df = df.fillna(0)
-    df["label_encoded"] = df["label"].map({"human": 0, "bot": 1})
-    if df["label_encoded"].isnull().any():
-        raise ValueError(f"Unknown labels found: {df['label'].unique()}")
-    return df
-
-
-def split_data(df):
-    """Split data into train/validation sets."""
-    X = df[FEATURE_COLUMNS]
-    y = df["label_encoded"]
-    X_train, X_val, y_train, y_val = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
-    return X_train, X_val, y_train, y_val
-
-
-def train_random_forest(X_train, y_train):
-    """Train Random Forest classifier."""
-    rf = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=10,
-        min_samples_split=5,
-        min_samples_leaf=2,
-        random_state=42,
-        class_weight="balanced",
-    )
-    rf.fit(X_train, y_train)
-    return rf
-
-
-def train_xgboost(X_train, y_train):
-    """Train XGBoost classifier."""
-    xgb_model = xgb.XGBClassifier(
-        n_estimators=100,
-        max_depth=6,
-        learning_rate=0.1,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        random_state=42,
-        scale_pos_weight=1,
-        eval_metric="logloss",
-    )
-    xgb_model.fit(X_train, y_train)
-    return xgb_model
-
-
-def evaluate_model(model, X_val, y_val, model_name):
-    """Evaluate model and return metrics."""
-    y_pred = model.predict(X_val)
-    y_proba = model.predict_proba(X_val)[:, 1] if hasattr(model, "predict_proba") else None
-
-    metrics = {
-        "accuracy": (y_pred == y_val).mean(),
-        "precision": precision_score(y_val, y_pred),
-        "recall": recall_score(y_val, y_pred),
-        "f1": f1_score(y_val, y_pred),
-    }
-
-    if y_proba is not None:
-        metrics["roc_auc"] = roc_auc_score(y_val, y_proba)
-
-    print(f"\n{model_name} Metrics:")
-    for metric, value in metrics.items():
-        print(f"  {metric}: {value:.4f}")
-
-    return metrics
-
-
-def save_artifacts(model, scaler, metrics, feature_importance, model_name, threshold_info):
-    """Save model, scaler, and metadata."""
-    artifacts_dir = ROOT / "ml" / "models" / "artifacts" / "v3"
-    artifacts_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    model_path = artifacts_dir / f"{model_name}_{timestamp}.pkl"
-    scaler_path = artifacts_dir / f"scaler_{timestamp}.pkl"
-    metadata_path = artifacts_dir / f"{model_name}_metadata_{timestamp}.json"
-    metrics_path = artifacts_dir / f"{model_name}_metrics_{timestamp}.json"
-    feature_importance_path = artifacts_dir / f"{model_name}_feature_importance_{timestamp}.csv"
-
-    joblib.dump(model, model_path)
-    joblib.dump(scaler, scaler_path)
-
-    metadata = {
-        "model_name": model_name,
-        "timestamp": timestamp,
-        "feature_columns": FEATURE_COLUMNS,
-        "decision_threshold": threshold_info.get("threshold", 0.50),
-        "challenge_low": threshold_info.get("challenge_low", 0.35),
-        "challenge_high": threshold_info.get("challenge_high", 0.50),
-        "metrics": metrics,
-    }
-
-    with open(metadata_path, "w") as f:
-        json.dump(metadata, f, indent=2)
-
-    with open(metrics_path, "w") as f:
-        json.dump(metrics, f, indent=2)
-
-    if feature_importance is not None:
-        feature_importance.to_csv(feature_importance_path, index=False)
-
-    print(f"\nArtifacts saved to {artifacts_dir}")
-    print(f"  Model: {model_path}")
-    print(f"  Scaler: {scaler_path}")
-    print(f"  Metadata: {metadata_path}")
-
-    return {
-        "model_path": str(model_path),
-        "scaler_path": str(scaler_path),
-        "metadata_path": str(metadata_path),
-        "metrics_path": str(metrics_path),
-        "feature_importance_path": str(feature_importance_path),
-    }
-
-
-def find_optimal_threshold(y_val, y_proba):
-    """Find optimal decision threshold using ROC curve."""
-    fpr, tpr, thresholds = roc_curve(y_val, y_proba)
-    youden_j = tpr - fpr
-    optimal_idx = youden_j.argmax()
-    optimal_threshold = thresholds[optimal_idx]
-
-    print(f"Optimal threshold: {optimal_threshold:.4f}")
-    print(f"  TPR at optimal: {tpr[optimal_idx]:.4f}")
-    print(f"  FPR at optimal: {fpr[optimal_idx]:.4f}")
-
-    return {
-        "threshold": float(optimal_threshold),
-        "challenge_low": float(max(0.35, optimal_threshold - 0.15)),
-        "challenge_high": float(optimal_threshold),
-    }
-
-
-def main():
-    """Main training pipeline."""
-    print("=" * 60)
-    print("Training V2 Model with Enhanced Features")
-    print("=" * 60)
-
-    # Load data
-    df = load_data()
-
-    # Preprocess
-    df = preprocess_data(df)
-
-    # Split
-    X_train, X_val, y_train, y_val = split_data(df)
-
-    # Scale features
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_val_scaled = scaler.transform(X_val)
-
-    # Train models
-    print("\nTraining Random Forest...")
-    rf_model = train_random_forest(X_train_scaled, y_train)
-    rf_metrics = evaluate_model(rf_model, X_val_scaled, y_val, "Random Forest")
-
-    print("\nTraining XGBoost...")
-    xgb_model = train_xgboost(X_train_scaled, y_train)
-    xgb_metrics = evaluate_model(xgb_model, X_val_scaled, y_val, "XGBoost")
-
-    # Find optimal threshold
-    y_proba_rf = rf_model.predict_proba(X_val_scaled)[:, 1]
-    threshold_info = find_optimal_threshold(y_val, y_proba_rf)
-
-    # Feature importance
-    rf_feature_importance = pd.DataFrame(
-        {"feature": FEATURE_COLUMNS, "importance": rf_model.feature_importances_}
-    ).sort_values("importance", ascending=False)
-
-    print("\nTop 10 Important Features:")
-    print(rf_feature_importance.head(10))
-
-    # Save artifacts
-    rf_artifacts = save_artifacts(
-        rf_model, scaler, rf_metrics, rf_feature_importance, "random_forest", threshold_info
-    )
-
-    xgb_feature_importance = pd.DataFrame(
-        {"feature": FEATURE_COLUMNS, "importance": xgb_model.feature_importances_}
-    ).sort_values("importance", ascending=False)
-
-    xgb_artifacts = save_artifacts(
-        xgb_model, scaler, xgb_metrics, xgb_feature_importance, "xgboost", threshold_info
-    )
-
-    # Save comparison
-    comparison = {
-        "timestamp": datetime.now().isoformat(),
-        "models": {
-            "random_forest": {
-                "metrics": rf_metrics,
-                "artifacts": rf_artifacts,
-            },
-            "xgboost": {
-                "metrics": xgb_metrics,
-                "artifacts": xgb_artifacts,
-            },
-        },
-        "best_model": "random_forest" if rf_metrics["f1"] > xgb_metrics["f1"] else "xgboost",
-    }
-
-    comparison_path = ROOT / "ml" / "models" / "artifacts" / f"model_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    with open(comparison_path, "w") as f:
-        json.dump(comparison, f, indent=2)
-
-    print(f"\nComparison saved to {comparison_path}")
-    print(f"Best model: {comparison['best_model']}")
-
-
-if __name__ == "__main__":
-    main()
-
-
-def load_data():
-    """Load desktop session features from PostgreSQL."""
-    init_db()
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        selected_columns = ["session_id", *FEATURE_COLUMNS, "device_type", "label"]
-        cursor.execute(
-            f"""
-            SELECT {", ".join(selected_columns)}
-            FROM session_features
-            WHERE device_type = 'desktop'
-            AND label IS NOT NULL
-            AND event_count > 0
+            WHERE label IN ('bot', 'human')
+              AND device_type = 'desktop'
+              AND event_count > 0
             """
         )
         rows = cursor.fetchall()
@@ -303,311 +85,312 @@ def load_data():
     finally:
         release_connection(conn)
 
-    print(f"Loaded {len(df)} desktop sessions")
+    print(f"Loaded {len(df)} labeled desktop sessions")
     if not df.empty:
         print(f"Label distribution:\n{df['label'].value_counts()}")
-    if len(df) < 200:
-        print("Warning: dataset is small; treat perfect scores as suspicious.")
-    if df.empty or df["label"].nunique() < 2:
-        raise ValueError("Need at least one human and one bot session to train.")
     return df
 
 
 def preprocess_data(df):
-    """Fill missing numeric features and encode labels."""
-    df = df.fillna(0)
+    """Fill missing numerics, encode labels, coerce types."""
+    if df.empty or df["label"].nunique() < 2:
+        raise ValueError("Need at least one human and one bot session to train.")
+    df = df.copy()
+    df[FEATURE_COLUMNS] = (
+        df[FEATURE_COLUMNS].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+    )
     df["label_encoded"] = df["label"].map({"human": 0, "bot": 1})
     if df["label_encoded"].isnull().any():
         raise ValueError(f"Unknown labels found: {df['label'].unique()}")
+    n_humans = int((df["label_encoded"] == 0).sum())
+    if n_humans < 100:
+        print(
+            f"CAVEAT: only {n_humans} human sessions — FPR resolution is "
+            f"~{100.0 / max(n_humans, 1):.1f} percentage points per sample. "
+            "Treat all metrics as coarse estimates."
+        )
     return df
 
 
-def split_data(df):
-    """Create train, validation, and final test splits with bot family separation."""
-    X = df[FEATURE_COLUMNS]
-    y = df["label_encoded"]
-    
-    # For bots, try to split by bot family to avoid leakage
-    bot_df = df[df['label_encoded'] == 1].copy()
-    human_df = df[df['label_encoded'] == 0].copy()
-    
-    print(f"Bot sessions: {len(bot_df)}")
-    print(f"Human sessions: {len(human_df)}")
-    
-    # Simple heuristic: use behavioral clustering to simulate bot families
-    # In production, this would use actual bot_family labels
-    if len(bot_df) > 0:
-        # Cluster bots by session_duration and avg_mouse_vel
-        bot_df['duration_cluster'] = pd.cut(
-            bot_df['session_duration'], 
-            bins=[-1, 1, 10, float('inf')], 
-            labels=['instant', 'short', 'long']
-        )
-        bot_df['velocity_cluster'] = pd.cut(
-            bot_df['avg_mouse_vel'], 
-            bins=[-1, 100, 500, float('inf')], 
-            labels=['slow', 'medium', 'fast']
-        )
-        bot_df['bot_family'] = bot_df['duration_cluster'].astype(str) + '_' + bot_df['velocity_cluster'].astype(str)
-        
-        # Split bot families: train on some, test on others
-        unique_families = bot_df['bot_family'].unique()
-        if len(unique_families) >= 2:
-            train_families = unique_families[:len(unique_families)//2]
-            test_families = unique_families[len(unique_families)//2:]
-            
-            bot_train = bot_df[bot_df['bot_family'].isin(train_families)]
-            bot_test = bot_df[bot_df['bot_family'].isin(test_families)]
-            
-            print(f"Bot families for training: {train_families}")
-            print(f"Bot families for testing: {test_families}")
-        else:
-            # Fallback to random split if not enough families
-            bot_train, bot_test = train_test_split(bot_df, test_size=0.3, random_state=42)
-            print("Warning: Not enough bot families, using random split")
-    else:
-        bot_train = pd.DataFrame(columns=bot_df.columns)
-        bot_test = pd.DataFrame(columns=bot_df.columns)
-    
-    # Split humans randomly (humans don't have families)
-    if len(human_df) > 0:
-        human_train, human_test = train_test_split(human_df, test_size=0.3, random_state=42)
-    else:
-        human_train = pd.DataFrame(columns=human_df.columns)
-        human_test = pd.DataFrame(columns=human_df.columns)
-    
-    # Combine train and test sets
-    train_full = pd.concat([bot_train, human_train])
-    test_full = pd.concat([bot_test, human_test])
-    
-    # Split train into train and validation
-    if len(train_full) > 0:
-        X_train_full = train_full[FEATURE_COLUMNS]
-        y_train_full = train_full["label_encoded"]
-        X_train, X_val, y_train, y_val = train_test_split(
-            X_train_full, y_train_full, test_size=0.25, random_state=43, stratify=y_train_full
-        )
-    else:
-        X_train, X_val, y_train, y_val = None, None, None, None
-    
-    X_test = test_full[FEATURE_COLUMNS]
-    y_test = test_full["label_encoded"]
-    
-    print(f"Train set: {len(X_train) if X_train is not None else 0} samples")
-    print(f"Validation set: {len(X_val) if X_val is not None else 0} samples")
-    print(f"Test set: {len(X_test)} samples")
-    print(f"Test set composition: {y_test.value_counts().to_dict()}")
-    
-    return X_train, X_val, X_test, y_train, y_val, y_test
+def assign_groups(df):
+    """Group labels for grouped CV.
+
+    Bots: a heuristic behavioural family (duration x velocity bucket) — a
+    proxy for the real bot-family label, which sessions don't carry yet.
+    Ensures a whole family is held out together, so eval measures
+    generalisation to unseen bot styles rather than memorisation.
+
+    Humans: spread round-robin into pseudo-groups so every fold keeps some
+    humans (humans have no family structure to leak).
+    """
+    groups = pd.Series(index=df.index, dtype=object)
+
+    bot_mask = df["label_encoded"] == 1
+    duration_bucket = pd.cut(
+        df.loc[bot_mask, "session_duration"],
+        bins=[-np.inf, 1, 10, np.inf],
+        labels=["instant", "short", "long"],
+    ).astype(str)
+    velocity_bucket = pd.cut(
+        df.loc[bot_mask, "avg_mouse_vel"],
+        bins=[-np.inf, 100, 500, np.inf],
+        labels=["slow", "medium", "fast"],
+    ).astype(str)
+    groups.loc[bot_mask] = "bot_" + duration_bucket + "_" + velocity_bucket
+
+    human_idx = df.index[~bot_mask]
+    for i, idx in enumerate(human_idx):
+        groups.loc[idx] = f"human_{i % 8}"
+
+    n_families = groups[bot_mask].nunique()
+    print(f"Bot families (heuristic): {n_families} -> "
+          f"{sorted(groups[bot_mask].unique())}")
+    return groups
 
 
-def scale_features(X_train, X_val, X_test):
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_val_scaled = scaler.transform(X_val)
-    X_test_scaled = scaler.transform(X_test)
-    return X_train_scaled, X_val_scaled, X_test_scaled, scaler
+# ---------------------------------------------------------------------------
+# Models — fixed conservative hyperparameters (deliberately no search)
+# ---------------------------------------------------------------------------
 
+def make_base_models():
+    """The candidate supervised models, all trained + evaluated identically and
+    compared on out-of-fold stealth recall.
 
-def cv_folds(y):
-    min_class = int(y.value_counts().min())
-    return max(2, min(5, min_class))
-
-
-def train_random_forest(X_train, y_train):
-    print("\n=== Training Random Forest ===")
+    Includes exactly ONE ensemble: a soft-vote of RF + XGB. This is the *only*
+    multi-model ensembling the strategy doc §B.7 sanctions at this data volume —
+    "soft-vote calibrated RF + XGB (no trainable meta-layer)". voting='soft'
+    averages the two models' probabilities; there is no meta-learner to overfit
+    ~40 humans, and the training loop wraps every candidate in
+    CalibratedClassifierCV so the served ensemble emits calibrated probabilities
+    (honouring "ensemble after calibration"). Deliberately NOT done: stacking
+    more correlated classifiers (LightGBM, logistic, a trained meta-layer) on the
+    same 52 features — §B.7 shows that adds ~zero variance reduction and an
+    overfit meta-learner on this few humans ("two models on the same features
+    ≈ one model"). The substantive ensemble is the ORTHOGONAL fusion in the
+    RiskEngine (behaviour + anomaly + network + velocity), not model count.
+    """
     rf = RandomForestClassifier(
-        n_estimators=200,
-        random_state=42,
+        n_estimators=300,
+        max_depth=8,
+        min_samples_leaf=2,
+        min_samples_split=4,
+        max_features="sqrt",
         class_weight="balanced",
-        n_jobs=-1,
-    )
-    param_dist = {
-        "n_estimators": [100, 200, 300, 500],
-        "max_depth": [5, 10, 15, 20, None],
-        "min_samples_split": [2, 5, 10],
-        "min_samples_leaf": [1, 2, 4],
-        "max_features": ["sqrt", "log2"],
-    }
-    search = RandomizedSearchCV(
-        rf,
-        param_distributions=param_dist,
-        n_iter=40,
-        cv=cv_folds(y_train),
-        scoring="f1",
         random_state=42,
         n_jobs=-1,
-        verbose=1,
     )
-    search.fit(X_train, y_train)
-    print(f"Best RF params: {search.best_params_}")
-    print(f"Best RF CV F1: {search.best_score_:.4f}")
-    return search.best_estimator_
-
-
-def train_xgboost(X_train, y_train):
-    print("\n=== Training XGBoost ===")
-    positives = int(sum(y_train))
-    negatives = int(len(y_train) - positives)
-    scale_pos_weight = negatives / positives if positives else 1
-    print(f"Scale positive weight: {scale_pos_weight:.2f}")
-    model = xgb.XGBClassifier(
-        n_estimators=200,
-        random_state=42,
-        scale_pos_weight=scale_pos_weight,
+    xgb_model = xgb.XGBClassifier(
+        n_estimators=300,
+        learning_rate=0.05,
+        max_depth=4,
+        subsample=0.9,
+        colsample_bytree=0.9,
+        min_child_weight=2,
         eval_metric="logloss",
-        n_jobs=-1,
-    )
-    param_dist = {
-        "n_estimators": [100, 200, 300, 500],
-        "learning_rate": [0.01, 0.03, 0.05, 0.1],
-        "max_depth": [3, 5, 7, 10],
-        "subsample": [0.6, 0.8, 1.0],
-        "colsample_bytree": [0.6, 0.8, 1.0],
-        "min_child_weight": [1, 3, 5],
-    }
-    search = RandomizedSearchCV(
-        model,
-        param_distributions=param_dist,
-        n_iter=40,
-        cv=cv_folds(y_train),
-        scoring="f1",
         random_state=42,
         n_jobs=-1,
-        verbose=1,
     )
-    search.fit(X_train, y_train)
-    print(f"Best XGBoost params: {search.best_params_}")
-    print(f"Best XGBoost CV F1: {search.best_score_:.4f}")
-    return search.best_estimator_
-
-
-def evaluate_model(model, X_test, y_test, model_name, threshold=0.5):
-    probabilities = model.predict_proba(X_test)[:, 1]
-    predictions = (probabilities >= threshold).astype(int)
-    precision = precision_score(y_test, predictions, zero_division=0)
-    recall = recall_score(y_test, predictions, zero_division=0)
-    f1 = f1_score(y_test, predictions, zero_division=0)
-    roc_auc = roc_auc_score(y_test, probabilities)
-    cm = confusion_matrix(y_test, predictions)
-    print(f"\n=== {model_name} Test Results @ threshold {threshold:.2f} ===")
-    print(f"Precision: {precision:.4f}")
-    print(f"Recall: {recall:.4f}")
-    print(f"F1-Score: {f1:.4f}")
-    print(f"ROC-AUC: {roc_auc:.4f}")
-    print(f"Confusion Matrix:\n{cm}")
-    print(classification_report(y_test, predictions, zero_division=0))
+    ensemble = VotingClassifier(
+        estimators=[("rf", clone(rf)), ("xgb", clone(xgb_model))],
+        voting="soft",
+        n_jobs=-1,
+    )
     return {
-        "precision": float(precision),
-        "recall": float(recall),
-        "f1": float(f1),
-        "roc_auc": float(roc_auc),
-        "threshold": float(threshold),
-        "confusion_matrix": cm.tolist(),
-        "classification_report": classification_report(
-            y_test, predictions, output_dict=True, zero_division=0
-        ),
+        "random_forest": rf,
+        "xgboost": xgb_model,
+        "ensemble_rf_xgb": ensemble,
     }
 
 
-def cross_validate_model(model, X_train, y_train, model_name):
-    print(f"\n=== {model_name} Cross-Validation ===")
-    cv = StratifiedKFold(n_splits=cv_folds(y_train), shuffle=True, random_state=42)
-    scores = {"precision": [], "recall": [], "f1": [], "roc_auc": []}
-    for train_idx, val_idx in cv.split(X_train, y_train):
-        fold_model = type(model)(**model.get_params())
-        fold_model.fit(X_train[train_idx], y_train.iloc[train_idx])
-        pred = fold_model.predict(X_train[val_idx])
-        proba = fold_model.predict_proba(X_train[val_idx])[:, 1]
-        y_val = y_train.iloc[val_idx]
-        scores["precision"].append(precision_score(y_val, pred, zero_division=0))
-        scores["recall"].append(recall_score(y_val, pred, zero_division=0))
-        scores["f1"].append(f1_score(y_val, pred, zero_division=0))
-        scores["roc_auc"].append(roc_auc_score(y_val, proba))
-    for metric, values in scores.items():
-        print(f"CV {metric}: {np.mean(values):.4f} +/- {np.std(values):.4f}")
-    return scores
+def _calibration_cv(y):
+    """Inner CV for CalibratedClassifierCV, bounded by the minority class."""
+    n_splits = int(min(3, pd.Series(y).value_counts().min()))
+    return StratifiedKFold(n_splits=max(2, n_splits), shuffle=True, random_state=42)
 
 
-def tune_threshold(model, X_val, y_val, min_bot_recall=0.95, max_fpr=0.01):
-    """Pick a validation threshold optimizing for false positive rate < 1%."""
-    probabilities = model.predict_proba(X_val)[:, 1]
-    candidates = np.linspace(0.05, 0.95, 91)
-    best = None
-    
-    for threshold in candidates:
-        pred = (probabilities >= threshold).astype(int)
-        
-        # Calculate metrics
-        precision = precision_score(y_val, pred, zero_division=0)
-        recall = recall_score(y_val, pred, zero_division=0)
-        f1 = f1_score(y_val, pred, zero_division=0)
-        
-        # Calculate false positive rate
-        cm = confusion_matrix(y_val, pred)
-        if cm.shape == (2, 2):
-            tn, fp, fn, tp = cm.ravel()
-            fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
-        else:
-            fpr = 0
-        
-        row = {
-            "threshold": float(threshold),
-            "precision": float(precision),
-            "recall": float(recall),
-            "f1": float(f1),
-            "fpr": float(fpr),
-        }
-        
-        # Stage 4B: Optimize for false positive rate < 1%
-        # Priority: FPR < 1% > high bot recall > high F1
-        if fpr <= max_fpr and recall >= min_bot_recall:
-            if best is None or f1 > best["f1"]:
-                best = row
-        elif best is None:
-            best = row
-    
-    if best is None:
-        # Fallback: find threshold with lowest FPR
-        best = min(
-            (
-                {
-                    "threshold": float(t),
-                    "precision": float(precision_score(y_val, (probabilities >= t).astype(int), zero_division=0)),
-                    "recall": float(recall_score(y_val, (probabilities >= t).astype(int), zero_division=0)),
-                    "f1": float(f1_score(y_val, (probabilities >= t).astype(int), zero_division=0)),
-                    "fpr": 0.0,  # Will calculate below
-                }
-                for t in candidates
-            ),
-            key=lambda item: item["threshold"],  # Prefer higher threshold (more conservative)
-        )
-    
-    print(
-        f"Tuned threshold: {best['threshold']:.2f} "
-        f"(precision={best['precision']:.4f}, recall={best['recall']:.4f}, f1={best['f1']:.4f}, fpr={best['fpr']:.4f})"
+def fit_calibrated(base_model, X, y):
+    calibrated = CalibratedClassifierCV(
+        estimator=clone(base_model), method="sigmoid", cv=_calibration_cv(y)
     )
-    if best['fpr'] > max_fpr:
-        print(f"Warning: Could not achieve FPR < {max_fpr}, got {best['fpr']:.4f}")
-    
-    return best
+    calibrated.fit(X, y)
+    return calibrated
 
 
-def get_feature_importance(model, feature_names):
-    if hasattr(model, "feature_importances_"):
-        importance = model.feature_importances_
+# ---------------------------------------------------------------------------
+# Out-of-fold evaluation
+# ---------------------------------------------------------------------------
+
+def out_of_fold_probabilities(base_model, df, groups, n_splits):
+    """Calibrated + raw OOF probabilities via StratifiedGroupKFold.
+
+    Scaling and calibration are fit inside each fold (no leakage).
+    Returns (oof_calibrated, oof_raw) aligned to df.index; entries left as
+    NaN if a fold could not be scored (should not happen in practice).
+    """
+    X = df[FEATURE_COLUMNS].to_numpy(dtype=float)
+    y = df["label_encoded"].to_numpy()
+    oof_cal = np.full(len(df), np.nan)
+    oof_raw = np.full(len(df), np.nan)
+
+    sgkf = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=42)
+    for fold, (train_idx, test_idx) in enumerate(sgkf.split(X, y, groups)):
+        y_train = y[train_idx]
+        if len(np.unique(y_train)) < 2:
+            print(f"  fold {fold}: single-class training split, skipped")
+            continue
+        scaler = StandardScaler().fit(X[train_idx])
+        X_train = scaler.transform(X[train_idx])
+        X_test = scaler.transform(X[test_idx])
+
+        raw_model = clone(base_model).fit(X_train, y_train)
+        oof_raw[test_idx] = raw_model.predict_proba(X_test)[:, 1]
+
+        cal_model = fit_calibrated(base_model, X_train, y_train)
+        oof_cal[test_idx] = cal_model.predict_proba(X_test)[:, 1]
+
+        held_out_families = sorted(set(groups.iloc[test_idx]) - {f"human_{i}" for i in range(8)})
+        print(f"  fold {fold}: {len(test_idx)} samples, held-out bot families: {held_out_families}")
+
+    return oof_cal, oof_raw
+
+
+def pick_threshold(y, proba):
+    """Max-margin threshold with zero human false positives on the OOF set.
+
+    Place the cut halfway between the highest-scoring human and the lowest
+    bot above that point. Falls back to max_human + 0.05 when no bot scores
+    above every human. Clamped to [0.15, 0.60] as a sanity guard.
+    """
+    human_scores = proba[y == 0]
+    bot_scores = proba[y == 1]
+    max_human = float(np.max(human_scores))
+    bots_above = bot_scores[bot_scores > max_human]
+    if len(bots_above) > 0:
+        threshold = (max_human + float(np.min(bots_above))) / 2
     else:
-        booster_scores = model.get_booster().get_score(importance_type="gain")
-        importance = [booster_scores.get(f"f{i}", 0) for i, _ in enumerate(feature_names)]
-    return pd.DataFrame({"feature": feature_names, "importance": importance}).sort_values(
-        "importance", ascending=False
+        threshold = max_human + 0.05
+    threshold = float(np.clip(threshold, 0.15, 0.60))
+    return threshold, max_human
+
+
+def evaluate_at_threshold(y, proba, threshold):
+    pred = (proba >= threshold).astype(int)
+    cm = confusion_matrix(y, pred, labels=[0, 1])
+    tn, fp, fn, tp = cm.ravel()
+    recall = tp / (tp + fn) if (tp + fn) else 0.0
+    fpr = fp / (fp + tn) if (fp + tn) else 0.0
+    precision = tp / (tp + fp) if (tp + fp) else 0.0
+    return {
+        "threshold": float(threshold),
+        "bot_recall": float(recall),
+        "human_fpr": float(fpr),
+        "precision": float(precision),
+        "confusion_matrix": cm.tolist(),
+        "n_humans": int(tn + fp),
+        "n_bots": int(tp + fn),
+    }
+
+
+def per_family_recall(df, groups, proba, threshold):
+    """Recall broken out per held-out bot family."""
+    out = {}
+    bot_mask = df["label_encoded"] == 1
+    for family in sorted(groups[bot_mask].unique()):
+        idx = groups[groups == family].index
+        scores = proba[df.index.get_indexer(idx)]
+        scores = scores[~np.isnan(scores)]
+        if len(scores) == 0:
+            continue
+        out[family] = {
+            "n": int(len(scores)),
+            "recall": float(np.mean(scores >= threshold)),
+            "median_p": float(np.median(scores)),
+        }
+    return out
+
+
+def stealth_evaluation(base_model, df, groups, n_splits, threshold):
+    """Re-run OOF eval with webdriver_flag zeroed on bot rows at TEST time.
+
+    Simulates every bot hiding navigator.webdriver (what stealth kits do).
+    Training folds keep the true flag; only the evaluation-side features are
+    altered. Measures how much recall rests on the single easiest tell.
+    """
+    if "webdriver_flag" not in FEATURE_COLUMNS:
+        return None
+    X = df[FEATURE_COLUMNS].to_numpy(dtype=float)
+    y = df["label_encoded"].to_numpy()
+    wd_col = FEATURE_COLUMNS.index("webdriver_flag")
+
+    oof = np.full(len(df), np.nan)
+    sgkf = StratifiedGroupKFold(n_splits=n_splits, shuffle=True, random_state=42)
+    for train_idx, test_idx in sgkf.split(X, y, groups):
+        if len(np.unique(y[train_idx])) < 2:
+            continue
+        scaler = StandardScaler().fit(X[train_idx])
+        cal_model = fit_calibrated(base_model, scaler.transform(X[train_idx]), y[train_idx])
+        X_test = X[test_idx].copy()
+        X_test[y[test_idx] == 1, wd_col] = 0.0
+        oof[test_idx] = cal_model.predict_proba(scaler.transform(X_test))[:, 1]
+
+    valid = ~np.isnan(oof)
+    result = evaluate_at_threshold(y[valid], oof[valid], threshold)
+    result["note"] = "bots' webdriver_flag zeroed at eval time (stealth simulation)"
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Anomaly detector (human-only)
+# ---------------------------------------------------------------------------
+
+def train_anomaly_detector(df, scaler):
+    """IsolationForest on human sessions only (strategy §B.1/§B.7).
+
+    Calibration anchors for serving (piecewise-linear score -> 0-100 points):
+    - score_zero: median human score  -> 0 points
+    - score_block: min human score minus a margin -> 50 points (the block
+      boundary). No training human can reach >= 50 by construction.
+    Scores below score_block extrapolate linearly toward 100.
+    """
+    human_X = df.loc[df["label_encoded"] == 0, FEATURE_COLUMNS].to_numpy(dtype=float)
+    bot_X = df.loc[df["label_encoded"] == 1, FEATURE_COLUMNS].to_numpy(dtype=float)
+
+    forest = IsolationForest(
+        n_estimators=300, contamination="auto", random_state=42, n_jobs=-1
     )
+    forest.fit(scaler.transform(human_X))
+
+    human_scores = forest.decision_function(scaler.transform(human_X))
+    bot_scores = forest.decision_function(scaler.transform(bot_X)) if len(bot_X) else np.array([])
+
+    score_zero = float(np.median(human_scores))
+    min_human = float(np.min(human_scores))
+    margin = max(0.25 * (score_zero - min_human), 1e-3)
+    score_block = min_human - margin
+
+    flagged_bots = float(np.mean(bot_scores < score_block)) if len(bot_scores) else 0.0
+    print(f"IsolationForest: median human score {score_zero:.4f}, "
+          f"block anchor {score_block:.4f}, "
+          f"bots below block anchor: {flagged_bots:.1%}")
+
+    anomaly_meta = {
+        "score_zero": score_zero,
+        "score_block": score_block,
+        "human_score_min": min_human,
+        "human_score_p05": float(np.percentile(human_scores, 5)),
+        "bot_fraction_below_block": flagged_bots,
+        "n_humans_trained_on": int(len(human_X)),
+    }
+    return forest, anomaly_meta
 
 
-def save_artifacts(model, scaler, metrics, feature_importance, model_name, threshold_info):
-    artifacts_dir = ROOT / "ml" / "models" / "artifacts" / "v3"
+# ---------------------------------------------------------------------------
+# Artifacts
+# ---------------------------------------------------------------------------
+
+def save_artifacts(artifacts_dir, timestamp, model_name, calibrated_model, scaler,
+                   metrics, feature_importance, threshold_info, anomaly_meta):
     artifacts_dir.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     model_path = artifacts_dir / f"{model_name}_{timestamp}.pkl"
     scaler_path = artifacts_dir / f"scaler_{timestamp}.pkl"
@@ -615,31 +398,32 @@ def save_artifacts(model, scaler, metrics, feature_importance, model_name, thres
     importance_path = artifacts_dir / f"{model_name}_feature_importance_{timestamp}.csv"
     metadata_path = artifacts_dir / f"{model_name}_metadata_{timestamp}.json"
 
-    joblib.dump(model, model_path)
+    joblib.dump(calibrated_model, model_path)
     joblib.dump(scaler, scaler_path)
     with open(metrics_path, "w") as f:
         json.dump(metrics, f, indent=2)
-    feature_importance.to_csv(importance_path, index=False)
+    if feature_importance is not None:
+        feature_importance.to_csv(importance_path, index=False)
+
     metadata = {
         "model_name": model_name,
         "created_at": datetime.now().isoformat(),
         "feature_version": "v4",
+        "artifact_version": ARTIFACT_VERSION,
+        "calibration": "sigmoid (CalibratedClassifierCV)",
         "feature_columns": FEATURE_COLUMNS,
         "decision_threshold": threshold_info["threshold"],
-        # Binary classification (no challenges)
-        "binary_threshold": 0.50,      # Score < 0.50: allow, Score >= 0.50: block
         "threshold_metrics": threshold_info,
-        "training_methodology": "bot_family_split",  # Stage 4A
-        "optimization_target": "fpr_1_percent",  # Stage 4B
+        "anomaly": anomaly_meta,
+        "training_methodology": "StratifiedGroupKFold OOF by heuristic bot family; "
+                                "threshold at zero human FP on calibrated OOF probs; "
+                                "no hyperparameter search (98-row regime)",
+        "optimization_target": "zero_human_fp_max_margin",
     }
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
 
-    print(f"Saved model to {model_path}")
-    print(f"Saved scaler to {scaler_path}")
-    print(f"Saved metrics to {metrics_path}")
-    print(f"Saved feature importance to {importance_path}")
-    print(f"Saved metadata to {metadata_path}")
+    print(f"Saved {model_name} artifacts to {artifacts_dir}")
     return {
         "model_path": str(model_path),
         "scaler_path": str(scaler_path),
@@ -649,71 +433,139 @@ def save_artifacts(model, scaler, metrics, feature_importance, model_name, thres
     }
 
 
-def summarize_cv(scores):
-    return {k: {"mean": float(np.mean(v)), "std": float(np.std(v))} for k, v in scores.items()}
+def get_feature_importance(calibrated_model, feature_names):
+    """Mean feature importance across the calibrated ensemble's base estimators."""
+    importances = []
+    for cc in getattr(calibrated_model, "calibrated_classifiers_", []):
+        est = cc.estimator
+        if hasattr(est, "feature_importances_"):
+            importances.append(est.feature_importances_)
+    if not importances:
+        return None
+    return pd.DataFrame(
+        {"feature": feature_names, "importance": np.mean(importances, axis=0)}
+    ).sort_values("importance", ascending=False)
+
+
+# ---------------------------------------------------------------------------
+# Pipeline
+# ---------------------------------------------------------------------------
+
+def run_training(df, artifacts_dir=None, quick=False):
+    """Full training pass on a prepared DataFrame. Returns the comparison dict.
+
+    `quick=True` trims tree counts for CI smoke tests; identical code path.
+    """
+    df = preprocess_data(df)
+    df = df.reset_index(drop=True)
+    groups = assign_groups(df)
+    y = df["label_encoded"].to_numpy()
+
+    n_bot_families = groups[df["label_encoded"] == 1].nunique()
+    n_splits = int(np.clip(min(n_bot_families, df["label_encoded"].value_counts().min()), 2, 4))
+    print(f"Grouped CV: {n_splits} splits over {n_bot_families} bot families")
+
+    base_models = make_base_models()
+    if quick:
+        for m in base_models.values():
+            if isinstance(m, VotingClassifier):
+                m.set_params(rf__n_estimators=25, xgb__n_estimators=25)
+            else:
+                m.set_params(n_estimators=25)
+
+    if artifacts_dir is None:
+        artifacts_dir = ROOT / "ml" / "models" / "artifacts" / ARTIFACT_VERSION
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Final scaler: fit on all data (folds re-fit their own — no leakage there).
+    scaler = StandardScaler().fit(df[FEATURE_COLUMNS].to_numpy(dtype=float))
+    X_all = scaler.transform(df[FEATURE_COLUMNS].to_numpy(dtype=float))
+
+    anomaly_forest, anomaly_meta = train_anomaly_detector(df, scaler)
+    anomaly_path = artifacts_dir / f"isolation_forest_{timestamp}.pkl"
+    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    joblib.dump(anomaly_forest, anomaly_path)
+    anomaly_meta["model_path"] = str(anomaly_path)
+
+    comparison = {"timestamp": datetime.now().isoformat(),
+                  "feature_version": "v4",
+                  "artifact_version": ARTIFACT_VERSION,
+                  "n_sessions": int(len(df)),
+                  "n_humans": int((y == 0).sum()),
+                  "n_bots": int((y == 1).sum()),
+                  "models": {}}
+
+    for model_name, base_model in base_models.items():
+        print(f"\n=== {model_name} ===")
+        oof_cal, oof_raw = out_of_fold_probabilities(base_model, df, groups, n_splits)
+        valid = ~np.isnan(oof_cal)
+        y_v, p_cal, p_raw = y[valid], oof_cal[valid], oof_raw[valid]
+
+        threshold, max_human_p = pick_threshold(y_v, p_cal)
+        thr_metrics = evaluate_at_threshold(y_v, p_cal, threshold)
+        thr_metrics["max_human_oof_probability"] = max_human_p
+
+        metrics = {
+            "oof_roc_auc": float(roc_auc_score(y_v, p_cal)),
+            "oof_brier_calibrated": float(brier_score_loss(y_v, p_cal)),
+            "oof_brier_uncalibrated": float(brier_score_loss(y_v, p_raw))
+            if not np.isnan(p_raw).any() else None,
+            "at_threshold": thr_metrics,
+            "per_family_recall": per_family_recall(df, groups, oof_cal, threshold),
+            "stealth_eval": stealth_evaluation(base_model, df, groups, n_splits, threshold),
+            "caveat": f"OOF over {int(valid.sum())} sessions "
+                      f"({int((y_v == 0).sum())} humans) — coarse estimates",
+        }
+
+        print(f"OOF ROC-AUC: {metrics['oof_roc_auc']:.4f}")
+        print(f"Brier (calibrated): {metrics['oof_brier_calibrated']:.4f}")
+        print(f"Threshold {threshold:.3f}: recall {thr_metrics['bot_recall']:.3f} "
+              f"@ human FPR {thr_metrics['human_fpr']:.3f}")
+        if metrics["stealth_eval"]:
+            print(f"Stealth recall (webdriver hidden): "
+                  f"{metrics['stealth_eval']['bot_recall']:.3f}")
+
+        final_model = fit_calibrated(base_model, X_all, y)
+        importance = get_feature_importance(final_model, FEATURE_COLUMNS)
+        if importance is not None:
+            print(f"Top features:\n{importance.head(10).to_string(index=False)}")
+
+        artifacts = save_artifacts(
+            artifacts_dir, timestamp, model_name, final_model, scaler,
+            metrics, importance, thr_metrics, anomaly_meta,
+        )
+        comparison["models"][model_name] = {"metrics": metrics, "artifacts": artifacts}
+
+    # Model selection: stealth recall first (the demonstrated gap), then AUC.
+    def _score(name):
+        m = comparison["models"][name]["metrics"]
+        stealth = m["stealth_eval"]["bot_recall"] if m["stealth_eval"] else 0.0
+        return (m["at_threshold"]["bot_recall"], stealth, m["oof_roc_auc"])
+
+    best = max(comparison["models"], key=_score)
+    comparison["best_model"] = best
+    # Keys the serving loader (sdk-backend BotDetector) reads directly:
+    comparison[best] = comparison["models"][best]
+
+    comparison_path = artifacts_dir / f"model_comparison_{timestamp}.json"
+    with open(comparison_path, "w") as f:
+        json.dump(comparison, f, indent=2)
+    print(f"\nBest model: {best}")
+    print(f"Saved comparison to {comparison_path}")
+    return comparison
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Train v4 bot-detection models")
+    parser.add_argument("--quick", action="store_true",
+                        help="Small tree counts (CI smoke test)")
+    args = parser.parse_args()
+
     print("=" * 60)
-    print("PHASE 7: Model Training (V2)")
+    print("v4 model training — calibrated, group-CV, fixed-FPR thresholds")
     print("=" * 60)
-
-    df = preprocess_data(load_data())
-    X_train, X_val, X_test, y_train, y_val, y_test = split_data(df)
-    X_train_scaled, X_val_scaled, X_test_scaled, scaler = scale_features(X_train, X_val, X_test)
-
-    rf_model = train_random_forest(X_train_scaled, y_train)
-    rf_cv_scores = cross_validate_model(rf_model, X_train_scaled, y_train, "Random Forest")
-    rf_threshold = tune_threshold(rf_model, X_val_scaled, y_val)
-    rf_metrics = evaluate_model(rf_model, X_test_scaled, y_test, "Random Forest", rf_threshold["threshold"])
-    rf_importance = get_feature_importance(rf_model, FEATURE_COLUMNS)
-    print(f"\nRandom Forest Feature Importance:\n{rf_importance.head(20)}")
-    rf_artifacts = save_artifacts(
-        rf_model, scaler, rf_metrics, rf_importance, "random_forest", rf_threshold
-    )
-
-    xgb_model = train_xgboost(X_train_scaled, y_train)
-    xgb_cv_scores = cross_validate_model(xgb_model, X_train_scaled, y_train, "XGBoost")
-    xgb_threshold = tune_threshold(xgb_model, X_val_scaled, y_val)
-    xgb_metrics = evaluate_model(xgb_model, X_test_scaled, y_test, "XGBoost", xgb_threshold["threshold"])
-    xgb_importance = get_feature_importance(xgb_model, FEATURE_COLUMNS)
-    print(f"\nXGBoost Feature Importance:\n{xgb_importance.head(20)}")
-    xgb_artifacts = save_artifacts(
-        xgb_model, scaler, xgb_metrics, xgb_importance, "xgboost", xgb_threshold
-    )
-
-    rf_score = (rf_metrics["f1"], rf_metrics["roc_auc"])
-    xgb_score = (xgb_metrics["f1"], xgb_metrics["roc_auc"])
-    best_model_name = "random_forest" if rf_score >= xgb_score else "xgboost"
-    comparison = {
-        "random_forest": {
-            "test_metrics": rf_metrics,
-            "cv_scores": summarize_cv(rf_cv_scores),
-            "threshold": rf_threshold,
-            "artifacts": rf_artifacts,
-        },
-        "xgboost": {
-            "test_metrics": xgb_metrics,
-            "cv_scores": summarize_cv(xgb_cv_scores),
-            "threshold": xgb_threshold,
-            "artifacts": xgb_artifacts,
-        },
-        "best_model": best_model_name,
-        "feature_version": "v2",
-        "feature_columns": FEATURE_COLUMNS,
-        "timestamp": datetime.now().isoformat(),
-    }
-    comparison_path = (
-        ROOT
-        / "ml"
-        / "models"
-        / "artifacts"
-        / f"model_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    )
-    with open(comparison_path, "w") as f:
-        json.dump(comparison, f, indent=2)
-    print(f"\nBest model: {best_model_name}")
-    print(f"Saved comparison to {comparison_path}")
+    df = load_data()
+    run_training(df, quick=args.quick)
     print("\nTraining complete.")
 
 

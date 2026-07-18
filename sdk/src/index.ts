@@ -21,6 +21,7 @@ import { startScrollTracking, stopScrollTracking } from './collectors/scroll.js'
 import { startFocusTracking, stopFocusTracking } from './collectors/focus.js';
 import { startTouchTracking, stopTouchTracking } from './collectors/touch.js';
 import { computeFeatures } from './core/features.js';
+import { isHoneypotTriggered } from './core/honeypot.js';
 import { runAutoInit } from './autoinit.js';
 
 import type {
@@ -265,7 +266,12 @@ const VeilProof: VeilProofAPI = {
       const requestBody = {
         sdkVersion: SDK_VERSION,
         ...features,
-        ...fingerprint
+        ...fingerprint,
+        // Honeypot (strategy step 7): true if a bot filled the hidden trap
+        // field auto-init injects into data-veilproof forms. Decisive bot
+        // signal server-side; harmlessly false for programmatic integrations
+        // that don't use the honeypot.
+        honeypot_triggered: isHoneypotTriggered(),
       };
       
       if (debug) {

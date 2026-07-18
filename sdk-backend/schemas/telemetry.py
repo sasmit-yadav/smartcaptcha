@@ -24,6 +24,19 @@ class SessionMeta(BaseModel):
     pageTitle: Optional[str] = None
     referrer: Optional[str] = None
     source: Optional[Literal['demo', 'client', 'script-tag']] = None  # Source of the session
+    # Found 2026-07-18: this field never existed, so Pydantic silently
+    # dropped it from every /api/session/start and /api/telemetry payload
+    # regardless of sender — meaning sessions.webdriver_flag (and therefore
+    # session_features.webdriver_flag, one of the 52 training features) was
+    # hardcoded false for the entire training dataset, independent of
+    # whether the session was actually automated. The live /api/predict path
+    # was unaffected (it reads a separate top-level `webdriver_flag` field,
+    # not this schema). See docs/MODEL_IMPROVEMENT_STRATEGY.md.
+    webdriverFlag: Optional[bool] = None
+    # Honeypot (strategy step 7): a hidden form field invisible to humans but
+    # filled by naive bots. When true, this session is a near-certain bot and
+    # can be auto-labeled for training — a free, continuous label source.
+    honeypotTriggered: Optional[bool] = None
 
 
 class TelemetryEvent(BaseModel):

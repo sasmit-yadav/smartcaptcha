@@ -18,9 +18,15 @@ async def session_start(payload: SessionStartPayload):
     """Register a new browsing session."""
     meta = payload.meta.model_dump()
     meta['sessionId'] = payload.sessionId
-    insert_session(meta)
 
-    print(f"[SESSION] Session {payload.sessionId} started")
+    # Honeypot (strategy step 7): a filled hidden field is a near-certain bot,
+    # so auto-label the session 'bot' — a free, high-confidence training label
+    # that needs no human review. Only ever ASSIGNS 'bot'; never clears a label.
+    label = 'bot' if meta.get('honeypotTriggered') else None
+    insert_session(meta, label=label)
+
+    print(f"[SESSION] Session {payload.sessionId} started"
+          + (" [HONEYPOT -> auto-labeled bot]" if label else ""))
 
     return {
         "sessionId": payload.sessionId,

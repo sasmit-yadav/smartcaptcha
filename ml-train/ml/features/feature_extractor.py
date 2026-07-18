@@ -24,26 +24,47 @@ class FeatureExtractor:
         print("[Extractor] DB connection established")
 
     def get_pending_sessions(self, rebuild=False):
+        """
+        Sessions eligible for the training set.
+
+        Two filters matter beyond "has a label and real events":
+        - s.label IN ('bot', 'human') — not just "IS NOT NULL". Ground-truth
+          labels from the dedicated bot-simulation/demo-site pipeline use
+          'bot'/'human'. Live /api/predict traffic gets labeled with the
+          model's own guess ('allow'/'block') by insert_session_prediction —
+          training on that would mean training the model on its own past
+          predictions, silently, for any customer whose SDK sends real
+          telemetry (the normal case). Excluding anything outside
+          ('bot', 'human') keeps live traffic out regardless of key type.
+        - api_keys.key_type NOT IN ('test', 'admin') — belt-and-suspenders
+          exclusion of manual/dev/test-key traffic even on the rare chance
+          it ever gets inserted with a 'bot'/'human' label directly.
+        """
         cursor = self.conn.cursor()
 
+        base_filter = """
+            WHERE s.label IN ('bot', 'human')
+            AND s.event_count > 0
+            AND (ak.key_type IS NULL OR ak.key_type NOT IN ('test', 'admin'))
+        """
+
         if rebuild:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT s.id, s.started_at, s.ended_at,
                        s.event_count, s.device_type, s.label, s.webdriver_flag
                 FROM sessions s
-                WHERE s.label IS NOT NULL
-                AND s.event_count > 0
+                LEFT JOIN api_keys ak ON s.api_key_id = ak.id
+                {base_filter}
             """)
         else:
-            cursor.execute("""
+            cursor.execute(f"""
                 SELECT s.id, s.started_at, s.ended_at,
                        s.event_count, s.device_type, s.label, s.webdriver_flag
                 FROM sessions s
-                LEFT JOIN session_features sf
-                ON s.id = sf.session_id
-                WHERE sf.session_id IS NULL
-                AND s.label IS NOT NULL
-                AND s.event_count > 0
+                LEFT JOIN session_features sf ON s.id = sf.session_id
+                LEFT JOIN api_keys ak ON s.api_key_id = ak.id
+                {base_filter}
+                AND sf.session_id IS NULL
             """)
 
         sessions = cursor.fetchall()

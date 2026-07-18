@@ -16,7 +16,8 @@ class BotDetector:
     """Bot detection model for inference with Risk Engine integration."""
 
     def __init__(self, model_path=None, scaler_path=None, metadata_path=None):
-        artifacts_dir = ROOT / "models" / "artifacts" / "v3"
+        v4_dir = ROOT / "models" / "artifacts" / "v4"
+        artifacts_dir = v4_dir if any(v4_dir.glob("model_comparison_*.json")) else ROOT / "models" / "artifacts" / "v3"
         if model_path is None:
             selected = self._selected_artifacts_from_latest_comparison(artifacts_dir)
             if selected:
@@ -53,8 +54,37 @@ class BotDetector:
 
         self.risk_engine = create_risk_engine()
 
+        # Calibrated decision threshold from training (strategy doc Finding 2:
+        # serving must consume this, not a hard-coded 0.50). Falls back to
+        # 0.50 for older v3 artifacts that never recorded a calibrated value.
+        self.decision_threshold = float(self.metadata.get("decision_threshold", 0.5))
+
+        # Optional orthogonal anomaly-detection axis (human-only IsolationForest,
+        # strategy doc §B.1/§B.7). Loaded if this model's metadata references one;
+        # silently absent (anomaly axis contributes 0) for older artifacts.
+        self.anomaly_forest = None
+        self.anomaly_score_zero = None
+        self.anomaly_score_block = None
+        anomaly_meta = self.metadata.get("anomaly") or {}
+        anomaly_model_path = anomaly_meta.get("model_path")
+        if anomaly_model_path:
+            # metadata records the ml-train absolute path; on a real deploy only
+            # sdk-backend's copy exists. Prefer the local artifacts-dir copy by
+            # filename, fall back to the recorded path (same-machine dev).
+            local_anomaly = self.model_path.parent / Path(anomaly_model_path).name
+            resolved = local_anomaly if local_anomaly.exists() else Path(anomaly_model_path)
+            if resolved.exists():
+                try:
+                    self.anomaly_forest = joblib.load(resolved)
+                    self.anomaly_score_zero = anomaly_meta.get("score_zero")
+                    self.anomaly_score_block = anomaly_meta.get("score_block")
+                    print(f"Loaded anomaly detector: {resolved}")
+                except Exception as e:
+                    print(f"Could not load anomaly detector {resolved}: {e}")
+
         print(f"BotDetector initialized with model: {model_path}")
         print(f"Feature count: {len(self.feature_columns)}")
+        print(f"Decision threshold: {self.decision_threshold}")
 
     def _selected_artifacts_from_latest_comparison(self, artifacts_dir):
         comparison_files = list(artifacts_dir.glob("model_comparison_*.json"))
@@ -174,7 +204,8 @@ class BotDetector:
         return min(boost, 0.35)
 
     def predict_session(self, features: Dict[str, Any],
-                       fingerprint_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                       fingerprint_data: Optional[Dict[str, Any]] = None,
+                       network_score: float = 0.0) -> Dict[str, Any]:
         """
         Predict bot risk for a session, combining the ML model's behavioral
         prediction with rule-based fingerprint signals (see RiskEngine).
@@ -182,6 +213,11 @@ class BotDetector:
         Args:
             features: Behavioral features dictionary
             fingerprint_data: Optional fingerprint data (webdriver_flag, user_agent, has_touch, platform)
+            network_score: Optional 0-100 network-layer risk (IP/ASN + JA4),
+                computed by the route from request headers via
+                core/network_signals.evaluate_network. Defaults to 0 so
+                callers without request context (offline/batch, tests) and
+                deployments with no edge behave identically to before.
 
         Returns:
             Dictionary with the risk_score, action, and component scores.
@@ -192,6 +228,10 @@ class BotDetector:
         rule_boost = self._rule_risk_boost(features)
         bot_probability = min(1.0, model_probability + rule_boost)
 
+        raw_anomaly_score = None
+        if self.anomaly_forest is not None:
+            raw_anomaly_score = float(self.anomaly_forest.decision_function(features_scaled)[0])
+
         fingerprint_data = fingerprint_data or {}
         risk_result = self.risk_engine.evaluate_session(
             ml_probability=bot_probability,
@@ -199,6 +239,11 @@ class BotDetector:
             user_agent=fingerprint_data.get('user_agent', ''),
             has_touch=fingerprint_data.get('has_touch', False),
             platform=fingerprint_data.get('platform', ''),
+            decision_threshold=self.decision_threshold,
+            raw_anomaly_score=raw_anomaly_score,
+            anomaly_score_zero=self.anomaly_score_zero,
+            anomaly_score_block=self.anomaly_score_block,
+            network_score=network_score,
         )
 
         overall_risk = risk_result['overall_risk']

@@ -34,7 +34,30 @@ export function getSessionMeta() {
     screenWidth: screen.width,
     screenHeight: screen.height,
     deviceType: isMobile ? 'mobile' : 'desktop',
+    // Read live on every call (not cached at module load), matching the
+    // real SDK's session.ts — navigator.webdriver reflects the CURRENT
+    // automation state, which stealth-patched drivers try to hide after
+    // page load. This was previously missing entirely from demo-site's
+    // inline collector, so every bot session (regardless of driving tool)
+    // silently reported a clean fingerprint. Fixed 2026-07-18.
+    webdriverFlag: navigator.webdriver === true,
+    // Honeypot (strategy step 7): true if the hidden trap field was filled —
+    // a near-certain bot, auto-labeled server-side for free training data.
+    honeypotTriggered: isHoneypotFilled(),
   };
+}
+
+/**
+ * True if any honeypot field on the page has been filled. Honeypot inputs are
+ * off-screen and aria-hidden (see the forms), so a real human never touches
+ * them; a naive bot that fills every input trips this.
+ */
+function isHoneypotFilled() {
+  const fields = document.querySelectorAll('[data-vp-honeypot]');
+  for (const el of fields) {
+    if ((el.value || '').trim().length > 0) return true;
+  }
+  return false;
 }
 
 /**

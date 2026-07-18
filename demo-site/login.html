@@ -14,6 +14,12 @@
         <p class="subtitle">Sign in to your EcoHub account</p>
 
         <form id="login-form" novalidate>
+          <!-- Honeypot (strategy step 7): off-screen, aria-hidden, tabindex -1.
+               No human sees or tabs to it; naive bots that fill every field trip
+               it, which session.js reports as honeypotTriggered. -->
+          <input type="text" name="contact_url" data-vp-honeypot="1" tabindex="-1"
+                 autocomplete="off" aria-hidden="true"
+                 style="position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;" />
           <div class="form-group">
             <label class="form-label" for="email">Email address</label>
             <input class="form-input" type="email" id="email" name="email" placeholder="you@example.com" autocomplete="email" required />

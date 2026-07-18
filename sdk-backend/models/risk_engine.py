@@ -1,5 +1,5 @@
 """Risk Engine - combines the ML model's behavioral prediction with rule-based fingerprint signals."""
-from typing import Dict
+from typing import Dict, Optional
 from dataclasses import dataclass
 
 
@@ -8,6 +8,8 @@ class RiskScores:
     """Container for individual risk component scores."""
     behavior_score: float  # 0-100, from the ML model's bot probability
     fingerprint_score: float  # 0-100, from rule-based device/automation signals
+    anomaly_score: float  # 0-100, from the human-only IsolationForest (0 if unavailable)
+    network_score: float  # 0-100, from IP/ASN + JA4 network signals (0 if unavailable)
     overall_risk: float  # Combined 0-100 risk score
 
 
@@ -15,21 +17,48 @@ class RiskEngine:
     """
     Multi-factor risk scoring engine.
 
-    overall_risk = max(behavior_score, fingerprint_score, average(behavior_score, fingerprint_score))
+    overall_risk = max(behavior_score, fingerprint_score, anomaly_score,
+                        average(behavior_score, fingerprint_score, anomaly_score))
 
-    Using max() instead of a fixed weighted average means either signal can
+    Using max() instead of a fixed weighted average means any signal can
     independently justify a block: a behaviorally-obvious bot is blocked even
     with a clean fingerprint (a fixed 0.4 weight on behavior meant even a
     100%-confident bot call topped out at a risk of 40, permanently below the
     50-point block threshold — the model's own verdict could never win on its
     own). A detected automation fingerprint (e.g. navigator.webdriver) still
-    blocks on its own too. The averaged term still raises risk when both
-    signals are moderately elevated together.
+    blocks on its own too. The averaged term still raises risk when signals
+    are moderately elevated together without any single one crossing 50.
+
+    anomaly_score is optional (0 when no anomaly detector is loaded) — it's
+    an orthogonal signal from an IsolationForest trained on human sessions
+    only (strategy doc §B.1/§B.7), catching bot styles the supervised model
+    was never trained to recognise, at the cost of never blocking on its own
+    if the supervised model and fingerprint are both clean and the anomaly
+    detector alone doesn't reach the block anchor.
     """
 
-    def calculate_behavior_score(self, ml_probability: float) -> float:
-        """ML model's bot probability (0-1), scaled to 0-100."""
-        return ml_probability * 100
+    def calculate_behavior_score(self, ml_probability: float,
+                                  decision_threshold: float = 0.5) -> float:
+        """
+        ML model's calibrated bot probability (0-1), scaled to 0-100 so that
+        `decision_threshold` maps exactly to the 50-point block boundary.
+
+        This is the fix for the train/serve threshold skew (strategy doc
+        Finding 2): the model's metadata records the threshold it was
+        actually tuned at (e.g. 0.24 on calibrated probabilities), but a
+        flat `probability * 100` scale silently reverts to blocking only at
+        probability >= 0.50 regardless of what the model was tuned for.
+        Piecewise-linear remap:
+          - probability in [0, threshold]   -> score in [0, 50]
+          - probability in [threshold, 1]   -> score in [50, 100]
+        Monotonic, and `probability == decision_threshold` always scores
+        exactly 50 (the actual block/allow boundary), whatever the
+        threshold is.
+        """
+        threshold = min(max(decision_threshold, 1e-6), 1 - 1e-6)
+        if ml_probability <= threshold:
+            return (ml_probability / threshold) * 50.0
+        return 50.0 + ((ml_probability - threshold) / (1 - threshold)) * 50.0
 
     def calculate_fingerprint_score(self,
                                      webdriver_flag: bool,
@@ -62,12 +91,42 @@ class RiskEngine:
 
         return min(risk_score, 100.0)
 
-    def calculate_overall_risk(self, behavior_score: float, fingerprint_score: float) -> RiskScores:
-        combined_average = (behavior_score + fingerprint_score) / 2
-        overall_risk = max(behavior_score, fingerprint_score, combined_average)
+    def calculate_anomaly_score(self, raw_anomaly_score: Optional[float],
+                                 score_zero: Optional[float],
+                                 score_block: Optional[float]) -> float:
+        """
+        Map an IsolationForest decision_function() output to 0-100.
+
+        `score_zero` (median human score) -> 0 points.
+        `score_block` (the calibration anchor picked at train time, more
+        anomalous than every training human) -> 50 points (the block
+        boundary). Scores below `score_block` extrapolate linearly past 100
+        (clamped). Returns 0.0 if any anchor is missing (no anomaly detector
+        loaded) — the axis simply contributes nothing rather than erroring.
+        """
+        if raw_anomaly_score is None or score_zero is None or score_block is None:
+            return 0.0
+        span = score_zero - score_block
+        if span <= 0:
+            return 0.0
+        points = (score_zero - raw_anomaly_score) / span * 50.0
+        return float(min(max(points, 0.0), 100.0))
+
+    def calculate_overall_risk(self, behavior_score: float, fingerprint_score: float,
+                                anomaly_score: float = 0.0, network_score: float = 0.0) -> RiskScores:
+        # The averaged term uses only the axes that actually carry a signal —
+        # averaging in a 0 from an unavailable axis (no anomaly model, no edge
+        # for network) would artificially depress it and could mask a session
+        # where the two live axes are both moderately elevated. max() over the
+        # individual axes is unaffected: any axis can still block on its own.
+        active = [s for s in (behavior_score, fingerprint_score, anomaly_score, network_score) if s > 0]
+        combined_average = sum(active) / len(active) if active else 0.0
+        overall_risk = max(behavior_score, fingerprint_score, anomaly_score, network_score, combined_average)
         return RiskScores(
             behavior_score=behavior_score,
             fingerprint_score=fingerprint_score,
+            anomaly_score=anomaly_score,
+            network_score=network_score,
             overall_risk=overall_risk,
         )
 
@@ -76,18 +135,36 @@ class RiskEngine:
                           webdriver_flag: bool = False,
                           user_agent: str = '',
                           has_touch: bool = False,
-                          platform: str = '') -> Dict:
-        """Full risk evaluation for a session: component scores + final decision."""
-        behavior_score = self.calculate_behavior_score(ml_probability)
+                          platform: str = '',
+                          decision_threshold: float = 0.5,
+                          raw_anomaly_score: Optional[float] = None,
+                          anomaly_score_zero: Optional[float] = None,
+                          anomaly_score_block: Optional[float] = None,
+                          network_score: float = 0.0) -> Dict:
+        """Full risk evaluation for a session: component scores + final decision.
+
+        `network_score` (0-100) comes from core/network_signals.evaluate_network
+        (IP/ASN reputation, non-browser UA, and JA4 when an edge forwards it).
+        It defaults to 0 so every existing caller and any deployment without an
+        edge behaves exactly as before — the axis only ever raises risk.
+        """
+        behavior_score = self.calculate_behavior_score(ml_probability, decision_threshold)
         fingerprint_score = self.calculate_fingerprint_score(
             webdriver_flag, user_agent, has_touch, platform
         )
-        risk_scores = self.calculate_overall_risk(behavior_score, fingerprint_score)
+        anomaly_score = self.calculate_anomaly_score(
+            raw_anomaly_score, anomaly_score_zero, anomaly_score_block
+        )
+        risk_scores = self.calculate_overall_risk(
+            behavior_score, fingerprint_score, anomaly_score, network_score
+        )
         decision = self._make_decision(risk_scores.overall_risk)
 
         return {
             'behavior_score': behavior_score,
             'fingerprint_score': fingerprint_score,
+            'anomaly_score': anomaly_score,
+            'network_score': network_score,
             'overall_risk': risk_scores.overall_risk,
             'decision': decision,
         }
@@ -117,7 +194,7 @@ if __name__ == "__main__":
         has_touch=False,
         platform='Win32'
     )
-    print(f"Test 1 (Clear human): {result1}")
+    print(f"Test 1 (Clear human, default threshold 0.5): {result1}")
 
     result2 = engine.evaluate_session(
         ml_probability=0.9,
@@ -135,4 +212,19 @@ if __name__ == "__main__":
         has_touch=False,
         platform='Win32'
     )
-    print(f"Test 3 (Behavior-only block, clean fingerprint): {result3}")
+    print(f"Test 3 (Behavior-only block, clean fingerprint, default threshold): {result3}")
+
+    # The bug this file fixes: with a calibrated decision_threshold of 0.24
+    # (typical for this dataset), a probability of 0.34 — the exact score
+    # that bypassed detection in the 2026-07-16 adversarial test — must now
+    # score above 50 instead of the old flat `0.34*100=34`.
+    result4 = engine.evaluate_session(
+        ml_probability=0.34,
+        webdriver_flag=False,
+        user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        has_touch=False,
+        platform='Win32',
+        decision_threshold=0.24,
+    )
+    print(f"Test 4 (Stealth bot, P=0.34, calibrated threshold 0.24): {result4}")
+    assert result4['decision'] == 'block', "threshold-aware scaling should now block this session"

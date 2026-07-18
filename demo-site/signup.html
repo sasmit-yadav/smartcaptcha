@@ -19,6 +19,12 @@
         <p class="subtitle">Join the EcoHub community</p>
 
         <form id="signup-form" novalidate>
+          <!-- Honeypot (strategy step 7): off-screen, aria-hidden, tabindex -1.
+               No human sees or tabs to it; naive bots that fill every field trip
+               it, which session.js reports as honeypotTriggered. -->
+          <input type="text" name="contact_url" data-vp-honeypot="1" tabindex="-1"
+                 autocomplete="off" aria-hidden="true"
+                 style="position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;" />
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
             <div class="form-group">
               <label class="form-label" for="fname">First name</label>

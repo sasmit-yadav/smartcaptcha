@@ -1,0 +1,86 @@
+{
+  "oof_roc_auc": 0.9784713688867044,
+  "oof_brier_calibrated": 0.09734304023491654,
+  "oof_brier_uncalibrated": 0.11269760037931734,
+  "at_threshold": {
+    "threshold": 0.6,
+    "bot_recall": 0.8466453674121406,
+    "human_fpr": 0.03076923076923077,
+    "precision": 0.9925093632958801,
+    "confusion_matrix": [
+      [
+        63,
+        2
+      ],
+      [
+        48,
+        265
+      ]
+    ],
+    "n_humans": 65,
+    "n_bots": 313,
+    "max_human_oof_probability": 0.8665386194984167
+  },
+  "per_family_recall": {
+    "bot_instant_medium": {
+      "n": 20,
+      "recall": 1.0,
+      "median_p": 0.9848363093690288
+    },
+    "bot_instant_slow": {
+      "n": 37,
+      "recall": 1.0,
+      "median_p": 0.9811943407963208
+    },
+    "bot_long_fast": {
+      "n": 34,
+      "recall": 0.23529411764705882,
+      "median_p": 0.12093975341646551
+    },
+    "bot_long_medium": {
+      "n": 41,
+      "recall": 0.9512195121951219,
+      "median_p": 0.9824452051754751
+    },
+    "bot_long_slow": {
+      "n": 56,
+      "recall": 1.0,
+      "median_p": 0.9709957306743726
+    },
+    "bot_short_fast": {
+      "n": 55,
+      "recall": 0.6363636363636364,
+      "median_p": 0.7916219663134819
+    },
+    "bot_short_medium": {
+      "n": 38,
+      "recall": 1.0,
+      "median_p": 0.9862724364260246
+    },
+    "bot_short_slow": {
+      "n": 32,
+      "recall": 1.0,
+      "median_p": 0.9798690119993344
+    }
+  },
+  "stealth_eval": {
+    "threshold": 0.6,
+    "bot_recall": 0.8466453674121406,
+    "human_fpr": 0.03076923076923077,
+    "precision": 0.9925093632958801,
+    "confusion_matrix": [
+      [
+        63,
+        2
+      ],
+      [
+        48,
+        265
+      ]
+    ],
+    "n_humans": 65,
+    "n_bots": 313,
+    "note": "bots' webdriver_flag zeroed at eval time (stealth simulation)"
+  },
+  "caveat": "OOF over 378 sessions (65 humans) \u2014 coarse estimates"
+}

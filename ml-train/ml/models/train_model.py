@@ -53,7 +53,8 @@ import xgboost as xgb
 
 from features.feature_columns import FEATURE_COLUMNS
 
-ARTIFACT_VERSION = "v4"
+ARTIFACT_VERSION = "v5"
+FEATURE_VERSION = "v5"
 
 
 # ---------------------------------------------------------------------------
@@ -408,7 +409,7 @@ def save_artifacts(artifacts_dir, timestamp, model_name, calibrated_model, scale
     metadata = {
         "model_name": model_name,
         "created_at": datetime.now().isoformat(),
-        "feature_version": "v4",
+        "feature_version": FEATURE_VERSION,
         "artifact_version": ARTIFACT_VERSION,
         "calibration": "sigmoid (CalibratedClassifierCV)",
         "feature_columns": FEATURE_COLUMNS,
@@ -488,7 +489,7 @@ def run_training(df, artifacts_dir=None, quick=False):
     anomaly_meta["model_path"] = str(anomaly_path)
 
     comparison = {"timestamp": datetime.now().isoformat(),
-                  "feature_version": "v4",
+                  "feature_version": FEATURE_VERSION,
                   "artifact_version": ARTIFACT_VERSION,
                   "n_sessions": int(len(df)),
                   "n_humans": int((y == 0).sum()),

@@ -10,6 +10,7 @@ class RiskScores:
     fingerprint_score: float  # 0-100, from rule-based device/automation signals
     anomaly_score: float  # 0-100, from the human-only IsolationForest (0 if unavailable)
     network_score: float  # 0-100, from IP/ASN + JA4 network signals (0 if unavailable)
+    duplicate_score: float  # 0-100, replayed-trace detection (0 if unavailable/no match)
     overall_risk: float  # Combined 0-100 risk score
 
 
@@ -35,6 +36,15 @@ class RiskEngine:
     was never trained to recognise, at the cost of never blocking on its own
     if the supervised model and fingerprint are both clean and the anomaly
     detector alone doesn't reach the block anchor.
+
+    duplicate_score (strategy doc Part D.2) is a different kind of signal:
+    it doesn't ask "does this session look human," it asks "have I already
+    seen a behaviorally near-identical session on this project." A replayed
+    recording of a real human reproduces the same features every time it's
+    replayed — no shape-of-motion feature can catch that, since the motion
+    genuinely was human once. Reused/near-duplicate feature vectors across
+    different sessions are the only signal available without a challenge
+    tier. 0 when no prior session was close enough to compare against.
     """
 
     def calculate_behavior_score(self, ml_probability: float,
@@ -113,20 +123,25 @@ class RiskEngine:
         return float(min(max(points, 0.0), 100.0))
 
     def calculate_overall_risk(self, behavior_score: float, fingerprint_score: float,
-                                anomaly_score: float = 0.0, network_score: float = 0.0) -> RiskScores:
+                                anomaly_score: float = 0.0, network_score: float = 0.0,
+                                duplicate_score: float = 0.0) -> RiskScores:
         # The averaged term uses only the axes that actually carry a signal —
         # averaging in a 0 from an unavailable axis (no anomaly model, no edge
-        # for network) would artificially depress it and could mask a session
-        # where the two live axes are both moderately elevated. max() over the
-        # individual axes is unaffected: any axis can still block on its own.
-        active = [s for s in (behavior_score, fingerprint_score, anomaly_score, network_score) if s > 0]
+        # for network, no prior session close enough to compare) would
+        # artificially depress it and could mask a session where several live
+        # axes are moderately elevated together. max() over the individual
+        # axes is unaffected: any axis can still block on its own.
+        active = [s for s in (behavior_score, fingerprint_score, anomaly_score,
+                              network_score, duplicate_score) if s > 0]
         combined_average = sum(active) / len(active) if active else 0.0
-        overall_risk = max(behavior_score, fingerprint_score, anomaly_score, network_score, combined_average)
+        overall_risk = max(behavior_score, fingerprint_score, anomaly_score,
+                           network_score, duplicate_score, combined_average)
         return RiskScores(
             behavior_score=behavior_score,
             fingerprint_score=fingerprint_score,
             anomaly_score=anomaly_score,
             network_score=network_score,
+            duplicate_score=duplicate_score,
             overall_risk=overall_risk,
         )
 
@@ -140,13 +155,19 @@ class RiskEngine:
                           raw_anomaly_score: Optional[float] = None,
                           anomaly_score_zero: Optional[float] = None,
                           anomaly_score_block: Optional[float] = None,
-                          network_score: float = 0.0) -> Dict:
+                          network_score: float = 0.0,
+                          duplicate_score: float = 0.0) -> Dict:
         """Full risk evaluation for a session: component scores + final decision.
 
         `network_score` (0-100) comes from core/network_signals.evaluate_network
         (IP/ASN reputation, non-browser UA, and JA4 when an edge forwards it).
         It defaults to 0 so every existing caller and any deployment without an
         edge behaves exactly as before — the axis only ever raises risk.
+
+        `duplicate_score` (0-100) comes from core/replay_detection —
+        behavioral feature vector reuse across sessions on the same project
+        (strategy doc Part D.2). Defaults to 0 so callers without it behave
+        exactly as before.
         """
         behavior_score = self.calculate_behavior_score(ml_probability, decision_threshold)
         fingerprint_score = self.calculate_fingerprint_score(
@@ -156,7 +177,7 @@ class RiskEngine:
             raw_anomaly_score, anomaly_score_zero, anomaly_score_block
         )
         risk_scores = self.calculate_overall_risk(
-            behavior_score, fingerprint_score, anomaly_score, network_score
+            behavior_score, fingerprint_score, anomaly_score, network_score, duplicate_score
         )
         decision = self._make_decision(risk_scores.overall_risk)
 
@@ -165,6 +186,7 @@ class RiskEngine:
             'fingerprint_score': fingerprint_score,
             'anomaly_score': anomaly_score,
             'network_score': network_score,
+            'duplicate_score': duplicate_score,
             'overall_risk': risk_scores.overall_risk,
             'decision': decision,
         }

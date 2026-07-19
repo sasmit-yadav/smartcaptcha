@@ -4,6 +4,7 @@
  */
 
 import type { TelemetryEvent } from '../types.js';
+import { getRawSamples } from '../collectors/mouse.js';
 
 interface FeatureVector {
   // Basic features (already computed)
@@ -65,12 +66,30 @@ interface FeatureVector {
   avg_overshoot_ratio: number;
   overshoot_ratio_std: number;
   webdriver_flag: boolean;
+
+  // V5 features (neuromotor — spec §3.2 power law + §3.4 keystroke)
+  mouse_powerlaw_beta: number;
+  mouse_powerlaw_r2: number;
+  key_dwell_cv: number;
+  key_flight_cv: number;
+  key_digraph_std: number;
+
+  // V5b features (neuromotor — spec §3.3 tremor, gated on §3.1 sampling)
+  mouse_tremor_band_ratio: number;
+  mouse_tremor_peak_freq: number;
 }
 
 export function computeFeatures(events: TelemetryEvent[], sessionMeta: any): FeatureVector {
-  const startTime = sessionMeta.startTime || Date.now();
-  const endTime = Date.now();
-  const sessionDuration = (endTime - startTime) / 1000; // seconds
+  // Active-engagement duration, NOT calendar time since session start. A real
+  // user commonly opens a page, pauses (reads, gets distracted, tab in
+  // background), then engages — `Date.now() - sessionMeta.startTime` would
+  // count that idle gap as "session duration," collapsing event_rate toward
+  // ~0 and making a genuine quick interaction look identical to a bot's
+  // near-zero-duration signature. This mirrors ml-train's server-side fix
+  // (feature_extractor session_duration computed from active event gaps,
+  // not sessions.started_at/ended_at wall-clock span) — same 5s idle
+  // threshold on both sides of the train/serve boundary.
+  const sessionDuration = computeActiveDuration(events);
   const eventCount = events.length;
   
   // Separate events by type
@@ -197,7 +216,20 @@ export function computeFeatures(events: TelemetryEvent[], sessionMeta: any): Fea
   const overshootRatios = computeOvershootRatios(mouseEvents, clickEvents);
   const avgOvershootRatio = overshootRatios.length > 0 ? overshootRatios.reduce((a, b) => a + b, 0) / overshootRatios.length : 0;
   const overshootRatioStd = computeStd(overshootRatios);
-  
+
+  // V5: neuromotor (spec §3.2 power law + §3.4 keystroke)
+  const [powerlawBeta, powerlawR2] = computePowerLaw(mouseEvents);
+  const holdCv = cv(holdDurations);
+  const flightVals: number[] = keyEvents.filter(e => e.type === 'kd' && e.iki != null).map(e => e.iki);
+  const flightCv = cv(flightVals);
+  const digraphs: number[] = [];
+  for (let i = 1; i < keyDownEvents.length; i++) digraphs.push(keyDownEvents[i].t - keyDownEvents[i - 1].t);
+  const digraphStd = computeStd(digraphs);
+
+  // V5b: physiological tremor (spec §3.3, gated on §3.1's raw sampling)
+  const rawSamples = getRawSamples();
+  const [tremorRatio, tremorPeak] = computeTremor(rawSamples);
+
   return {
     // Basic
     avg_mouse_vel: avgMouseVel,
@@ -258,7 +290,137 @@ export function computeFeatures(events: TelemetryEvent[], sessionMeta: any): Fea
     avg_overshoot_ratio: avgOvershootRatio,
     overshoot_ratio_std: overshootRatioStd,
     webdriver_flag: sessionMeta.webdriverFlag || false,
+
+    // V5 (neuromotor)
+    mouse_powerlaw_beta: powerlawBeta,
+    mouse_powerlaw_r2: powerlawR2,
+    key_dwell_cv: holdCv,
+    key_flight_cv: flightCv,
+    key_digraph_std: digraphStd,
+
+    // V5b (tremor)
+    mouse_tremor_band_ratio: tremorRatio,
+    mouse_tremor_peak_freq: tremorPeak,
   };
+}
+
+// Active-engagement duration: sum of inter-event gaps <= IDLE_GAP_S, in
+// seconds. Excludes idle stretches (page open in background, user reading/
+// away) so a genuinely brief-but-real interaction isn't diluted by wall-clock
+// time it wasn't actually engaged. Mirrors feature_extractor.py's Python fix.
+const IDLE_GAP_S = 5;
+function computeActiveDuration(events: TelemetryEvent[]): number {
+  if (events.length < 2) return 0;
+  const ts = events.map(e => e.t).sort((a, b) => a - b);
+  let active = 0;
+  for (let i = 1; i < ts.length; i++) {
+    const gap = (ts[i] - ts[i - 1]) / 1000;
+    if (gap > 0 && gap <= IDLE_GAP_S) active += gap;
+  }
+  return active;
+}
+
+// Uniform-resample residual speed, return [bandRatio, peakFreqHz] or [-1,-1]
+// (spec §3.3). -1 sentinel means "sample rate too low to trust" — the model
+// learns "unavailable" rather than being fed aliased garbage.
+function computeTremor(raw: { x: number; y: number; t: number }[]): [number, number] {
+  if (raw.length < 64) return [-1, -1];
+  const t0 = raw[0].t, t1 = raw[raw.length - 1].t;
+  const span = (t1 - t0) / 1000;
+  if (span <= 0) return [-1, -1];
+  const rate = raw.length / span;
+  if (rate < 40) return [-1, -1]; // Nyquist guard
+
+  const FS = 100; // target Hz
+  const N = Math.floor(span * FS);
+  if (N < 64) return [-1, -1];
+  // linear resample x,y onto uniform grid
+  const rx = new Array(N), ry = new Array(N);
+  let j = 0;
+  for (let i = 0; i < N; i++) {
+    const tt = t0 + (i / FS) * 1000;
+    while (j < raw.length - 2 && raw[j + 1].t < tt) j++;
+    const a = raw[j], b = raw[j + 1] || raw[j];
+    const f = b.t > a.t ? (tt - a.t) / (b.t - a.t) : 0;
+    rx[i] = a.x + (b.x - a.x) * f;
+    ry[i] = a.y + (b.y - a.y) * f;
+  }
+  // speed signal + detrend via moving average (6 samples ~60ms)
+  const speed = new Array(N).fill(0);
+  for (let i = 1; i < N; i++) speed[i] = Math.hypot(rx[i] - rx[i - 1], ry[i] - ry[i - 1]);
+  const W = 6, resid = new Array(N).fill(0);
+  for (let i = 0; i < N; i++) {
+    let s = 0, c = 0;
+    for (let k = -W; k <= W; k++) { const m = i + k; if (m >= 0 && m < N) { s += speed[m]; c++; } }
+    resid[i] = speed[i] - s / c;
+  }
+  // Goertzel power at integer-ish freqs 1..15 Hz; band = 8..12
+  function goertzel(sig: number[], freq: number): number {
+    const w = 2 * Math.PI * freq / FS;
+    const coeff = 2 * Math.cos(w);
+    let s0 = 0, s1 = 0, s2 = 0;
+    for (let i = 0; i < sig.length; i++) { s0 = sig[i] + coeff * s1 - s2; s2 = s1; s1 = s0; }
+    return s1 * s1 + s2 * s2 - coeff * s1 * s2;
+  }
+  let bandP = 0, totalP = 0, peakP = -1, peakF = -1;
+  for (let f = 1; f <= 15; f++) {
+    const p = goertzel(resid, f);
+    totalP += p;
+    if (f >= 8 && f <= 12) bandP += p;
+    if (f >= 6 && f <= 14 && p > peakP) { peakP = p; peakF = f; }
+  }
+  if (totalP < 1e-9) return [0, peakF];
+  return [Math.round((bandP / totalP) * 1000) / 1000, peakF];
+}
+
+// --- V5 neuromotor helpers (spec §3.2, §3.4) ---
+
+// Fit ln(V) = ln(k) + beta*ln(R) over the mouse path.
+// Returns [beta, r2]. Uses 'mm' events (t, x, y). Robust at 20 Hz.
+function computePowerLaw(mouseEvents: any[]): [number, number] {
+  if (mouseEvents.length < 8) return [0, 0];
+  const lnR: number[] = [];
+  const lnV: number[] = [];
+  for (let i = 1; i < mouseEvents.length - 1; i++) {
+    const A = mouseEvents[i - 1], B = mouseEvents[i], C = mouseEvents[i + 1];
+    const ab = Math.hypot(B.x - A.x, B.y - A.y);
+    const bc = Math.hypot(C.x - B.x, C.y - B.y);
+    const ca = Math.hypot(A.x - C.x, A.y - C.y);
+    if (ab < 1 || bc < 1 || ca < 1) continue;            // ignore micro/no motion
+    const area2 = Math.abs((B.x - A.x) * (C.y - A.y) - (B.y - A.y) * (C.x - A.x));
+    if (area2 < 1e-6) continue;                            // collinear -> R=inf, skip
+    const kappa = (2 * area2) / (ab * bc * ca);            // Menger curvature
+    const R = 1 / kappa;
+    // tangential velocity at B: distance/time over the incoming step
+    const dt = (B.t - A.t) / 1000;
+    if (dt <= 0) continue;
+    const V = ab / dt;
+    if (V <= 0 || !isFinite(R)) continue;
+    lnR.push(Math.log(R));
+    lnV.push(Math.log(V));
+  }
+  const n = lnR.length;
+  if (n < 6) return [0, 0];
+  // ordinary least squares slope + r^2
+  const mx = lnR.reduce((a, b) => a + b, 0) / n;
+  const my = lnV.reduce((a, b) => a + b, 0) / n;
+  let sxy = 0, sxx = 0, syy = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = lnR[i] - mx, dy = lnV[i] - my;
+    sxy += dx * dy; sxx += dx * dx; syy += dy * dy;
+  }
+  if (sxx < 1e-9 || syy < 1e-9) return [0, 0];
+  const beta = sxy / sxx;
+  const r2 = (sxy * sxy) / (sxx * syy);
+  return [Math.round(beta * 1000) / 1000, Math.round(r2 * 1000) / 1000];
+}
+
+// Coefficient of variation (std/mean) — keystroke regularity signal.
+function cv(values: number[]): number {
+  if (values.length < 3) return 0;
+  const m = values.reduce((a, b) => a + b, 0) / values.length;
+  if (Math.abs(m) < 1e-9) return 0;
+  return computeStd(values) / m;
 }
 
 // Helper functions

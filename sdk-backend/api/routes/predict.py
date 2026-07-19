@@ -165,15 +165,16 @@ async def predict(
         if honeypot_triggered:
             network_score = 100.0
 
-        # Get prediction from model
-        result = get_detector().predict_session(
-            features, fingerprint_data=fingerprint, network_score=network_score
-        )
-
         # Log session telemetry asynchronously
         session_id = body.get('sessionId')
         if not session_id:
             session_id = str(uuid.uuid4())
+
+        # Get prediction from model
+        result = get_detector().predict_session(
+            features, fingerprint_data=fingerprint, network_score=network_score,
+            project_id=key_info['project_id'], session_id=session_id,
+        )
 
         from core.database import insert_session_prediction
         background_tasks.add_task(

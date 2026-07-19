@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 import joblib
 import pandas as pd
 
-from features.feature_columns import LEGACY_FEATURE_COLUMNS, V2_FEATURE_COLUMNS, V3_FEATURE_COLUMNS, V4_FEATURE_COLUMNS
+from features.feature_columns import LEGACY_FEATURE_COLUMNS, V2_FEATURE_COLUMNS, V3_FEATURE_COLUMNS, V4_FEATURE_COLUMNS, V5_FEATURE_COLUMNS
 from models.risk_engine import create_risk_engine, RiskEngine
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,8 +16,15 @@ class BotDetector:
     """Bot detection model for inference with Risk Engine integration."""
 
     def __init__(self, model_path=None, scaler_path=None, metadata_path=None):
-        v4_dir = ROOT / "models" / "artifacts" / "v4"
-        artifacts_dir = v4_dir if any(v4_dir.glob("model_comparison_*.json")) else ROOT / "models" / "artifacts" / "v3"
+        # Prefer the newest artifact version that has actually been trained
+        # (a model_comparison_*.json present). Falls back down the chain so a
+        # deploy without v5 artifacts keeps serving v4/v3.
+        artifacts_root = ROOT / "models" / "artifacts"
+        artifacts_dir = artifacts_root / "v3"
+        for version in ("v4", "v5"):
+            candidate = artifacts_root / version
+            if any(candidate.glob("model_comparison_*.json")):
+                artifacts_dir = candidate
         if model_path is None:
             selected = self._selected_artifacts_from_latest_comparison(artifacts_dir)
             if selected:
@@ -152,6 +159,8 @@ class BotDetector:
             return list(self.metadata["feature_columns"])
 
         expected_features = getattr(self.model, "n_features_in_", None) or getattr(self.scaler, "n_features_in_", None)
+        if expected_features == len(V5_FEATURE_COLUMNS):
+            return V5_FEATURE_COLUMNS
         if expected_features == len(V4_FEATURE_COLUMNS):
             return V4_FEATURE_COLUMNS
         if expected_features == len(V3_FEATURE_COLUMNS):
@@ -205,7 +214,9 @@ class BotDetector:
 
     def predict_session(self, features: Dict[str, Any],
                        fingerprint_data: Optional[Dict[str, Any]] = None,
-                       network_score: float = 0.0) -> Dict[str, Any]:
+                       network_score: float = 0.0,
+                       project_id: Optional[str] = None,
+                       session_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Predict bot risk for a session, combining the ML model's behavioral
         prediction with rule-based fingerprint signals (see RiskEngine).
@@ -218,6 +229,12 @@ class BotDetector:
                 core/network_signals.evaluate_network. Defaults to 0 so
                 callers without request context (offline/batch, tests) and
                 deployments with no edge behave identically to before.
+            project_id: Optional, scopes replay-detection (core/replay_detection)
+                comparisons to sessions on the same project. Omitted -> no
+                replay check is made (duplicate_score stays 0).
+            session_id: Optional, excludes self-matches when the same session
+                is scored more than once (e.g. repeated predict calls as more
+                events accumulate).
 
         Returns:
             Dictionary with the risk_score, action, and component scores.
@@ -232,6 +249,17 @@ class BotDetector:
         if self.anomaly_forest is not None:
             raw_anomaly_score = float(self.anomaly_forest.decision_function(features_scaled)[0])
 
+        # Replay-trace detection (strategy doc Part D.2): compare this
+        # session's scaled feature vector against recent sessions on the same
+        # project. A near-duplicate from a *different* session is the one
+        # signal available against a faithfully-replayed real human
+        # recording, since the recording reproduces identical features every
+        # time — see core/replay_detection module docstring.
+        from core.replay_detection import record_and_score as replay_record_and_score
+        replay_result = replay_record_and_score(
+            project_id, session_id, features_scaled[0].tolist()
+        )
+
         fingerprint_data = fingerprint_data or {}
         risk_result = self.risk_engine.evaluate_session(
             ml_probability=bot_probability,
@@ -244,6 +272,7 @@ class BotDetector:
             anomaly_score_zero=self.anomaly_score_zero,
             anomaly_score_block=self.anomaly_score_block,
             network_score=network_score,
+            duplicate_score=replay_result.duplicate_score,
         )
 
         overall_risk = risk_result['overall_risk']

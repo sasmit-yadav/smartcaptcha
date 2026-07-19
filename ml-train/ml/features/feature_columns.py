@@ -64,4 +64,23 @@ V4_FEATURE_COLUMNS = V3_FEATURE_COLUMNS + [
     "webdriver_flag",
 ]
 
-FEATURE_COLUMNS = V4_FEATURE_COLUMNS
+# V5 = V4 + hard-to-fake neuromotor features (STEP3_STEP8_IMPLEMENTATION_SPEC.md).
+# Complete: "V5a" (3.2 power-law + 3.4 keystroke, robust at 20 Hz) plus "V5b"
+# (3.1 sampling upgrade + 3.3 tremor, gated on measured pointer sample rate).
+# mouse_tremor_band_ratio/mouse_tremor_peak_freq are computed CLIENT-SIDE ONLY
+# from a raw high-rate pointermove ring buffer the server never sees (spec
+# §3.5: "you don't store raw coalesced samples server-side") — the offline
+# feature_extractor.py cannot recompute them from stored `events` and emits
+# the -1 "unavailable" sentinel for historical rows, same as the client does
+# when the measured sample rate is under the 40 Hz Nyquist guard.
+V5_FEATURE_COLUMNS = V4_FEATURE_COLUMNS + [
+    "mouse_powerlaw_beta",
+    "mouse_powerlaw_r2",
+    "key_dwell_cv",
+    "key_flight_cv",
+    "key_digraph_std",
+    "mouse_tremor_band_ratio",
+    "mouse_tremor_peak_freq",
+]
+
+FEATURE_COLUMNS = V5_FEATURE_COLUMNS

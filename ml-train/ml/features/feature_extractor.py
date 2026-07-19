@@ -1,5 +1,6 @@
 import os
 import sys
+import math
 import argparse
 import numpy as np
 from pathlib import Path
@@ -134,6 +135,71 @@ def safe_min(values):
 
 def safe_percentile(values, percentile):
     return float(np.percentile(values, percentile)) if values else 0.0
+
+
+def cv(values):
+    """Coefficient of variation (std/mean). Mirrors sdk features.ts `cv`."""
+    if len(values) < 3:
+        return 0.0
+    m = float(np.mean(values))
+    if abs(m) < 1e-9:
+        return 0.0
+    return float(np.std(values) / m)
+
+
+def compute_powerlaw(mouse):
+    """2/3 power-law conformance from stored 'mm' rows (spec §3.2).
+
+    Python mirror of features.ts `computePowerLaw`. Mouse rows are
+    (event_type, t, x, y, ...) so t=row[1], x=row[2], y=row[3]. Returns
+    [beta, r2] rounded to 3 dp; [0, 0] when there is too little motion.
+    """
+    if len(mouse) < 8:
+        return 0.0, 0.0
+    ln_r = []
+    ln_v = []
+    for i in range(1, len(mouse) - 1):
+        A, B, C = mouse[i - 1], mouse[i], mouse[i + 1]
+        ax, ay, at = A[2], A[3], A[1]
+        bx, by, bt = B[2], B[3], B[1]
+        cx, cy = C[2], C[3]
+        if None in (ax, ay, at, bx, by, bt, cx, cy):
+            continue
+        ab = math.hypot(bx - ax, by - ay)
+        bc = math.hypot(cx - bx, cy - by)
+        ca = math.hypot(ax - cx, ay - cy)
+        if ab < 1 or bc < 1 or ca < 1:
+            continue
+        area2 = abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax))
+        if area2 < 1e-6:
+            continue
+        kappa = (2 * area2) / (ab * bc * ca)
+        R = 1 / kappa
+        dt = (bt - at) / 1000
+        if dt <= 0:
+            continue
+        V = ab / dt
+        if V <= 0 or not math.isfinite(R):
+            continue
+        ln_r.append(math.log(R))
+        ln_v.append(math.log(V))
+    n = len(ln_r)
+    if n < 6:
+        return 0.0, 0.0
+    mx = sum(ln_r) / n
+    my = sum(ln_v) / n
+    sxy = sxx = syy = 0.0
+    for i in range(n):
+        dx = ln_r[i] - mx
+        dy = ln_v[i] - my
+        sxy += dx * dy
+        sxx += dx * dx
+        syy += dy * dy
+    if sxx < 1e-9 or syy < 1e-9:
+        return 0.0, 0.0
+    beta = sxy / sxx
+    r2 = (sxy * sxy) / (sxx * syy)
+    return round(beta * 1000) / 1000, round(r2 * 1000) / 1000
 
 
 def calculate_movement_entropy(mouse, clicks, keys):
@@ -278,6 +344,12 @@ def compute_keyboard_features(keys):
     ikis = [r[9] for r in keys if r[9] is not None]
     holds = [r[10] for r in keys if r[10] is not None]
 
+    # V5 keystroke dynamics (spec §3.4) — mirror of features.ts. Flight = iki
+    # on keydown rows; digraph = press-to-press interval between keydowns.
+    flight_vals = [r[9] for r in keys if r[0] == "kd" and r[9] is not None]
+    keydown_ts = [r[1] for r in keys if r[0] == "kd" and r[1] is not None]
+    digraphs = [keydown_ts[i] - keydown_ts[i - 1] for i in range(1, len(keydown_ts))]
+
     return {
         "avg_iki": safe_mean(ikis),
         "std_iki": safe_std(ikis),
@@ -289,6 +361,9 @@ def compute_keyboard_features(keys):
         "hold_std": safe_std(holds),
         "hold_p90": safe_percentile(holds, 90),
         "backspace_count": sum(1 for r in keys if r[15] == "Backspace"),
+        "key_dwell_cv": cv(holds),
+        "key_flight_cv": cv(flight_vals),
+        "key_digraph_std": safe_std(digraphs),
     }
 
 
@@ -351,9 +426,33 @@ def process_sessions(rebuild=False):
             features.update(compute_keyboard_features(keys))
             features.update(compute_scroll_features(scrolls))
 
-            session_duration = 0
-            if started_at and ended_at:
-                session_duration = (ended_at - started_at).total_seconds()
+            # V5 neuromotor power law (spec §3.2) — computed from stored 'mm'
+            # rows; keystroke V5 features come from compute_keyboard_features.
+            powerlaw_beta, powerlaw_r2 = compute_powerlaw(mouse)
+            features["mouse_powerlaw_beta"] = powerlaw_beta
+            features["mouse_powerlaw_r2"] = powerlaw_r2
+
+            # V5b tremor (spec §3.3) — computed CLIENT-SIDE ONLY from a raw
+            # high-rate pointermove buffer never persisted server-side (spec
+            # §3.5). -1 sentinel here means "unavailable," same meaning the
+            # client emits when its measured sample rate is under 40 Hz — the
+            # model learns "unavailable" rather than being fed a fabricated 0.
+            features["mouse_tremor_band_ratio"] = -1.0
+            features["mouse_tremor_peak_freq"] = -1.0
+
+            # Active-engagement duration, NOT calendar time between
+            # sessions.started_at/ended_at. A real session can span minutes
+            # of wall-clock time (tab open, idle, comes back) while only
+            # containing seconds of actual interaction — using the wall-clock
+            # span systematically corrupted event_rate toward the exact
+            # near-zero signature of an "instant" bot for any real but
+            # intermittent session. Mirrors the SDK-side fix in features.ts
+            # (same 5s idle-gap threshold on both sides of train/serve).
+            timestamps = [r[1] for r in rows if r[1] is not None]
+            session_duration = sum(
+                gap for i in range(1, len(timestamps))
+                if 0 < (gap := (timestamps[i] - timestamps[i - 1]) / 1000) <= 5.0
+            )
 
             features["session_duration"] = float(session_duration or 0)
             features["event_count"] = int(event_count or len(rows))

@@ -115,6 +115,15 @@ def _migrate_session_features_columns(cursor):
         ("hover_duration_std", "REAL"),
         ("avg_overshoot_ratio", "REAL"),
         ("overshoot_ratio_std", "REAL"),
+        # V5 neuromotor (STEP3_STEP8_IMPLEMENTATION_SPEC.md §3.2 power law + §3.4 keystroke)
+        ("mouse_powerlaw_beta", "REAL"),
+        ("mouse_powerlaw_r2", "REAL"),
+        ("key_dwell_cv", "REAL"),
+        ("key_flight_cv", "REAL"),
+        ("key_digraph_std", "REAL"),
+        # V5b neuromotor tremor (§3.3, gated on §3.1 sampling upgrade)
+        ("mouse_tremor_band_ratio", "REAL"),
+        ("mouse_tremor_peak_freq", "REAL"),
     ]
     for name, col_type in columns:
         cursor.execute(

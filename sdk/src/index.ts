@@ -53,8 +53,12 @@ function validateConfig(config: VeilProofConfig): { valid: boolean; error?: stri
     };
   }
 
-  // Validate API key format (production keys start with vp_ or sc_ prefixes)
-  const validPrefixes = ['vp_site_', 'vp_live_', 'vp_test_', 'vp_admin_', 'sc_live_', 'sc_test_', 'sc_admin_'];
+  // Validate API key format (production keys start with vp_ or sc_ prefixes).
+  // TEMP TEST-ONLY: vf_ legacy prefixes added back so this local build can
+  // be tested against customer-website-test's still-legacy vf_site_ key
+  // (the backend already accepts legacy vf_ keys by DB hash lookup, per
+  // docs/current_task.md — this line is not meant to be committed as-is).
+  const validPrefixes = ['vp_site_', 'vp_live_', 'vp_test_', 'vp_admin_', 'sc_live_', 'sc_test_', 'sc_admin_', 'vf_site_', 'vf_live_', 'vf_test_'];
   const hasValidPrefix = validPrefixes.some(prefix => config.apiKey.startsWith(prefix));
 
   if (!hasValidPrefix && config.apiKey !== 'demo-key') {

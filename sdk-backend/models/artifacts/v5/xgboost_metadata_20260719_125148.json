@@ -1,6 +1,10 @@
-"""Shared feature definitions for training, extraction, and inference."""
-
-LEGACY_FEATURE_COLUMNS = [
+{
+  "model_name": "xgboost",
+  "created_at": "2026-07-19T12:52:26.944465",
+  "feature_version": "v5",
+  "artifact_version": "v5",
+  "calibration": "sigmoid (CalibratedClassifierCV)",
+  "feature_columns": [
     "avg_mouse_vel",
     "std_mouse_vel",
     "max_mouse_vel",
@@ -15,9 +19,6 @@ LEGACY_FEATURE_COLUMNS = [
     "avg_scroll_vel",
     "session_duration",
     "event_count",
-]
-
-V2_FEATURE_COLUMNS = LEGACY_FEATURE_COLUMNS + [
     "mouse_vel_p10",
     "mouse_vel_p50",
     "mouse_vel_p90",
@@ -48,39 +49,51 @@ V2_FEATURE_COLUMNS = LEGACY_FEATURE_COLUMNS + [
     "event_rate",
     "pause_count",
     "pause_ratio",
-]
-
-V3_FEATURE_COLUMNS = V2_FEATURE_COLUMNS + [
     "mouse_curvature_std",
     "mouse_jerk_std",
     "movement_entropy",
-]
-
-V4_FEATURE_COLUMNS = V3_FEATURE_COLUMNS + [
     "avg_hover_duration",
     "hover_duration_std",
     "avg_overshoot_ratio",
     "overshoot_ratio_std",
     "webdriver_flag",
-]
-
-# V5 = V4 + hard-to-fake neuromotor features (STEP3_STEP8_IMPLEMENTATION_SPEC.md).
-# Complete: "V5a" (3.2 power-law + 3.4 keystroke, robust at 20 Hz) plus "V5b"
-# (3.1 sampling upgrade + 3.3 tremor, gated on measured pointer sample rate).
-# mouse_tremor_band_ratio/mouse_tremor_peak_freq are computed CLIENT-SIDE ONLY
-# from a raw high-rate pointermove ring buffer the server never sees (spec
-# §3.5: "you don't store raw coalesced samples server-side") — the offline
-# feature_extractor.py cannot recompute them from stored `events` and emits
-# the -1 "unavailable" sentinel for historical rows, same as the client does
-# when the measured sample rate is under the 40 Hz Nyquist guard.
-V5_FEATURE_COLUMNS = V4_FEATURE_COLUMNS + [
     "mouse_powerlaw_beta",
     "mouse_powerlaw_r2",
     "key_dwell_cv",
     "key_flight_cv",
     "key_digraph_std",
     "mouse_tremor_band_ratio",
-    "mouse_tremor_peak_freq",
-]
-
-FEATURE_COLUMNS = V5_FEATURE_COLUMNS
+    "mouse_tremor_peak_freq"
+  ],
+  "decision_threshold": 0.6,
+  "threshold_metrics": {
+    "threshold": 0.6,
+    "bot_recall": 0.7092651757188498,
+    "human_fpr": 0.046153846153846156,
+    "precision": 0.9866666666666667,
+    "confusion_matrix": [
+      [
+        62,
+        3
+      ],
+      [
+        91,
+        222
+      ]
+    ],
+    "n_humans": 65,
+    "n_bots": 313,
+    "max_human_oof_probability": 0.9749750296274821
+  },
+  "anomaly": {
+    "score_zero": 0.10332723272745858,
+    "score_block": -0.15421678614917164,
+    "human_score_min": -0.1027079823738456,
+    "human_score_p05": -0.03770195402278715,
+    "bot_fraction_below_block": 0.0,
+    "n_humans_trained_on": 65,
+    "model_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml-train\\ml\\models\\artifacts\\v5\\isolation_forest_20260719_125148.pkl"
+  },
+  "training_methodology": "StratifiedGroupKFold OOF by heuristic bot family; threshold at zero human FP on calibrated OOF probs; no hyperparameter search (98-row regime)",
+  "optimization_target": "zero_human_fp_max_margin"
+}

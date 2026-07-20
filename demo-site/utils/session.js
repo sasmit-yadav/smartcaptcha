@@ -4,6 +4,7 @@
  */
 
 const SESSION_KEY = 'sc_session_id';
+const SOURCE_KEY = 'sc_source';
 
 /**
  * Get or create a session ID (UUID v4).
@@ -44,7 +45,32 @@ export function getSessionMeta() {
     // Honeypot (strategy step 7): true if the hidden trap field was filled —
     // a near-certain bot, auto-labeled server-side for free training data.
     honeypotTriggered: isHoneypotFilled(),
+    // Human-data growth: sessions reached via a link carrying ?src=volunteer
+    // get auto-labeled 'human' server-side (see sdk-backend/api/routes/
+    // session.py) — a free training label with no manual review needed.
+    // Deliberately keyed on HOW the visitor arrived (a marker only ever
+    // added to links handed to real people), not on "did they complete the
+    // form" — the latter is something bot scripts do too, and would risk
+    // mislabeling a bot session 'human' if the bot script's own explicit
+    // label_session('bot') call ever fails to run (observed happening in
+    // practice — see docs/current_task.md).
+    source: getSource(),
   };
+}
+
+/**
+ * Capture a `?src=volunteer` URL param (only recognized value today) into
+ * sessionStorage on first load, so it survives navigation to other demo-site
+ * pages within the same tab/session — matches the sc_session_id pattern.
+ */
+function getSource() {
+  const params = new URLSearchParams(window.location.search);
+  const fromUrl = params.get('src');
+  if (fromUrl) {
+    sessionStorage.setItem(SOURCE_KEY, fromUrl);
+    return fromUrl;
+  }
+  return sessionStorage.getItem(SOURCE_KEY) || undefined;
 }
 
 /**

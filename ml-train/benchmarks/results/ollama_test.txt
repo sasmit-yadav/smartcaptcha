@@ -1,0 +1,158 @@
+INFO     [service] Using anonymized telemetry, see https://docs.browser-use.com/development/monitoring/telemetry.
+INFO     [Agent] [34m\U0001f3af Task: Go to http://localhost:5173/login.html. Wait for the page to fully load. Find the input field labeled 'Email address' and type 'agent.user9255@example.com' into it. Find the input field labeled 'Password' and type 'AgentPass482!' into it. Then click the 'Sign In' button to submit the form. Only interact with the email field, the password field, and the Sign In button. Do not click, focus, or fill any other input on the page — there may be other elements present, ignore all of them. The task is complete as soon as you have clicked Sign In.[0m
+INFO     [Agent] Starting a browser-use agent with version 0.13.6, with provider=ollama and model=llama3.2:latest
+WARNING  [bubus] \u26a0\ufe0f EventBus_1332085a\U0001f7e2(\u23f3 0 | \u25b6\ufe0f 1 | \u2705 1 \u27a1\ufe0f 31 \U0001f442) handler browser_use.browser.watchdog_base.BrowserSession.on_BrowserStartEvent() has been running for >15s on event. Possible slow processing or deadlock.
+(handler could be trying to await its own result or could be blocked by another async task).
+browser_use.browser.watchdog_base.BrowserSession.on_BrowserStartEvent(?\u25b6 BrowserStartEvent#6936 \U0001f3c3)
+WARNING  [bubus] ================================================================================
+WARNING  [bubus] \u23f1\ufe0f  TIMEOUT ERROR - Handling took more than 30.0s for EventBus_1332085a.browser_use.browser.watchdog_base.BrowserSession.on_BrowserStartEvent(?\u25b6 BrowserStartEvent#6936 \u2705)
+WARNING  [bubus] ================================================================================
+WARNING  [bubus] \U0001f4e3 BrowserStartEvent#6936                                              [91m669s[0m
+WARNING  [bubus]    \u23f0 browser_use.browser.watchdog_base.BrowserSession.on_BrowserStartEvent(#6936) \u231b\ufe0f [91m669s[0m/[91m30s[0m   \u2b05\ufe0f [91mTIMEOUT HERE[0m \u23f0
+WARNING  [bubus]       \U0001f4e3 BrowserLaunchEvent#5052                                       [91m668s[0m
+WARNING  [bubus]          \u2611\ufe0f browser_use.browser.watchdog_base.DownloadsWatchdog.on_BrowserLaunchEvent(#5052)    [92m 0s[0m/30s   \u2713
+WARNING  [bubus]          \u2611\ufe0f browser_use.browser.watchdog_base.LocalBrowserWatchdog.on_BrowserLaunchEvent(#5052)    [92m 1s[0m/30s   \u2713
+WARNING  [bubus] 
+================================================================================
+
+ERROR    [Agent] Agent run failed with exception: Event handler browser_use.browser.watchdog_base.BrowserSession.on_BrowserStartEvent#0560(?\u25b6 BrowserStartEvent#6936 \U0001f3c3) timed out after 30.0s and interrupted any processing of 1 child events
+Traceback (most recent call last):
+  File "C:\Users\91798.SASMITPC\AppData\Local\Programs\Python\Python312\Lib\asyncio\tasks.py", line 520, in wait_for
+    return await fut
+           ^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\browser_use\browser\watchdog_base.py", line 153, in unique_handler
+    result = await actual_handler(event)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\browser_use\observability.py", line 73, in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\browser_use\browser\session.py", line 829, in on_BrowserStartEvent
+    await asyncio.wait_for(self.connect(cdp_url=self.cdp_url), timeout=15.0)
+  File "C:\Users\91798.SASMITPC\AppData\Local\Programs\Python\Python312\Lib\asyncio\tasks.py", line 520, in wait_for
+    return await fut
+           ^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\browser_use\browser\session.py", line 1825, in connect
+    version_info = await client.get(url, headers=headers)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\httpx\_client.py", line 1768, in get
+    return await self.request(
+           ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\httpx\_client.py", line 1540, in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\httpx\_client.py", line 1629, in send
+    response = await self._send_handling_auth(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\httpx\_client.py", line 1657, in _send_handling_auth
+    response = await self._send_handling_redirects(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\httpx\_client.py", line 1694, in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\httpx\_client.py", line 1730, in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\httpx\_transports\default.py", line 394, in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\httpcore\_async\connection_pool.py", line 256, in handle_async_request
+    raise exc from None
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\httpcore\_async\connection_pool.py", line 236, in handle_async_request
+    response = await connection.handle_async_request(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\httpcore\_async\connection.py", line 101, in handle_async_request
+    raise exc
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\httpcore\_async\connection.py", line 78, in handle_async_request
+    stream = await self._connect(request)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\httpcore\_async\connection.py", line 124, in _connect
+    stream = await self._network_backend.connect_tcp(**kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\httpcore\_backends\auto.py", line 31, in connect_tcp
+    return await self._backend.connect_tcp(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\httpcore\_backends\anyio.py", line 115, in connect_tcp
+    stream: anyio.abc.ByteStream = await anyio.connect_tcp(
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\anyio\_core\_sockets.py", line 235, in connect_tcp
+    async with create_task_group() as tg:
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\anyio\_backends\_asyncio.py", line 787, in __aexit__
+    raise exc_val
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\anyio\_core\_sockets.py", line 240, in connect_tcp
+    await event.wait()
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\anyio\_backends\_asyncio.py", line 1789, in wait
+    await self._event.wait()
+  File "C:\Users\91798.SASMITPC\AppData\Local\Programs\Python\Python312\Lib\asyncio\locks.py", line 212, in wait
+    await fut
+asyncio.exceptions.CancelledError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\bubus\service.py", line 1128, in execute_handler
+    result_value: Any = await asyncio.wait_for(handler_task, timeout=event_result.timeout)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\AppData\Local\Programs\Python\Python312\Lib\asyncio\tasks.py", line 519, in wait_for
+    async with timeouts.timeout(timeout):
+  File "C:\Users\91798.SASMITPC\AppData\Local\Programs\Python\Python312\Lib\asyncio\timeouts.py", line 115, in __aexit__
+    raise TimeoutError from exc_val
+TimeoutError
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\browser_use\agent\service.py", line 2553, in run
+    await self.browser_session.start()
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\browser_use\observability.py", line 73, in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\browser_use\browser\session.py", line 724, in start
+    await start_event.event_result(raise_if_any=True, raise_if_none=False)
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\bubus\models.py", line 574, in event_result
+    valid_results = await self.event_results_filtered(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\bubus\models.py", line 516, in event_results_filtered
+    raise original_error
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\bubus\models.py", line 490, in event_results_filtered
+    await event_result
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\bubus\models.py", line 889, in wait_for_handler_to_complete_and_return_result
+    raise self.error if isinstance(self.error, BaseException) else Exception(self.error)  # pyright: ignore[reportUnnecessaryIsInstance]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\bubus\service.py", line 1070, in _execute_handlers
+    await self.execute_handler(event, handler, timeout=timeout)
+  File "C:\Users\91798.SASMITPC\OneDrive\Documents\PROJECTS\CAPTCHA\ml-train\.venv\Lib\site-packages\bubus\service.py", line 1194, in execute_handler
+    raise handler_timeout_error from e
+TimeoutError: Event handler browser_use.browser.watchdog_base.BrowserSession.on_BrowserStartEvent#0560(?\u25b6 BrowserStartEvent#6936 \U0001f3c3) timed out after 30.0s and interrupted any processing of 1 child events
+INFO     [Agent] 
+INFO     [Agent] Did the Agent not work as expected? Let us fix this!
+INFO     [Agent]    Open a short issue on GitHub: https://github.com/browser-use/browser-use/issues
+INFO     [BrowserSession] \U0001f4e2 on_BrowserStopEvent - Calling reset() (force=True, keep_alive=True)
+INFO     [BrowserSession] \u2705 Browser session reset complete
+INFO     [BrowserSession] \u2705 Browser session reset complete
+
+--- browser_use_agent run 1/1 ---
+[browser_use_agent] run 1 failed: 'charmap' codec can't encode character '\u25b6' in position 117: character maps to <undefined>
+
+browser_use_agent: 0/1 sessions labeled
+Exception ignored in: <function _ProactorBasePipeTransport.__del__ at 0x00000234EE499A80>
+Traceback (most recent call last):
+  File "C:\Users\91798.SASMITPC\AppData\Local\Programs\Python\Python312\Lib\asyncio\proactor_events.py", line 116, in __del__
+    _warn(f"unclosed transport {self!r}", ResourceWarning, source=self)
+                               ^^^^^^^^
+  File "C:\Users\91798.SASMITPC\AppData\Local\Programs\Python\Python312\Lib\asyncio\proactor_events.py", line 80, in __repr__
+    info.append(f'fd={self._sock.fileno()}')
+                      ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\AppData\Local\Programs\Python\Python312\Lib\asyncio\windows_utils.py", line 102, in fileno
+    raise ValueError("I/O operation on closed pipe")
+ValueError: I/O operation on closed pipe
+Exception ignored in: <function _ProactorBasePipeTransport.__del__ at 0x00000234EE499A80>
+Traceback (most recent call last):
+  File "C:\Users\91798.SASMITPC\AppData\Local\Programs\Python\Python312\Lib\asyncio\proactor_events.py", line 116, in __del__
+    _warn(f"unclosed transport {self!r}", ResourceWarning, source=self)
+                               ^^^^^^^^
+  File "C:\Users\91798.SASMITPC\AppData\Local\Programs\Python\Python312\Lib\asyncio\proactor_events.py", line 80, in __repr__
+    info.append(f'fd={self._sock.fileno()}')
+                      ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\91798.SASMITPC\AppData\Local\Programs\Python\Python312\Lib\asyncio\windows_utils.py", line 102, in fileno
+    raise ValueError("I/O operation on closed pipe")
+ValueError: I/O operation on closed pipe

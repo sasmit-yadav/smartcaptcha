@@ -23,7 +23,12 @@ class SessionMeta(BaseModel):
     pageUrl: Optional[str] = None
     pageTitle: Optional[str] = None
     referrer: Optional[str] = None
-    source: Optional[Literal['demo', 'client', 'script-tag']] = None  # Source of the session
+    # 'volunteer' (2026-07-20): demo-site visits reached via a ?src=volunteer
+    # link — auto-labeled 'human' server-side (api/routes/session.py). Never
+    # set by any bot script (those hit demo-site's bare URL directly), so
+    # this can't collide with bot-labeling regardless of whether a bot
+    # script's own label_session('bot') call succeeds.
+    source: Optional[Literal['demo', 'client', 'script-tag', 'volunteer']] = None
     # Found 2026-07-18: this field never existed, so Pydantic silently
     # dropped it from every /api/session/start and /api/telemetry payload
     # regardless of sender — meaning sessions.webdriver_flag (and therefore

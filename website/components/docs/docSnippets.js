@@ -2,7 +2,7 @@
 // Keeping the backend-shape coupling (siteverify request/response, script
 // tag attributes) in one file so both surfaces stay in sync.
 
-export const CDN_URL = 'https://cdn.jsdelivr.net/npm/veilproof@1.0.0/dist/veilproof.min.js';
+export const CDN_URL = 'https://cdn.jsdelivr.net/npm/veilproof@1.1.0/dist/veilproof.min.js';
 export const API_HOST = 'https://next-captcha-sdk.onrender.com';
 
 // Note on the pattern below: `siteKey` is only passed explicitly by the

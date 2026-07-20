@@ -1,0 +1,61 @@
+{
+  "oof_roc_auc": 0.9722511272979536,
+  "oof_brier_calibrated": 0.07978012965469615,
+  "oof_brier_uncalibrated": 0.14127018305015634,
+  "at_threshold": {
+    "threshold": 0.6,
+    "bot_recall": 0.8602150537634409,
+    "human_fpr": 0.03225806451612903,
+    "precision": 0.995850622406639,
+    "confusion_matrix": [
+      [
+        30,
+        1
+      ],
+      [
+        39,
+        240
+      ]
+    ],
+    "n_humans": 31,
+    "n_bots": 279,
+    "max_human_oof_probability": 0.8595893064748904
+  },
+  "per_family_recall": {
+    "bot_instant_fast": {
+      "n": 88,
+      "recall": 0.5568181818181818,
+      "median_p": 0.7761887587942111
+    },
+    "bot_instant_medium": {
+      "n": 95,
+      "recall": 1.0,
+      "median_p": 0.907071848923219
+    },
+    "bot_instant_slow": {
+      "n": 96,
+      "recall": 1.0,
+      "median_p": 0.9476457290516657
+    }
+  },
+  "stealth_eval": {
+    "threshold": 0.6,
+    "bot_recall": 0.8602150537634409,
+    "human_fpr": 0.03225806451612903,
+    "precision": 0.995850622406639,
+    "confusion_matrix": [
+      [
+        30,
+        1
+      ],
+      [
+        39,
+        240
+      ]
+    ],
+    "n_humans": 31,
+    "n_bots": 279,
+    "note": "bots' webdriver_flag zeroed at eval time (stealth simulation)"
+  },
+  "caveat": "OOF over 310 sessions (31 humans) \u2014 coarse estimates"
+}

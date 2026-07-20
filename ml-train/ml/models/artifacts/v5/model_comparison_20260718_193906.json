@@ -1,0 +1,291 @@
+{
+  "timestamp": "2026-07-18T19:39:08.138117",
+  "feature_version": "v5",
+  "artifact_version": "v5",
+  "n_sessions": 310,
+  "n_humans": 31,
+  "n_bots": 279,
+  "models": {
+    "random_forest": {
+      "metrics": {
+        "oof_roc_auc": 0.9722511272979536,
+        "oof_brier_calibrated": 0.07978012965469615,
+        "oof_brier_uncalibrated": 0.14127018305015634,
+        "at_threshold": {
+          "threshold": 0.6,
+          "bot_recall": 0.8602150537634409,
+          "human_fpr": 0.03225806451612903,
+          "precision": 0.995850622406639,
+          "confusion_matrix": [
+            [
+              30,
+              1
+            ],
+            [
+              39,
+              240
+            ]
+          ],
+          "n_humans": 31,
+          "n_bots": 279,
+          "max_human_oof_probability": 0.8595893064748904
+        },
+        "per_family_recall": {
+          "bot_instant_fast": {
+            "n": 88,
+            "recall": 0.5568181818181818,
+            "median_p": 0.7761887587942111
+          },
+          "bot_instant_medium": {
+            "n": 95,
+            "recall": 1.0,
+            "median_p": 0.907071848923219
+          },
+          "bot_instant_slow": {
+            "n": 96,
+            "recall": 1.0,
+            "median_p": 0.9476457290516657
+          }
+        },
+        "stealth_eval": {
+          "threshold": 0.6,
+          "bot_recall": 0.8602150537634409,
+          "human_fpr": 0.03225806451612903,
+          "precision": 0.995850622406639,
+          "confusion_matrix": [
+            [
+              30,
+              1
+            ],
+            [
+              39,
+              240
+            ]
+          ],
+          "n_humans": 31,
+          "n_bots": 279,
+          "note": "bots' webdriver_flag zeroed at eval time (stealth simulation)"
+        },
+        "caveat": "OOF over 310 sessions (31 humans) \u2014 coarse estimates"
+      },
+      "artifacts": {
+        "model_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml-train\\ml\\models\\artifacts\\v5\\random_forest_20260718_193906.pkl",
+        "scaler_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml-train\\ml\\models\\artifacts\\v5\\scaler_20260718_193906.pkl",
+        "metrics_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml-train\\ml\\models\\artifacts\\v5\\random_forest_metrics_20260718_193906.json",
+        "importance_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml-train\\ml\\models\\artifacts\\v5\\random_forest_feature_importance_20260718_193906.csv",
+        "metadata_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml-train\\ml\\models\\artifacts\\v5\\random_forest_metadata_20260718_193906.json"
+      }
+    },
+    "xgboost": {
+      "metrics": {
+        "oof_roc_auc": 0.8875014452537865,
+        "oof_brier_calibrated": 0.22878070868294403,
+        "oof_brier_uncalibrated": 0.22749773221394115,
+        "at_threshold": {
+          "threshold": 0.6,
+          "bot_recall": 0.6845878136200717,
+          "human_fpr": 0.16129032258064516,
+          "precision": 0.9744897959183674,
+          "confusion_matrix": [
+            [
+              26,
+              5
+            ],
+            [
+              88,
+              191
+            ]
+          ],
+          "n_humans": 31,
+          "n_bots": 279,
+          "max_human_oof_probability": 0.9597338438034058
+        },
+        "per_family_recall": {
+          "bot_instant_fast": {
+            "n": 88,
+            "recall": 0.0,
+            "median_p": 0.13348420212666193
+          },
+          "bot_instant_medium": {
+            "n": 95,
+            "recall": 1.0,
+            "median_p": 0.9538863102595011
+          },
+          "bot_instant_slow": {
+            "n": 96,
+            "recall": 1.0,
+            "median_p": 0.9710166255633036
+          }
+        },
+        "stealth_eval": {
+          "threshold": 0.6,
+          "bot_recall": 0.6845878136200717,
+          "human_fpr": 0.16129032258064516,
+          "precision": 0.9744897959183674,
+          "confusion_matrix": [
+            [
+              26,
+              5
+            ],
+            [
+              88,
+              191
+            ]
+          ],
+          "n_humans": 31,
+          "n_bots": 279,
+          "note": "bots' webdriver_flag zeroed at eval time (stealth simulation)"
+        },
+        "caveat": "OOF over 310 sessions (31 humans) \u2014 coarse estimates"
+      },
+      "artifacts": {
+        "model_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml-train\\ml\\models\\artifacts\\v5\\xgboost_20260718_193906.pkl",
+        "scaler_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml-train\\ml\\models\\artifacts\\v5\\scaler_20260718_193906.pkl",
+        "metrics_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml-train\\ml\\models\\artifacts\\v5\\xgboost_metrics_20260718_193906.json",
+        "importance_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml-train\\ml\\models\\artifacts\\v5\\xgboost_feature_importance_20260718_193906.csv",
+        "metadata_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml-train\\ml\\models\\artifacts\\v5\\xgboost_metadata_20260718_193906.json"
+      }
+    },
+    "ensemble_rf_xgb": {
+      "metrics": {
+        "oof_roc_auc": 0.9380275176320962,
+        "oof_brier_calibrated": 0.13731902318855044,
+        "oof_brier_uncalibrated": 0.16917490966552684,
+        "at_threshold": {
+          "threshold": 0.6,
+          "bot_recall": 0.6845878136200717,
+          "human_fpr": 0.12903225806451613,
+          "precision": 0.9794871794871794,
+          "confusion_matrix": [
+            [
+              27,
+              4
+            ],
+            [
+              88,
+              191
+            ]
+          ],
+          "n_humans": 31,
+          "n_bots": 279,
+          "max_human_oof_probability": 0.922962294713074
+        },
+        "per_family_recall": {
+          "bot_instant_fast": {
+            "n": 88,
+            "recall": 0.0,
+            "median_p": 0.4473746180987884
+          },
+          "bot_instant_medium": {
+            "n": 95,
+            "recall": 1.0,
+            "median_p": 0.9364825991915455
+          },
+          "bot_instant_slow": {
+            "n": 96,
+            "recall": 1.0,
+            "median_p": 0.9612222047568441
+          }
+        },
+        "stealth_eval": {
+          "threshold": 0.6,
+          "bot_recall": 0.6845878136200717,
+          "human_fpr": 0.12903225806451613,
+          "precision": 0.9794871794871794,
+          "confusion_matrix": [
+            [
+              27,
+              4
+            ],
+            [
+              88,
+              191
+            ]
+          ],
+          "n_humans": 31,
+          "n_bots": 279,
+          "note": "bots' webdriver_flag zeroed at eval time (stealth simulation)"
+        },
+        "caveat": "OOF over 310 sessions (31 humans) \u2014 coarse estimates"
+      },
+      "artifacts": {
+        "model_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml-train\\ml\\models\\artifacts\\v5\\ensemble_rf_xgb_20260718_193906.pkl",
+        "scaler_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml-train\\ml\\models\\artifacts\\v5\\scaler_20260718_193906.pkl",
+        "metrics_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml-train\\ml\\models\\artifacts\\v5\\ensemble_rf_xgb_metrics_20260718_193906.json",
+        "importance_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml-train\\ml\\models\\artifacts\\v5\\ensemble_rf_xgb_feature_importance_20260718_193906.csv",
+        "metadata_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml-train\\ml\\models\\artifacts\\v5\\ensemble_rf_xgb_metadata_20260718_193906.json"
+      }
+    }
+  },
+  "best_model": "random_forest",
+  "random_forest": {
+    "metrics": {
+      "oof_roc_auc": 0.9722511272979536,
+      "oof_brier_calibrated": 0.07978012965469615,
+      "oof_brier_uncalibrated": 0.14127018305015634,
+      "at_threshold": {
+        "threshold": 0.6,
+        "bot_recall": 0.8602150537634409,
+        "human_fpr": 0.03225806451612903,
+        "precision": 0.995850622406639,
+        "confusion_matrix": [
+          [
+            30,
+            1
+          ],
+          [
+            39,
+            240
+          ]
+        ],
+        "n_humans": 31,
+        "n_bots": 279,
+        "max_human_oof_probability": 0.8595893064748904
+      },
+      "per_family_recall": {
+        "bot_instant_fast": {
+          "n": 88,
+          "recall": 0.5568181818181818,
+          "median_p": 0.7761887587942111
+        },
+        "bot_instant_medium": {
+          "n": 95,
+          "recall": 1.0,
+          "median_p": 0.907071848923219
+        },
+        "bot_instant_slow": {
+          "n": 96,
+          "recall": 1.0,
+          "median_p": 0.9476457290516657
+        }
+      },
+      "stealth_eval": {
+        "threshold": 0.6,
+        "bot_recall": 0.8602150537634409,
+        "human_fpr": 0.03225806451612903,
+        "precision": 0.995850622406639,
+        "confusion_matrix": [
+          [
+            30,
+            1
+          ],
+          [
+            39,
+            240
+          ]
+        ],
+        "n_humans": 31,
+        "n_bots": 279,
+        "note": "bots' webdriver_flag zeroed at eval time (stealth simulation)"
+      },
+      "caveat": "OOF over 310 sessions (31 humans) \u2014 coarse estimates"
+    },
+    "artifacts": {
+      "model_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml-train\\ml\\models\\artifacts\\v5\\random_forest_20260718_193906.pkl",
+      "scaler_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml-train\\ml\\models\\artifacts\\v5\\scaler_20260718_193906.pkl",
+      "metrics_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml-train\\ml\\models\\artifacts\\v5\\random_forest_metrics_20260718_193906.json",
+      "importance_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml-train\\ml\\models\\artifacts\\v5\\random_forest_feature_importance_20260718_193906.csv",
+      "metadata_path": "C:\\Users\\91798.SASMITPC\\OneDrive\\Documents\\PROJECTS\\CAPTCHA\\ml-train\\ml\\models\\artifacts\\v5\\random_forest_metadata_20260718_193906.json"
+    }
+  }
+}

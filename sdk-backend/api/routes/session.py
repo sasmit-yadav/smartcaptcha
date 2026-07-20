@@ -22,11 +22,24 @@ async def session_start(payload: SessionStartPayload):
     # Honeypot (strategy step 7): a filled hidden field is a near-certain bot,
     # so auto-label the session 'bot' — a free, high-confidence training label
     # that needs no human review. Only ever ASSIGNS 'bot'; never clears a label.
-    label = 'bot' if meta.get('honeypotTriggered') else None
+    # Volunteer source (2026-07-20): a session reached via a ?src=volunteer
+    # link is a real person by construction (bot scripts never carry this
+    # marker — see schemas/telemetry.py), so auto-label 'human'. Honeypot
+    # takes priority in the (should-never-happen) case both are somehow true.
+    if meta.get('honeypotTriggered'):
+        label = 'bot'
+    elif meta.get('source') == 'volunteer':
+        label = 'human'
+    else:
+        label = None
     insert_session(meta, label=label)
 
-    print(f"[SESSION] Session {payload.sessionId} started"
-          + (" [HONEYPOT -> auto-labeled bot]" if label else ""))
+    tag = ""
+    if label == 'bot':
+        tag = " [HONEYPOT -> auto-labeled bot]"
+    elif label == 'human':
+        tag = " [VOLUNTEER -> auto-labeled human]"
+    print(f"[SESSION] Session {payload.sessionId} started" + tag)
 
     return {
         "sessionId": payload.sessionId,

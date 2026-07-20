@@ -213,3 +213,14 @@ docs/.doctrees/
 !sdk-backend/models/artifacts/**/*.json
 !ml-train/ml/models/artifacts/*.json
 !ml-train/ml/models/artifacts/**/*.json
+
+# Re-assert package manifests at the very end of the file — the broad
+# `*.json` rule in the "Data" section above (and any rule added after it)
+# will otherwise silently re-ignore these regardless of earlier negations.
+# (website/package.json was missing from git for this exact reason.)
+!sdk/package.json
+!sdk/package-lock.json
+!website/package.json
+!website/package-lock.json
+!admin-dashboard/package.json
+!admin-dashboard/package-lock.json

@@ -79,7 +79,7 @@ function validateConfig(config: VeilProofConfig): { valid: boolean; error?: stri
 // Check for browser environment (SSR safety)
 const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined';
 
-const SDK_VERSION = '1.1.0';
+const SDK_VERSION = '1.1.1';
 const DEFAULT_ENDPOINT = 'https://next-captcha-sdk.onrender.com';
 
 /** Run a collector lifecycle call without letting an internal bug crash the host page (S2.1). */

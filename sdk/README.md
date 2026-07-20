@@ -7,7 +7,7 @@ Behavioral telemetry SDK for invisible bot detection and fraud prevention.
 ### Script tag — zero JS (any HTML site: WordPress, Django templates, Rails views, ...)
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/veilproof@1.1.0/dist/veilproof.min.js"
+<script src="https://cdn.jsdelivr.net/npm/veilproof@1.1.1/dist/veilproof.min.js"
         data-site-key="vp_site_..."
         async defer></script>
 ```
@@ -113,8 +113,8 @@ Get a bot detection decision based on collected behavioral data.
 {
   action: 'allow' | 'block', // binary — no 'challenge' tier is implemented anywhere in the product
   risk_score: 0-100,         // combined risk score; >=50 blocks
-  behavior_score: 0-100,     // ML model's behavioral prediction
-  fingerprint_score: 0-100,  // rule-based device/automation signals (e.g. navigator.webdriver)
+  behavior_score: 0-100,     // VeilProof's behavioral risk signal
+  fingerprint_score: 0-100,  // VeilProof's device/environment risk signal
   confidence: 0.0-1.0,       // distance of risk_score from the 50-point decision boundary
   error: undefined // present with action: 'block' if the request itself failed
 }
@@ -178,7 +178,7 @@ Run self-test to verify SDK integration.
 **Result:**
 ```javascript
 {
-  version: '1.1.0',
+  version: '1.1.1',
   tests: [
     { name: 'SDK Initialized', status: 'pass' },
     { name: 'API Key Valid', status: 'pass' },

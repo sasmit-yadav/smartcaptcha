@@ -18,7 +18,7 @@ export default function SiteNav({ active, user, onLogout }) {
       <div className="vp-nav-inner">
         <a href="/" className="vp-brand" aria-label="VeilProof home">
           <span className="veilproof-brand-crop">
-            <img src="/veilproof.png" alt="VeilProof" />
+            <img src="/veilproof-logo.png" alt="VeilProof" />
           </span>
         </a>
 

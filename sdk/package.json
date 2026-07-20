@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
+  "version": "1.1.1",
   "name": "veilproof",
   "description": "VeilProof behavioral telemetry SDK for bot detection",
   "main": "dist/veilproof.cjs.js",

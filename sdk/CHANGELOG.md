@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-07-20
+
+### Changed
+- Reworded internal documentation (README, TypeScript type declarations) that
+  described `behavior_score`/`fingerprint_score` in terms of implementation
+  details (model type, specific signal names). No functional change —
+  `dist/` output and the wire format are identical to `1.1.0`.
+
+## [1.1.0] - 2026-07-18
+
+### Fixed
+- The published `1.0.0` package predated the client-side feature computation
+  needed by the currently-deployed detection model — real integrations on
+  `1.0.0` were silently sending an incomplete feature vector, with the
+  missing fields defaulting to zero server-side. `1.1.0` ships the complete
+  client-side computation; no integration code changes required, just
+  upgrading the package/CDN version.
+
 ## [1.0.0] - 2026-07-15
 
 ### Changed — package renamed veriflow-sdk → veilproof

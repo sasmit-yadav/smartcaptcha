@@ -1,12 +1,10 @@
 /**
  * Mouse Collector — tracks mouse movement with throttling.
- * Captures: position, velocity, angle changes, total distance.
  *
- * §3.1 (STEP3_STEP8_IMPLEMENTATION_SPEC.md): also keeps a parallel raw
- * high-rate ring buffer via pointermove + getCoalescedEvents(), for the
- * tremor feature (§3.3), which needs samples far denser than the 20 Hz
- * `mm` stream can provide. Only the aggregated tremor features are ever
- * sent over the network — raw samples never leave this ring buffer.
+ * Also keeps a parallel raw high-rate ring buffer via pointermove +
+ * getCoalescedEvents(), for signal processing that needs samples denser
+ * than the throttled `mm` stream can provide. Only aggregated results are
+ * ever sent over the network — raw samples never leave this ring buffer.
  */
 
 import type { TelemetryEvent } from '../types.js';
@@ -21,7 +19,7 @@ let isFirst = true;
 const THROTTLE_MS = 50;
 let pushEvent: ((event: TelemetryEvent) => void) | null = null;
 
-// --- §3.1 raw high-rate sampling (tremor prerequisite) ---
+// --- raw high-rate sampling buffer ---
 export interface RawSample { x: number; y: number; t: number; } // t = event.timeStamp (sub-ms, monotonic)
 const RAW_CAP = 4000; // ~30-40s at 120Hz; ring buffer
 let rawSamples: RawSample[] = [];
@@ -57,7 +55,7 @@ function handler(e: MouseEvent): void {
   const dt = now - lastCapture;
   const vel = dt > 0 ? Math.round((dist / dt) * 1000 * 10) / 10 : 0;
 
-  // Angle change (curvature signal)
+  // Angle change
   let angleDelta: number | null = null;
   if (dist > 1) {
     const angle = Math.atan2(dy, dx) * (180 / Math.PI);
@@ -85,9 +83,8 @@ function handler(e: MouseEvent): void {
 }
 
 function pointerHandler(e: PointerEvent): void {
-  // 1) high-rate raw capture for the tremor feature (NOT throttled, NOT sent
-  //    raw over the network — only mouse, not touch/pen; touch tremor is a
-  //    separate study per the spec).
+  // 1) high-rate raw capture (NOT throttled, NOT sent raw over the network —
+  //    only mouse, not touch/pen).
   if (e.pointerType === 'mouse') {
     const coalesced = (typeof e.getCoalescedEvents === 'function')
       ? e.getCoalescedEvents()
@@ -98,9 +95,9 @@ function pointerHandler(e: PointerEvent): void {
     }
   }
 
-  // 2) existing throttled 'mm' event path — unchanged logic, keep 50ms
+  // 2) existing throttled 'mm' event path — unchanged logic, keep the same
   //    throttle, unconditional on pointer type (preserves existing touch/pen
-  //    behavior for the V2-V4 velocity-based features).
+  //    behavior).
   handler(e as unknown as MouseEvent);
 }
 
@@ -125,5 +122,5 @@ export function getMouseStats(): { totalDistance: number } {
   return { totalDistance: Math.round(totalDistance * 10) / 10 };
 }
 
-// expose the raw buffer to the feature computer (§3.1)
+// expose the raw buffer to the feature computer
 export function getRawSamples(): RawSample[] { return rawSamples.slice(); }

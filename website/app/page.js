@@ -60,7 +60,9 @@ export default function LandingPage() {
         <div className="vp-showcase-art">
           <div className="vp-orbit vp-orbit-one" />
           <div className="vp-orbit vp-orbit-two" />
-          <div className="vp-shield-core"><ShieldCheck /></div>
+          <div className="vp-shield-core">
+            <img src="/veilproof-mark.png" alt="VeilProof" className="vp-shield-logo" />
+          </div>
           <span className="vp-float-dot dot-one" />
           <span className="vp-float-dot dot-two" />
           <span className="vp-float-dot dot-three" />

@@ -107,9 +107,9 @@ export interface DecisionResult {
   action: 'allow' | 'block';
   /** Combined 0-100 risk score (the same number the API calls risk_score). */
   risk_score: number;
-  /** 0-100, derived from the ML model's behavioral prediction. */
+  /** 0-100, VeilProof's behavioral risk signal. */
   behavior_score: number;
-  /** 0-100, derived from rule-based device/automation signals (e.g. navigator.webdriver). */
+  /** 0-100, VeilProof's device/environment risk signal. */
   fingerprint_score: number;
   /** 0-1, how far risk_score sits from the 50-point decision boundary. */
   confidence: number;

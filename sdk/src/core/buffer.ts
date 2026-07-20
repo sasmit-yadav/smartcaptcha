@@ -6,13 +6,12 @@
  * `flush()` drains it every 5s / 100 events / page unload and ships it to
  * /api/telemetry (fire-and-forget logging). `history` is never drained by
  * flush — it accumulates every event for the life of the session, because
- * getDecision()/getToken() need the FULL interaction history to compute
- * meaningful behavioral features, not just whatever arrived in the last
- * few seconds. Reusing one array for both jobs meant a real user who took
- * more than ~5s to fill a form had most of their genuine mouse/keyboard
- * activity wiped out from under the model right before scoring — it saw
- * only the last sliver of activity and misread it as a near-zero-movement
- * "instant" bot pattern.
+ * getDecision()/getToken() need the FULL interaction history to score
+ * accurately, not just whatever arrived in the last few seconds. Reusing
+ * one array for both jobs meant a real user who took more than ~5s to fill
+ * a form had most of their genuine activity wiped out from under the score
+ * right before it was computed — it saw only the last sliver of activity
+ * and misread a real user as a near-zero-activity bot pattern.
  */
 
 import type { TelemetryEvent } from '../types.js';

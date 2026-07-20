@@ -30,7 +30,7 @@ export default function Dashboard() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '282307677315-065loak66lukfcde3om7926hcao8tkf8.apps.googleusercontent.com';
+  const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '40763777720-bb2cmdjfi2p15h03pclgpfoklachvmpp.apps.googleusercontent.com';
 
   const initializeGoogleSignIn = () => {
     if (window.google && window.google.accounts) {
@@ -69,34 +69,6 @@ export default function Dashboard() {
       }
     } catch (err) {
       setError('Failed to authenticate with Google');
-    }
-    setLoading(false);
-  };
-
-  // Local-only bypass: compiled out of production builds (NODE_ENV is inlined at build time)
-  const MOCK_LOGIN_ENABLED = process.env.NODE_ENV === 'development';
-
-  const handleMockLogin = async () => {
-    if (!MOCK_LOGIN_ENABLED) return;
-    setLoading(true);
-    setError('');
-    try {
-      const res = await fetch(`${API_BASE_URL}/admin/google-login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id_token: 'mock_developer_token' })
-      });
-      const data = await res.json();
-      if (data.success) {
-        setUser(data.user);
-        localStorage.setItem('veilproof_user', JSON.stringify(data.user));
-        localStorage.setItem('veilproof_token', data.access_token);
-        loadProjects(data.access_token);
-      } else {
-        setError(data.detail || 'Mock Authentication failed');
-      }
-    } catch (err) {
-      setError('Failed to authenticate with Mock User');
     }
     setLoading(false);
   };
@@ -267,9 +239,7 @@ export default function Dashboard() {
         <div className="dashboard-login min-h-[calc(100vh-64px)] flex items-center justify-center px-6">
           <div className="dashboard-login-panel max-w-md w-full card p-8">
           <div className="text-center mb-8">
-            <span className="veilproof-icon-crop">
-              <img src="/veilproof.png" alt="VeilProof" />
-            </span>
+            <img src="/veilproof-mark.png" alt="VeilProof" className="dashboard-login-logo" />
             <h1 className="text-2xl font-semibold mb-2">
               <span className="font-brand font-bold uppercase tracking-wide">VeilProof</span> Dashboard
             </h1>
@@ -279,24 +249,6 @@ export default function Dashboard() {
           <div className="space-y-6 flex flex-col items-center">
             {/* Google Identity Services button container */}
             <div id="google-btn-container" className="w-full flex justify-center py-1 min-h-[50px]"></div>
-
-            {MOCK_LOGIN_ENABLED && (
-              <>
-                <div className="w-full flex items-center gap-3">
-                  <div className="h-px bg-hairline flex-1"></div>
-                  <span className="text-xs text-mute font-bold uppercase tracking-wider">Or</span>
-                  <div className="h-px bg-hairline flex-1"></div>
-                </div>
-
-                <button
-                  onClick={handleMockLogin}
-                  disabled={loading}
-                  className="w-full border border-hairline text-mute hover:text-ink hover:bg-white/5 py-3 rounded-lg font-semibold text-sm transition-colors"
-                >
-                  {loading ? 'Authenticating...' : 'Continue as Mock Developer (Local Bypass)'}
-                </button>
-              </>
-            )}
           </div>
 
           {error && (

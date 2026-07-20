@@ -1,6 +1,7 @@
 /**
- * Feature Computation — computes V4 features from raw telemetry events.
- * Computes: hover duration, overshoot ratio, curvature, jerk, entropy
+ * Feature Computation — derives VeilProof's behavioral signal vector from
+ * raw telemetry events. Internal only; field semantics are not part of the
+ * public API surface.
  */
 
 import type { TelemetryEvent } from '../types.js';
@@ -67,14 +68,14 @@ interface FeatureVector {
   overshoot_ratio_std: number;
   webdriver_flag: boolean;
 
-  // V5 features (neuromotor — spec §3.2 power law + §3.4 keystroke)
+  // V5 features
   mouse_powerlaw_beta: number;
   mouse_powerlaw_r2: number;
   key_dwell_cv: number;
   key_flight_cv: number;
   key_digraph_std: number;
 
-  // V5b features (neuromotor — spec §3.3 tremor, gated on §3.1 sampling)
+  // V5b features
   mouse_tremor_band_ratio: number;
   mouse_tremor_peak_freq: number;
 }
@@ -217,8 +218,8 @@ export function computeFeatures(events: TelemetryEvent[], sessionMeta: any): Fea
   const avgOvershootRatio = overshootRatios.length > 0 ? overshootRatios.reduce((a, b) => a + b, 0) / overshootRatios.length : 0;
   const overshootRatioStd = computeStd(overshootRatios);
 
-  // V5: neuromotor (spec §3.2 power law + §3.4 keystroke)
-  const [powerlawBeta, powerlawR2] = computePowerLaw(mouseEvents);
+  // V5
+  const [powerlawBeta, powerlawR2] = computeCurvatureSignal(mouseEvents);
   const holdCv = cv(holdDurations);
   const flightVals: number[] = keyEvents.filter(e => e.type === 'kd' && e.iki != null).map(e => e.iki);
   const flightCv = cv(flightVals);
@@ -226,9 +227,9 @@ export function computeFeatures(events: TelemetryEvent[], sessionMeta: any): Fea
   for (let i = 1; i < keyDownEvents.length; i++) digraphs.push(keyDownEvents[i].t - keyDownEvents[i - 1].t);
   const digraphStd = computeStd(digraphs);
 
-  // V5b: physiological tremor (spec §3.3, gated on §3.1's raw sampling)
+  // V5b
   const rawSamples = getRawSamples();
-  const [tremorRatio, tremorPeak] = computeTremor(rawSamples);
+  const [tremorRatio, tremorPeak] = computeSpectralSignal(rawSamples);
 
   return {
     // Basic
@@ -291,14 +292,14 @@ export function computeFeatures(events: TelemetryEvent[], sessionMeta: any): Fea
     overshoot_ratio_std: overshootRatioStd,
     webdriver_flag: sessionMeta.webdriverFlag || false,
 
-    // V5 (neuromotor)
+    // V5
     mouse_powerlaw_beta: powerlawBeta,
     mouse_powerlaw_r2: powerlawR2,
     key_dwell_cv: holdCv,
     key_flight_cv: flightCv,
     key_digraph_std: digraphStd,
 
-    // V5b (tremor)
+    // V5b
     mouse_tremor_band_ratio: tremorRatio,
     mouse_tremor_peak_freq: tremorPeak,
   };
@@ -320,16 +321,16 @@ function computeActiveDuration(events: TelemetryEvent[]): number {
   return active;
 }
 
-// Uniform-resample residual speed, return [bandRatio, peakFreqHz] or [-1,-1]
-// (spec §3.3). -1 sentinel means "sample rate too low to trust" — the model
-// learns "unavailable" rather than being fed aliased garbage.
-function computeTremor(raw: { x: number; y: number; t: number }[]): [number, number] {
+// Uniform-resample residual speed, return [bandRatio, peakFreqHz] or [-1,-1].
+// -1 sentinel means "sample rate too low to trust" rather than a computed
+// value derived from an unreliable signal.
+function computeSpectralSignal(raw: { x: number; y: number; t: number }[]): [number, number] {
   if (raw.length < 64) return [-1, -1];
   const t0 = raw[0].t, t1 = raw[raw.length - 1].t;
   const span = (t1 - t0) / 1000;
   if (span <= 0) return [-1, -1];
   const rate = raw.length / span;
-  if (rate < 40) return [-1, -1]; // Nyquist guard
+  if (rate < 40) return [-1, -1]; // sample-rate guard
 
   const FS = 100; // target Hz
   const N = Math.floor(span * FS);
@@ -354,8 +355,8 @@ function computeTremor(raw: { x: number; y: number; t: number }[]): [number, num
     for (let k = -W; k <= W; k++) { const m = i + k; if (m >= 0 && m < N) { s += speed[m]; c++; } }
     resid[i] = speed[i] - s / c;
   }
-  // Goertzel power at integer-ish freqs 1..15 Hz; band = 8..12
-  function goertzel(sig: number[], freq: number): number {
+  // band power at integer-ish freqs 1..15 Hz
+  function bandPower(sig: number[], freq: number): number {
     const w = 2 * Math.PI * freq / FS;
     const coeff = 2 * Math.cos(w);
     let s0 = 0, s1 = 0, s2 = 0;
@@ -364,7 +365,7 @@ function computeTremor(raw: { x: number; y: number; t: number }[]): [number, num
   }
   let bandP = 0, totalP = 0, peakP = -1, peakF = -1;
   for (let f = 1; f <= 15; f++) {
-    const p = goertzel(resid, f);
+    const p = bandPower(resid, f);
     totalP += p;
     if (f >= 8 && f <= 12) bandP += p;
     if (f >= 6 && f <= 14 && p > peakP) { peakP = p; peakF = f; }
@@ -373,11 +374,11 @@ function computeTremor(raw: { x: number; y: number; t: number }[]): [number, num
   return [Math.round((bandP / totalP) * 1000) / 1000, peakF];
 }
 
-// --- V5 neuromotor helpers (spec §3.2, §3.4) ---
+// --- V5 helpers ---
 
-// Fit ln(V) = ln(k) + beta*ln(R) over the mouse path.
-// Returns [beta, r2]. Uses 'mm' events (t, x, y). Robust at 20 Hz.
-function computePowerLaw(mouseEvents: any[]): [number, number] {
+// Returns [beta, r2] derived from a curve fit over the mouse path.
+// Uses 'mm' events (t, x, y). Robust at 20 Hz.
+function computeCurvatureSignal(mouseEvents: any[]): [number, number] {
   if (mouseEvents.length < 8) return [0, 0];
   const lnR: number[] = [];
   const lnV: number[] = [];
@@ -389,7 +390,7 @@ function computePowerLaw(mouseEvents: any[]): [number, number] {
     if (ab < 1 || bc < 1 || ca < 1) continue;            // ignore micro/no motion
     const area2 = Math.abs((B.x - A.x) * (C.y - A.y) - (B.y - A.y) * (C.x - A.x));
     if (area2 < 1e-6) continue;                            // collinear -> R=inf, skip
-    const kappa = (2 * area2) / (ab * bc * ca);            // Menger curvature
+    const kappa = (2 * area2) / (ab * bc * ca);            // local curvature
     const R = 1 / kappa;
     // tangential velocity at B: distance/time over the incoming step
     const dt = (B.t - A.t) / 1000;
@@ -415,7 +416,7 @@ function computePowerLaw(mouseEvents: any[]): [number, number] {
   return [Math.round(beta * 1000) / 1000, Math.round(r2 * 1000) / 1000];
 }
 
-// Coefficient of variation (std/mean) — keystroke regularity signal.
+// Coefficient of variation (std/mean).
 function cv(values: number[]): number {
   if (values.length < 3) return 0;
   const m = values.reduce((a, b) => a + b, 0) / values.length;

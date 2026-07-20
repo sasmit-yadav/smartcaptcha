@@ -68,8 +68,8 @@ export default function DocsPage() {
       <Section title="Getting Started">
         <P>
           VeilProof is an invisible bot-detection layer: a browser SDK collects
-          behavioral signals (mouse, keyboard, scroll), your customer's server
-          decides who to trust — not the browser. Three steps to integrate:
+          behavioral signals, your customer's server decides who to trust —
+          not the browser. Three steps to integrate:
         </P>
         <div className="grid md:grid-cols-3 gap-4">
           <div className="card p-5">
@@ -227,8 +227,8 @@ export default function DocsPage() {
                 {[
                   ['action', '"allow" or "block" — the verdict. Binary only; there is no "challenge" state.'],
                   ['risk_score', '0–100 combined risk score. ≥ 50 blocks.'],
-                  ['behavior_score', '0–100, from the ML model reading mouse/keyboard/scroll behavior.'],
-                  ['fingerprint_score', '0–100, from device signals (e.g. navigator.webdriver, suspicious user-agent strings) — rule-based, not ML.'],
+                  ['behavior_score', "0–100, VeilProof's behavioral risk signal."],
+                  ['fingerprint_score', "0–100, VeilProof's device/environment risk signal."],
                   ['confidence', '0–1, how far risk_score sits from the 50-point decision boundary — not a statistical confidence interval.'],
                   ['verification_token', 'Short-lived (120s), single-use token to redeem at /api/siteverify.'],
                 ].map(([f, m]) => (
@@ -240,9 +240,10 @@ export default function DocsPage() {
               </tbody>
             </table>
             <p className="text-mute text-xs">
-              <code className="text-primary">risk_score</code> is a <code className="text-primary">max</code> of
-              <code className="text-primary"> behavior_score</code>, <code className="text-primary">fingerprint_score</code>,
-              and their average — either signal alone can justify a block; they don't dilute each other.
+              <code className="text-primary">risk_score</code> combines multiple independent
+              signals into one number — check <code className="text-primary">action</code> for
+              the verdict, or threshold on <code className="text-primary">risk_score</code>
+              yourself for finer control.
             </p>
           </div>
         </EndpointCard>

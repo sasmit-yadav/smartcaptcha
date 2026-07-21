@@ -5,7 +5,7 @@ const inter = Inter({ subsets: ['latin'] })
 const poppins = Poppins({ subsets: ['latin'], weight: ['500', '600'], variable: '--font-brand' })
 
 export const metadata = {
-  title: 'VeilProof - AI-Powered Behavioral CAPTCHA',
+  title: 'VeilProof - AI-Powered CAPTCHA',
   description: 'Stop bots without frustrating humans. Invisible behavioral verification powered by machine learning.',
 }
 

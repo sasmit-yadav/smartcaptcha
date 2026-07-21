@@ -14,7 +14,7 @@ import CodeBlock from '../../components/docs/CodeBlock';
 import SiteNav from '../../components/chrome/SiteNav';
 import { scriptTagSnippet, siteverifyCurlSnippet } from '../../components/docs/docSnippets';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://next-captcha-sdk.onrender.com';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.veilproof.tech';
 
 export default function Dashboard() {
   const [user, setUser] = useState(null);

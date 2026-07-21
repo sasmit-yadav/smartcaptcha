@@ -32,7 +32,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://next-captcha-sdk.onrender.com';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.veilproof.tech';
 
 export default function AdminDashboard() {
   const [user, setUser] = useState(null);

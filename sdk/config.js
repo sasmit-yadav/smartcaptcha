@@ -14,7 +14,7 @@ window.SMARTCAPTCHA_CONFIG = {
   // SDK Backend for predictions (port 8001)
   BACKEND_URL: (function() {
     // Always use production backend
-    return 'https://next-captcha-sdk.onrender.com';
+    return 'https://api.veilproof.tech';
   })(),
 
   // API key (for demo purposes)

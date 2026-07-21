@@ -7,7 +7,7 @@ Behavioral telemetry SDK for invisible bot detection and fraud prevention.
 ### Script tag — zero JS (any HTML site: WordPress, Django templates, Rails views, ...)
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/veilproof@1.1.1/dist/veilproof.min.js"
+<script src="https://cdn.jsdelivr.net/npm/veilproof@1.1.2/dist/veilproof.min.js"
         data-site-key="vp_site_..."
         async defer></script>
 ```
@@ -75,7 +75,7 @@ it. Your **server** must redeem the token with your **secret key**
 before trusting the request:
 
 ```bash
-curl -X POST https://next-captcha-sdk.onrender.com/api/siteverify \
+curl -X POST https://api.veilproof.tech/api/siteverify \
   -H "X-API-Key: vp_secret_..." \
   -H "Content-Type: application/json" \
   -d '{"token": "<token from the browser>"}'
@@ -97,7 +97,7 @@ Initialize the SDK with your configuration.
 
 **Parameters:**
 - `config.apiKey` (string, required) - Your **site key** (`vp_site_...`) from the dashboard. Never pass a secret key (`vp_secret_...`) here — the SDK rejects it.
-- `config.endpoint` (string, optional) - Backend API URL (default: `https://next-captcha-sdk.onrender.com`)
+- `config.endpoint` (string, optional) - Backend API URL (default: `https://api.veilproof.tech`)
 - `config.debug` (boolean, optional) - Enable debug logging (default: false)
 - `config.disableTelemetry` (boolean, optional) - Disable telemetry sending (default: false)
 
@@ -178,7 +178,7 @@ Run self-test to verify SDK integration.
 **Result:**
 ```javascript
 {
-  version: '1.1.1',
+  version: '1.1.2',
   tests: [
     { name: 'SDK Initialized', status: 'pass' },
     { name: 'API Key Valid', status: 'pass' },

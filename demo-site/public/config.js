@@ -7,7 +7,7 @@ window.NEXTCAPTCHA_CONFIG = {
   // Backend API endpoint - automatically use local backend when running on localhost
   BACKEND_URL: (function() {
     // Consolidated VeilProof API (predictions + telemetry storage)
-    const DEFAULT_BACKEND = 'https://next-captcha-sdk.onrender.com';
+    const DEFAULT_BACKEND = 'https://api.veilproof.tech';
     // sdk-backend runs on port 8001 locally (uvicorn main:app --port 8001)
     const LOCAL_BACKEND = 'http://localhost:8001';
     const host = window.location.hostname;

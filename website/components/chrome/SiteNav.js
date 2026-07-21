@@ -61,7 +61,19 @@ export default function SiteNav({ active, user, onLogout }) {
 
       {menuOpen && (
         <nav className="vp-mobile-menu">
-          {links.map((link) => <a key={link.label} href={link.href}>{link.label}</a>)}
+          {links.map((link) => (
+            <a key={link.label} href={link.href} onClick={() => setMenuOpen(false)}>{link.label}</a>
+          ))}
+          {user ? (
+            <button onClick={() => { setMenuOpen(false); onLogout?.(); }} className="vp-mobile-cta">
+              Sign out
+            </button>
+          ) : (
+            <>
+              <a href="/dashboard" onClick={() => setMenuOpen(false)}>Log in</a>
+              <a href="/dashboard" onClick={() => setMenuOpen(false)} className="vp-mobile-cta">Get started</a>
+            </>
+          )}
         </nav>
       )}
     </header>

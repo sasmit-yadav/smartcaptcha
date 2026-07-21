@@ -273,7 +273,7 @@ export default function DocsPage() {
         <P>Verification tokens are single-use and expire after 120 seconds. Don't log or store them beyond the verification call.</P>
         <H3>Content-Security-Policy</H3>
         <P>If you set a CSP, allow the SDK's origin in <code className="text-primary">connect-src</code>:</P>
-        <CodeBlock code={`Content-Security-Policy: connect-src 'self' https://next-captcha-sdk.onrender.com; script-src 'self' https://cdn.jsdelivr.net;`} />
+        <CodeBlock code={`Content-Security-Policy: connect-src 'self' https://api.veilproof.tech; script-src 'self' https://cdn.jsdelivr.net;`} />
       </Section>
     ),
 

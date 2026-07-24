@@ -23,7 +23,7 @@ def main() -> int:
         return 0
 
     body = {
-        "sdkVersion": "1.1.4",
+        "sdkVersion": "1.1.10",
         "sessionId": "redteam-unsigned-forge",
         "event_count": 80,
         "session_duration": 25.0,

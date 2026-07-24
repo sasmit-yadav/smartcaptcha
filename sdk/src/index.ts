@@ -4,7 +4,7 @@
  * Usage:
  *   VeilProof.init({
  *     apiKey: "your-api-key",
- *     endpoint: "https://api.veilproof.com",
+ *     endpoint: "https://api.veilproof.tech",
  *     debug: true
  *   })
  *

@@ -3,40 +3,53 @@ VeilProof API — Customer account routes.
 User registration/login (email + Google OAuth), project management, and
 API key lifecycle. Used by the website dashboard.
 
-Auth model: register/login/google-login issue a signed session token
-(core/auth.py). Every /admin/projects and /admin/api-keys route requires
-that token via Depends(get_current_user), and project/key ownership is
-checked against the authenticated user — a caller can only see or modify
-their own projects and keys.
+Auth model:
+  - register / login / google-login issue a short-lived access JWT + rotating refresh token
+  - /admin/refresh rotates refresh; /admin/logout revokes it
+  - authenticated /admin/* routes require Bearer access token (core/auth.py)
 """
 
 import os
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
 
 from api_key_manager import APIKeyManager, UserManager
-from core.auth import create_access_token, get_current_user, CurrentUser
+from core.auth import (
+    CurrentUser,
+    get_current_user,
+    issue_session_tokens,
+    revoke_refresh_token,
+    rotate_refresh_token,
+)
 from core.rate_limit import rate_limit
 
 router = APIRouter()
 
 
 class UserRegistration(BaseModel):
-    email: str
-    password: str
-    full_name: Optional[str] = None
-    company_name: Optional[str] = None
+    email: str = Field(..., max_length=254)
+    password: str = Field(..., min_length=12, max_length=72)
+    full_name: Optional[str] = Field(None, max_length=120)
+    company_name: Optional[str] = Field(None, max_length=120)
 
 
 class UserLogin(BaseModel):
-    email: str
-    password: str
+    email: str = Field(..., max_length=254)
+    password: str = Field(..., max_length=72)
 
 
 class GoogleLoginRequest(BaseModel):
-    id_token: str
+    id_token: str = Field(..., max_length=4096)
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(..., min_length=20, max_length=512)
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: Optional[str] = Field(None, max_length=512)
 
 
 class ProjectCreate(BaseModel):
@@ -61,6 +74,26 @@ class ProjectIdOnly(BaseModel):
     project_id: str
 
 
+def _client_meta(request: Request):
+    ua = request.headers.get("user-agent")
+    ip = request.client.host if request.client else None
+    # Prefer first X-Forwarded-For hop when behind Cloudflare/Heroku.
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        ip = xff.split(",")[0].strip()
+    return ua, ip
+
+
+def _public_user(user: dict) -> dict:
+    return {
+        "id": str(user["id"]),
+        "email": user.get("email"),
+        "full_name": user.get("full_name"),
+        "company_name": user.get("company_name"),
+        "is_admin": bool(user.get("is_admin", False)),
+    }
+
+
 def _require_project_owner(project_id: str, user: CurrentUser) -> dict:
     """Fetch a project and raise 403/404 unless the current user owns it."""
     project = UserManager.get_project(project_id)
@@ -72,34 +105,75 @@ def _require_project_owner(project_id: str, user: CurrentUser) -> dict:
 
 
 @router.post("/admin/register", dependencies=[Depends(rate_limit("admin_register", limit=5, window_seconds=60))])
-async def register_user(user_data: UserRegistration):
-    """Register a new user and issue a session token."""
+async def register_user(user_data: UserRegistration, request: Request):
+    """Register with email/password and issue access + refresh tokens."""
     try:
         user = UserManager.create_user(
             email=user_data.email,
             password=user_data.password,
             full_name=user_data.full_name,
-            company_name=user_data.company_name
+            company_name=user_data.company_name,
         )
-        token = create_access_token(user_id=user["id"], email=user["email"], is_admin=user.get("is_admin", False))
-        return {"success": True, "user": user, "access_token": token}
-    except Exception as e:
+    except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Unable to create account. Please try again.")
+
+    ua, ip = _client_meta(request)
+    tokens = issue_session_tokens(
+        str(user["id"]),
+        user["email"],
+        bool(user.get("is_admin", False)),
+        user_agent=ua,
+        ip=ip,
+    )
+    return {"success": True, "user": _public_user(user), **tokens}
 
 
 @router.post("/admin/login", dependencies=[Depends(rate_limit("admin_login", limit=10, window_seconds=60))])
-async def login_user(login_data: UserLogin):
-    """Login user and issue a session token."""
+async def login_user(login_data: UserLogin, request: Request):
+    """Email/password login → access + refresh tokens."""
     user = UserManager.verify_user(login_data.email, login_data.password)
     if not user:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    token = create_access_token(user_id=user["id"], email=user["email"], is_admin=user.get("is_admin", False))
-    return {"success": True, "user": user, "access_token": token}
+        # Generic message — do not reveal whether email exists.
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    ua, ip = _client_meta(request)
+    tokens = issue_session_tokens(
+        str(user["id"]),
+        user["email"],
+        bool(user.get("is_admin", False)),
+        user_agent=ua,
+        ip=ip,
+    )
+    return {"success": True, "user": _public_user(user), **tokens}
+
+
+@router.post("/admin/refresh", dependencies=[Depends(rate_limit("admin_refresh", limit=30, window_seconds=60))])
+async def refresh_session(body: RefreshRequest, request: Request):
+    """Rotate refresh token and mint a new access token."""
+    ua, ip = _client_meta(request)
+    user, access, new_refresh = rotate_refresh_token(body.refresh_token, user_agent=ua, ip=ip)
+    return {
+        "success": True,
+        "user": {"id": user["id"], "email": user["email"], "is_admin": user["is_admin"]},
+        "access_token": access,
+        "refresh_token": new_refresh,
+        "token_type": "bearer",
+    }
+
+
+@router.post("/admin/logout", dependencies=[Depends(rate_limit("admin_logout", limit=30, window_seconds=60))])
+async def logout_session(body: LogoutRequest):
+    """Revoke the presented refresh token (access JWT expires naturally)."""
+    if body.refresh_token:
+        revoke_refresh_token(body.refresh_token)
+    return {"success": True}
 
 
 @router.post("/admin/google-login", dependencies=[Depends(rate_limit("admin_google_login", limit=20, window_seconds=60))])
-async def google_login(login_req: GoogleLoginRequest):
-    """Verify Google token, get or create user, and issue a session token."""
+async def google_login(login_req: GoogleLoginRequest, request: Request):
+    """Verify Google ID token, get or create user, issue session tokens."""
     import urllib.request
     import json
 
@@ -110,30 +184,36 @@ async def google_login(login_req: GoogleLoginRequest):
         req = urllib.request.Request(tokeninfo_url)
         with urllib.request.urlopen(req, timeout=5) as response:
             if response.status != 200:
-                raise HTTPException(status_code=401, detail="Google token verification failed")
+                raise HTTPException(status_code=401, detail="Google sign-in failed")
 
             payload = json.loads(response.read().decode())
 
-            # Verify client ID audience if configured in environment
             client_id = os.getenv("GOOGLE_CLIENT_ID")
             if client_id and payload.get("aud") != client_id:
-                raise HTTPException(status_code=401, detail="Invalid Google Client ID audience")
+                raise HTTPException(status_code=401, detail="Google sign-in failed")
 
             email = payload.get("email")
-            if not email:
-                raise HTTPException(status_code=400, detail="Email not provided by Google")
+            if not email or payload.get("email_verified") in ("false", False):
+                raise HTTPException(status_code=400, detail="Google account email is not verified")
 
             name = payload.get("name", "")
-
-            # Fetch or create the user in database
             user = UserManager.get_or_create_google_user(email=email, name=name)
-            token = create_access_token(user_id=user["id"], email=user["email"], is_admin=user.get("is_admin", False))
-            return {"success": True, "user": user, "access_token": token}
+            ua, ip = _client_meta(request)
+            tokens = issue_session_tokens(
+                str(user["id"]),
+                user["email"],
+                bool(user.get("is_admin", False)),
+                user_agent=ua,
+                ip=ip,
+            )
+            return {"success": True, "user": _public_user(user), **tokens}
 
-    except Exception as e:
-        if isinstance(e, HTTPException):
-            raise e
-        raise HTTPException(status_code=401, detail=f"Google Authentication failed: {e}")
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=401, detail="Google sign-in failed")
 
 
 @router.post("/admin/projects")

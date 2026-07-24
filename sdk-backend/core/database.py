@@ -177,6 +177,26 @@ def init_db():
         cursor.execute("UPDATE api_keys SET key_type = 'legacy' WHERE key_type IS NULL")
         cursor.execute("ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP")
 
+        # Dashboard auth refresh tokens (opaque, hashed, rotatable)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS auth_refresh_tokens (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL,
+                token_hash VARCHAR(64) UNIQUE NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                revoked_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT NOW(),
+                user_agent TEXT,
+                ip TEXT
+            )
+        """)
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_auth_refresh_user ON auth_refresh_tokens (user_id)"
+        )
+        cursor.execute(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS has_password BOOLEAN DEFAULT TRUE"
+        )
+
         # Auto-upgrade admin accounts
         cursor.execute("""
             UPDATE users 

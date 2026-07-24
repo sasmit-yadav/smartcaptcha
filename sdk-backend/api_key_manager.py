@@ -315,134 +315,154 @@ class APIKeyManager:
 
 class UserManager:
     """User management for customer dashboard"""
-    
+
+    _DUMMY_PASSWORD_HASH = None
+
     @staticmethod
-    def create_user(email: str, password: str, full_name: str = None, 
-                   company_name: str = None, is_admin: bool = False) -> Dict:
-        """
-        Create a new user
-        
-        Args:
-            email: User email
-            password: Plain text password (will be hashed)
-            full_name: User's full name
-            company_name: Company name
-            is_admin: Admin status
-            
-        Returns:
-            Dict with user info
-        """
+    def _dummy_hash() -> str:
         import bcrypt
-        
-        password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-        
+        if UserManager._DUMMY_PASSWORD_HASH is None:
+            UserManager._DUMMY_PASSWORD_HASH = bcrypt.hashpw(
+                b"timing-equalization-dummy", bcrypt.gensalt(rounds=12)
+            ).decode()
+        return UserManager._DUMMY_PASSWORD_HASH
+
+    @staticmethod
+    def create_user(email: str, password: str, full_name: str = None,
+                   company_name: str = None, is_admin: bool = False) -> Dict:
+        """Create a new user with email/password (bcrypt)."""
+        import bcrypt
+        from core.password_policy import normalize_email, validate_email, validate_password
+
+        email_ok, email_err = validate_email(email)
+        if not email_ok:
+            raise ValueError(email_err or "Invalid email")
+        email = normalize_email(email)
+
+        pw_ok, pw_err = validate_password(password, email=email)
+        if not pw_ok:
+            raise ValueError(pw_err or "Invalid password")
+
+        password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode()
+
         conn = psycopg2.connect(DATABASE_URL)
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute("""
-                    INSERT INTO users (email, password_hash, full_name, company_name, is_admin)
-                    VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO users (email, password_hash, full_name, company_name, is_admin, has_password)
+                    VALUES (%s, %s, %s, %s, %s, TRUE)
                     RETURNING id, email, full_name, company_name, is_admin, created_at
                 """, (email, password_hash, full_name, company_name, is_admin))
-                
                 result = cursor.fetchone()
                 conn.commit()
-                
-                return dict(result)
-                
+                user = dict(result)
+                cursor.execute("""
+                    INSERT INTO projects (owner_id, name, allowed_domains)
+                    VALUES (%s, %s, %s)
+                """, (user["id"], "Default Workspace", ["*"]))
+                conn.commit()
+                return user
         except Exception as e:
             conn.rollback()
-            raise Exception(f"Failed to create user: {e}")
+            msg = str(e).lower()
+            if "unique" in msg or "duplicate" in msg:
+                raise ValueError(
+                    "An account with this email may already exist. Try logging in instead."
+                )
+            # has_password column may be missing until migrate — surface clearly in logs
+            raise ValueError("Unable to create account. Please try again.")
         finally:
             conn.close()
-    
+
     @staticmethod
     def verify_user(email: str, password: str) -> Optional[Dict]:
-        """
-        Verify user credentials
-        
-        Args:
-            email: User email
-            password: Plain text password
-            
-        Returns:
-            Dict with user info if valid, None otherwise
-        """
+        """Verify email/password with timing-equalized bcrypt."""
         import bcrypt
-        
+        from core.password_policy import normalize_email
+
+        email = normalize_email(email)
+        if not email or password is None:
+            bcrypt.checkpw(b"x", UserManager._dummy_hash().encode())
+            return None
+
         conn = psycopg2.connect(DATABASE_URL)
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute("""
-                    SELECT id, email, password_hash, full_name, company_name, is_admin, is_active
+                    SELECT id, email, password_hash, full_name, company_name, is_admin, is_active,
+                           COALESCE(has_password, TRUE) AS has_password
                     FROM users
                     WHERE email = %s AND is_active = TRUE
                 """, (email,))
-                
                 result = cursor.fetchone()
                 if not result:
+                    bcrypt.checkpw(password.encode("utf-8"), UserManager._dummy_hash().encode())
                     return None
-                
-                if bcrypt.checkpw(password.encode(), result['password_hash'].encode()):
-                    user_dict = dict(result)
-                    del user_dict['password_hash']  # Don't return hash
-                    return user_dict
-                
-                return None
-                
+                try:
+                    ok = bcrypt.checkpw(password.encode("utf-8"), result["password_hash"].encode("utf-8"))
+                except ValueError:
+                    ok = False
+                if not result.get("has_password", True):
+                    return None
+                if not ok:
+                    return None
+                user_dict = dict(result)
+                del user_dict["password_hash"]
+                user_dict.pop("has_password", None)
+                return user_dict
         finally:
             conn.close()
-            
+
     @staticmethod
     def get_or_create_google_user(email: str, name: str = None) -> Dict:
-        """
-        Get an existing user by email, or create a new user for Google OAuth login
-        """
+        """Get or create user for Google OAuth login."""
         import bcrypt
-        
+        from core.password_policy import normalize_email, validate_email
+
+        email_ok, _ = validate_email(email or "")
+        if not email_ok:
+            raise ValueError("Google account did not provide a valid email")
+        email = normalize_email(email)
+
         conn = psycopg2.connect(DATABASE_URL)
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-                # 1. Look up existing user
                 cursor.execute("""
                     SELECT id, email, full_name, company_name, is_admin, is_active
                     FROM users
                     WHERE email = %s
                 """, (email,))
-                
                 result = cursor.fetchone()
                 if result:
                     user_dict = dict(result)
                 else:
-                    # 2. User doesn't exist, create a new one with a dummy password hash
-                    dummy_hash = bcrypt.hashpw(secrets.token_hex(16).encode(), bcrypt.gensalt()).decode()
-                    
+                    dummy_hash = bcrypt.hashpw(secrets.token_hex(32).encode(), bcrypt.gensalt(rounds=12)).decode()
                     is_admin_user = email in ["developer@veilproof.com", "developer@nextcaptcha.com", "hulkb690@gmail.com"]
                     cursor.execute("""
-                        INSERT INTO users (email, password_hash, full_name, is_admin)
-                        VALUES (%s, %s, %s, %s)
+                        INSERT INTO users (email, password_hash, full_name, is_admin, has_password)
+                        VALUES (%s, %s, %s, %s, FALSE)
                         RETURNING id, email, full_name, company_name, is_admin, created_at
                     """, (email, dummy_hash, name, is_admin_user))
-                    
                     new_user = cursor.fetchone()
                     conn.commit()
                     user_dict = dict(new_user)
-                
-                # 3. Ensure they have a default project
-                cursor.execute("SELECT id FROM projects WHERE owner_id = %s", (user_dict['id'],))
+
+                if not user_dict.get("is_active", True):
+                    raise ValueError("Account is disabled")
+
+                cursor.execute("SELECT id FROM projects WHERE owner_id = %s", (user_dict["id"],))
                 project_row = cursor.fetchone()
                 if not project_row:
                     cursor.execute("""
                         INSERT INTO projects (owner_id, name, allowed_domains)
                         VALUES (%s, %s, %s)
                         RETURNING id
-                    """, (user_dict['id'], "Default Workspace", ["*"]))
+                    """, (user_dict["id"], "Default Workspace", ["*"]))
                     conn.commit()
-                
                 return user_dict
         finally:
             conn.close()
-    
+
     @staticmethod
     def create_project(user_id: str, name: str, allowed_domains: List[str] = None) -> Dict:
         """

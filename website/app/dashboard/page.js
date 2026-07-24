@@ -53,8 +53,76 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [authMode, setAuthMode] = useState('login'); // login | signup
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [fullName, setFullName] = useState('');
 
   const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '40763777720-bb2cmdjfi2p15h03pclgpfoklachvmpp.apps.googleusercontent.com';
+
+  const persistSession = (data) => {
+    setUser(data.user);
+    localStorage.setItem('veilproof_user', JSON.stringify(data.user));
+    localStorage.setItem('veilproof_token', data.access_token);
+    if (data.refresh_token) {
+      localStorage.setItem('veilproof_refresh_token', data.refresh_token);
+    }
+  };
+
+  const clearSession = () => {
+    localStorage.removeItem('veilproof_user');
+    localStorage.removeItem('veilproof_token');
+    localStorage.removeItem('veilproof_refresh_token');
+    setUser(null);
+  };
+
+  const apiFetch = async (path, options = {}) => {
+    const headers = { ...(options.headers || {}) };
+    const token = localStorage.getItem('veilproof_token');
+    if (token && !headers.Authorization) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+    let response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+    if (response.status === 401 && localStorage.getItem('veilproof_refresh_token')) {
+      const refreshed = await refreshAccessToken();
+      if (refreshed) {
+        headers.Authorization = `Bearer ${localStorage.getItem('veilproof_token')}`;
+        response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+      }
+    }
+    return response;
+  };
+
+  const refreshAccessToken = async () => {
+    const refresh = localStorage.getItem('veilproof_refresh_token');
+    if (!refresh) return false;
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refresh }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        clearSession();
+        return false;
+      }
+      localStorage.setItem('veilproof_token', data.access_token);
+      if (data.refresh_token) {
+        localStorage.setItem('veilproof_refresh_token', data.refresh_token);
+      }
+      if (data.user) {
+        const merged = { ...(JSON.parse(localStorage.getItem('veilproof_user') || '{}')), ...data.user };
+        localStorage.setItem('veilproof_user', JSON.stringify(merged));
+        setUser(merged);
+      }
+      return true;
+    } catch {
+      clearSession();
+      return false;
+    }
+  };
 
   const initializeGoogleSignIn = () => {
     if (window.google && window.google.accounts) {
@@ -65,6 +133,7 @@ export default function Dashboard() {
 
       const buttonContainer = document.getElementById('google-btn-container');
       if (buttonContainer) {
+        buttonContainer.innerHTML = '';
         window.google.accounts.id.renderButton(
           buttonContainer,
           { theme: 'filled_black', size: 'large', width: 380, shape: 'rectangular' }
@@ -84,15 +153,60 @@ export default function Dashboard() {
       });
       const data = await res.json();
       if (data.success) {
-        setUser(data.user);
-        localStorage.setItem('veilproof_user', JSON.stringify(data.user));
-        localStorage.setItem('veilproof_token', data.access_token);
+        persistSession(data);
         loadProjects(data.access_token);
       } else {
-        setError(data.detail || 'Google Authentication failed');
+        setError(typeof data.detail === 'string' ? data.detail : 'Google sign-in failed');
       }
     } catch (err) {
       setError('Failed to authenticate with Google');
+    }
+    setLoading(false);
+  };
+
+  const handleEmailAuth = async (event) => {
+    event.preventDefault();
+    setLoading(true);
+    setError('');
+    setSuccess('');
+
+    if (authMode === 'signup') {
+      if (password !== confirmPassword) {
+        setError('Passwords do not match');
+        setLoading(false);
+        return;
+      }
+      if (password.length < 12) {
+        setError('Password must be at least 12 characters');
+        setLoading(false);
+        return;
+      }
+    }
+
+    try {
+      const path = authMode === 'signup' ? '/admin/register' : '/admin/login';
+      const body =
+        authMode === 'signup'
+          ? { email, password, full_name: fullName || undefined }
+          : { email, password };
+      const res = await fetch(`${API_BASE_URL}${path}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        const detail = data.detail;
+        setError(typeof detail === 'string' ? detail : Array.isArray(detail) ? detail[0]?.msg || 'Request failed' : 'Authentication failed');
+        setLoading(false);
+        return;
+      }
+      persistSession(data);
+      setPassword('');
+      setConfirmPassword('');
+      loadProjects(data.access_token);
+    } catch {
+      setError(authMode === 'signup' ? 'Signup failed' : 'Login failed');
     }
     setLoading(false);
   };
@@ -121,11 +235,24 @@ export default function Dashboard() {
     }
   }, []);
 
+  useEffect(() => {
+    if (!user) {
+      setTimeout(initializeGoogleSignIn, 250);
+    }
+  }, [user, authMode]);
+
   const loadProjects = async (token) => {
     try {
       const response = await fetch(`${API_BASE_URL}/admin/projects`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      if (response.status === 401) {
+        const ok = await refreshAccessToken();
+        if (ok) return loadProjects(localStorage.getItem('veilproof_token'));
+        clearSession();
+        setError('Session expired — please sign in again');
+        return;
+      }
       const data = await response.json();
       if (data.success && data.projects.length > 0) {
         setProjects(data.projects);
@@ -133,6 +260,8 @@ export default function Dashboard() {
         setSelectedProject(defaultProj.id);
         setEditDomains(domainsToInput(defaultProj.allowed_domains));
         loadApiKeys(defaultProj.id);
+      } else if (data.success) {
+        setProjects([]);
       }
     } catch (err) {
       setError('Failed to load projects');
@@ -277,11 +406,21 @@ export default function Dashboard() {
     setTimeout(() => setSuccess(''), 2000);
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('veilproof_user');
-    localStorage.removeItem('veilproof_token');
-    setUser(null);
-    window.location.href = '/';
+  const handleLogout = async () => {
+    const refresh = localStorage.getItem('veilproof_refresh_token');
+    try {
+      if (refresh) {
+        await fetch(`${API_BASE_URL}/admin/logout`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refresh }),
+        });
+      }
+    } catch {
+      // ignore network errors on logout
+    }
+    clearSession();
+    window.location.href = '/dashboard';
   };
 
   const selectProject = (projectId) => {
@@ -297,16 +436,107 @@ export default function Dashboard() {
         <SiteNav />
         <div className="dashboard-login min-h-[calc(100vh-64px)] flex items-center justify-center px-6">
           <div className="dashboard-login-panel max-w-md w-full card p-8">
-          <div className="text-center mb-8">
+          <div className="text-center mb-6">
             <img src="/veilproof-mark.png" alt="VeilProof" className="dashboard-login-logo" />
             <h1 className="text-2xl font-semibold mb-2">
               <span className="font-brand font-bold uppercase tracking-wide">VeilProof</span> Dashboard
             </h1>
-            <p className="text-mute text-sm">Manage your API keys and projects</p>
+            <p className="text-mute text-sm">Sign in to manage projects, domains, and API keys</p>
+          </div>
+
+          <div className="flex mb-5 p-1 bg-canvas border border-hairline rounded-lg">
+            <button
+              type="button"
+              onClick={() => { setAuthMode('login'); setError(''); }}
+              className={`flex-1 h-9 rounded-md text-sm font-semibold transition-colors ${
+                authMode === 'login' ? 'bg-white/10 text-ink' : 'text-mute hover:text-ink'
+              }`}
+            >
+              Log in
+            </button>
+            <button
+              type="button"
+              onClick={() => { setAuthMode('signup'); setError(''); }}
+              className={`flex-1 h-9 rounded-md text-sm font-semibold transition-colors ${
+                authMode === 'signup' ? 'bg-white/10 text-ink' : 'text-mute hover:text-ink'
+              }`}
+            >
+              Sign up
+            </button>
+          </div>
+
+          <form onSubmit={handleEmailAuth} className="space-y-3 mb-5">
+            {authMode === 'signup' && (
+              <label className="block text-xs font-bold text-mute uppercase tracking-wider">
+                Full name <span className="font-normal normal-case">(optional)</span>
+                <input
+                  type="text"
+                  autoComplete="name"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="mt-2 w-full h-11 px-4 bg-canvas border border-hairline rounded-md text-ink normal-case tracking-normal font-normal outline-none focus:border-primary/60"
+                />
+              </label>
+            )}
+            <label className="block text-xs font-bold text-mute uppercase tracking-wider">
+              Email
+              <input
+                type="email"
+                required
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="mt-2 w-full h-11 px-4 bg-canvas border border-hairline rounded-md text-ink normal-case tracking-normal font-normal outline-none focus:border-primary/60"
+              />
+            </label>
+            <label className="block text-xs font-bold text-mute uppercase tracking-wider">
+              Password
+              <input
+                type="password"
+                required
+                minLength={authMode === 'signup' ? 12 : 1}
+                autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="mt-2 w-full h-11 px-4 bg-canvas border border-hairline rounded-md text-ink normal-case tracking-normal font-normal outline-none focus:border-primary/60"
+              />
+            </label>
+            {authMode === 'signup' && (
+              <>
+                <label className="block text-xs font-bold text-mute uppercase tracking-wider">
+                  Confirm password
+                  <input
+                    type="password"
+                    required
+                    minLength={12}
+                    autoComplete="new-password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="mt-2 w-full h-11 px-4 bg-canvas border border-hairline rounded-md text-ink normal-case tracking-normal font-normal outline-none focus:border-primary/60"
+                  />
+                </label>
+                <p className="text-mute text-xs leading-relaxed">
+                  Use at least 12 characters. Avoid common passwords and your email name.
+                </p>
+              </>
+            )}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full h-11 bg-primary hover:bg-primaryDark disabled:opacity-50 text-white rounded-md font-bold text-sm transition-colors"
+            >
+              {loading ? 'Please wait…' : authMode === 'signup' ? 'Create account' : 'Log in'}
+            </button>
+          </form>
+
+          <div className="relative my-5">
+            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-hairline" /></div>
+            <div className="relative flex justify-center text-xs uppercase tracking-wider">
+              <span className="bg-[var(--card-bg,transparent)] px-3 text-mute">or continue with Google</span>
+            </div>
           </div>
 
           <div className="space-y-6 flex flex-col items-center">
-            {/* Google Identity Services button container */}
             <div id="google-btn-container" className="w-full flex justify-center py-1 min-h-[50px]"></div>
           </div>
 

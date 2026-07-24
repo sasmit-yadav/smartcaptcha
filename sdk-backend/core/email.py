@@ -25,7 +25,11 @@ YEAR = datetime.now(timezone.utc).year
 
 
 def email_enabled() -> bool:
-    return bool(RESEND_API_KEY)
+    return bool((os.getenv("RESEND_API_KEY") or RESEND_API_KEY or "").strip())
+
+
+def _resend_api_key() -> str:
+    return (os.getenv("RESEND_API_KEY") or RESEND_API_KEY or "").strip()
 
 
 def _esc(value: Optional[str]) -> str:
@@ -279,29 +283,33 @@ def send_email(
     text_body: str,
     tags: Optional[list] = None,
 ) -> bool:
-    if not email_enabled():
-        logger.info("email skipped (no RESEND_API_KEY): to=%s subject=%s", to, subject)
+    api_key = _resend_api_key()
+    if not api_key:
+        logger.warning("email skipped (no RESEND_API_KEY): to=%s subject=%s", to, subject)
         return False
     if not to:
         return False
     try:
         import resend
 
-        resend.api_key = RESEND_API_KEY
+        resend.api_key = api_key
+        from_addr = (os.getenv("EMAIL_FROM") or EMAIL_FROM or "").strip()
         payload = {
-            "from": EMAIL_FROM,
+            "from": from_addr,
             "to": [to],
             "subject": subject,
             "html": html_body,
             "text": text_body,
         }
-        if EMAIL_REPLY_TO:
-            payload["reply_to"] = EMAIL_REPLY_TO
+        reply_to = (os.getenv("EMAIL_REPLY_TO") or EMAIL_REPLY_TO or "").strip()
+        if reply_to:
+            payload["reply_to"] = reply_to
         if tags:
             payload["tags"] = [{"name": "category", "value": tags[0][:256]}]
             if len(tags) > 1:
                 payload["tags"].append({"name": "type", "value": tags[1][:256]})
         resend.Emails.send(payload)
+        logger.info("email sent to=%s subject=%s", to, subject)
         return True
     except Exception:
         logger.exception("failed sending email to=%s subject=%s", to, subject)

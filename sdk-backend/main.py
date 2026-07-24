@@ -88,6 +88,8 @@ async def startup():
         print(f"[VeilProof API] V4 Model with Risk Engine loaded")
         print(f"[VeilProof API] Production API key verification enabled")
         print(f"[VeilProof API] Telemetry storage enabled")
+        from core.email import email_enabled, EMAIL_FROM
+        print(f"[VeilProof API] Transactional email enabled={email_enabled()} from={EMAIL_FROM}")
     except Exception as e:
         print(f"[VeilProof API] Startup failed: {e}")
         raise

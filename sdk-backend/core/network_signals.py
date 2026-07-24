@@ -1,61 +1,43 @@
 """
-Network-layer bot signals (strategy doc step 2 / §B.4).
+Network-layer bot signals (strategy / freeze doc P1).
 
-The strategy doc's central point about network signals: they are the ones the
-client *cannot forge* (TLS/JA4, IP/ASN, HTTP2), and commercial stacks weight
-them first because a scripted client that lies about everything in the JSON
-body still can't fake the TLS handshake or its source IP. This module surfaces
-those signals at the app layer.
+Signals the client *cannot forge* from the JSON body: source IP (when behind
+a trusted edge), ASN/org (MaxMind or Cloudflare-forwarded), non-browser UA,
+and edge TLS/HTTP fingerprints when present.
 
-**Hard physical constraint (documented, not dodged):** the JA4/JA4H/HTTP2
-fingerprints live in the TLS ClientHello and HTTP/2 preface, which are *gone*
-by the time a request reaches FastAPI behind Render's TLS termination. You
-cannot recompute them here. The only way to get them is an edge that captures
-and forwards them as headers (Cloudflare gives JA4/JA4H/HTTP2 fingerprints as
-request headers for free; a TLS-terminating proxy can too). This module
-therefore:
+Cloudflare plan reality (verified 2026-07 against CF docs):
+  - Free: Bot Fight Mode only — does NOT forward cf-bot-score / cf-ja4 to origin.
+  - Free Worker CAN read request.cf (asn, asOrganization, tlsVersion, …) and
+    forward them as custom headers (see tools/cloudflare/forward-cf-headers.js).
+  - Enterprise Bot Management: managed transform adds cf-bot-score, cf-ja4, etc.
 
-  - READS those headers if an edge provides them (CF-* / X-JA4 / etc.) and
-    scores them, and
-  - NO-OPS gracefully to a 0 contribution when they're absent,
+This module:
+  - Prefers cf-connecting-ip when the zone is orange-clouded (trusted).
+  - Scores CF Worker / Enterprise headers when present; no-ops when absent.
+  - Keeps CIDR seed + optional MaxMind ASN for deployments without a Worker.
 
-so the code path exists and lights up the moment you put an edge in front —
-zero further code changes. Everything else here (client IP extraction,
-datacenter/hosting reputation, non-browser UA detection) works *today* with no
-edge, straight off the request.
-
-Returns a `network_score` in 0-100 on the same scale as the behaviour and
-fingerprint axes, so RiskEngine can fuse it as a fourth orthogonal signal.
+Returns network_score 0-100 for RiskEngine fusion.
 """
 from __future__ import annotations
 
 import ipaddress
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 
 # --- Datacenter / hosting reputation -------------------------------------
-# A seed list of well-known cloud/hosting CIDR ranges. Residential traffic
-# almost never originates from these; bot farms overwhelmingly do. This is the
-# "datacenter-ASN blocklist is nearly free" signal from strategy §B.4. It is
-# deliberately a *seed* — the authoritative version is a GeoLite2-ASN lookup
-# (set MAXMIND_ASN_DB to the .mmdb path to enable it; see _asn_is_datacenter).
-# Extendable via env DATACENTER_CIDRS (comma-separated) without a code change.
 _SEED_DATACENTER_CIDRS = [
-    # AWS (sample of the largest ranges — full list is huge; GeoLite2 is better)
     "3.0.0.0/9", "13.32.0.0/15", "15.177.0.0/18", "18.32.0.0/11",
     "35.152.0.0/13", "52.0.0.0/11", "54.144.0.0/12", "54.224.0.0/12",
-    # Google Cloud
     "34.0.0.0/9", "35.184.0.0/13", "35.192.0.0/12", "104.196.0.0/14",
-    # Microsoft Azure
     "20.0.0.0/8", "40.64.0.0/10", "104.40.0.0/13", "137.116.0.0/15",
-    # DigitalOcean
     "104.131.0.0/16", "159.203.0.0/16", "165.227.0.0/16", "167.71.0.0/16",
-    # OVH
     "51.68.0.0/16", "51.75.0.0/16", "137.74.0.0/16", "145.239.0.0/16",
-    # Hetzner
     "5.9.0.0/16", "88.198.0.0/16", "116.202.0.0/16", "168.119.0.0/16",
+    # Extra common bot-farm hosts
+    "45.33.0.0/16", "45.56.0.0/16", "45.79.0.0/16",  # Linode-ish
+    "66.228.0.0/16", "69.164.0.0/16",
 ]
 
 
@@ -77,39 +59,53 @@ def _load_datacenter_networks() -> list:
 
 _DATACENTER_NETWORKS = _load_datacenter_networks()
 
-# Non-browser client signatures in the User-Agent — the cheapest catch for
-# curl/requests/python/Go scrapers that don't run a browser at all.
 _NON_BROWSER_UA_MARKERS = (
     "python-requests", "python-urllib", "curl/", "wget/", "go-http-client",
     "okhttp", "java/", "libwww-perl", "httpclient", "aiohttp", "node-fetch",
-    "axios/", "scrapy", "postmanruntime", "insomnia",
+    "axios/", "scrapy", "postmanruntime", "insomnia", "httpx/", "undici",
+)
+
+_HOSTING_ORG_MARKERS = (
+    "amazon", "aws", "google", "microsoft", "azure", "digitalocean",
+    "ovh", "hetzner", "linode", "akamai", "vultr", "cloudflare",
+    "leaseweb", "contabo", "scaleway", "oracle", "alibaba", "tencent",
+    "huawei", "choopa", "m247", "psychz", "colocrossing", "hostinger",
+    "hetzner online", "amazon.com", "google cloud", "microsoft corporation",
 )
 
 
 @dataclass
 class NetworkSignals:
-    network_score: float           # 0-100, fused into overall risk
+    network_score: float
     client_ip: Optional[str]
-    asn: Optional[str]             # autonomous-system number/org if resolvable
+    asn: Optional[str]
     is_datacenter_ip: bool
     non_browser_ua: bool
-    ja4: Optional[str]             # TLS ClientHello fingerprint (edge-forwarded)
-    ja4h: Optional[str]            # HTTP-layer fingerprint (edge-forwarded)
-    http2: Optional[str]           # HTTP/2 preface fingerprint (edge-forwarded)
+    ja4: Optional[str]
+    ja4h: Optional[str]
+    http2: Optional[str]
     ja4_present: bool
-    reasons: list                  # human-readable contributing signals
+    cf_edge_seen: bool = False
+    cf_bot_score: Optional[int] = None
+    cf_as_org: Optional[str] = None
+    cf_tls_version: Optional[str] = None
+    reasons: list = field(default_factory=list)
 
 
-def extract_client_ip(x_forwarded_for: Optional[str],
-                       x_real_ip: Optional[str],
-                       direct_ip: Optional[str]) -> Optional[str]:
+def extract_client_ip(
+    x_forwarded_for: Optional[str],
+    x_real_ip: Optional[str],
+    direct_ip: Optional[str],
+    cf_connecting_ip: Optional[str] = None,
+) -> Optional[str]:
     """Best-effort real client IP.
 
-    Prefer the left-most X-Forwarded-For entry (the original client) when a
-    proxy/edge is in front; fall back to X-Real-IP, then the direct socket
-    peer. Note: XFF is spoofable when NOT behind a trusted proxy, so treat the
-    IP reputation signal as advisory, never as a sole hard block.
+    When Cloudflare proxies the zone, `CF-Connecting-IP` is the trusted
+    eyeball address (set by CF, not the client). Prefer it over XFF, which
+    is spoofable unless the edge strips client-supplied values.
     """
+    if cf_connecting_ip and str(cf_connecting_ip).strip():
+        return str(cf_connecting_ip).strip()
     if x_forwarded_for:
         first = x_forwarded_for.split(",")[0].strip()
         if first:
@@ -119,7 +115,7 @@ def extract_client_ip(x_forwarded_for: Optional[str],
     return direct_ip
 
 
-def _ip_is_datacenter(ip: Optional[str]) -> bool:
+def _ip_in_datacenter_cidrs(ip: Optional[str]) -> bool:
     if not ip:
         return False
     try:
@@ -127,18 +123,15 @@ def _ip_is_datacenter(ip: Optional[str]) -> bool:
     except ValueError:
         return False
     if addr.is_private or addr.is_loopback:
-        return False  # local/dev traffic — not a datacenter signal
+        return False
     for net in _DATACENTER_NETWORKS:
         if addr in net:
             return True
-    return _asn_is_datacenter(addr)
+    return False
 
 
 def lookup_asn(ip: Optional[str]) -> Optional[str]:
-    """Resolve an IP to 'AS<number> <org>' via GeoLite2-ASN if configured
-    (MAXMIND_ASN_DB=/path/to/GeoLite2-ASN.mmdb), else None. Kept import-local
-    so the module has no hard dependency on geoip2. This ASN is also what the
-    velocity engine keys on (strategy §B.5: 'rolling counts ... by ... ASN')."""
+    """Resolve IP to 'AS<number> <org>' via GeoLite2-ASN if configured."""
     if not ip:
         return None
     db_path = os.getenv("MAXMIND_ASN_DB")
@@ -155,18 +148,11 @@ def lookup_asn(ip: Optional[str]) -> Optional[str]:
         return None
 
 
-def _asn_is_datacenter(addr) -> bool:
-    """Authoritative datacenter check via the resolved ASN org string.
-    Returns False when the DB/geoip2 isn't available — the seed CIDR list is
-    the fallback."""
-    asn = lookup_asn(str(addr))
-    if not asn:
+def _org_looks_hosting(org: Optional[str]) -> bool:
+    if not org:
         return False
-    org = asn.lower()
-    hosting_markers = ("amazon", "google", "microsoft", "azure", "digitalocean",
-                       "ovh", "hetzner", "linode", "vultr", "cloudflare",
-                       "leaseweb", "contabo", "scaleway", "oracle")
-    return any(m in org for m in hosting_markers)
+    low = org.lower()
+    return any(m in low for m in _HOSTING_ORG_MARKERS)
 
 
 def _extract_fp(headers: dict, keys: tuple) -> Optional[str]:
@@ -177,75 +163,169 @@ def _extract_fp(headers: dict, keys: tuple) -> Optional[str]:
     return None
 
 
-# Edge-forwarded fingerprint headers, per fingerprint layer. Cloudflare (and
-# common TLS proxies) expose these under a few different names by product;
-# accept the known variants. All absent without an edge -> all None.
+def _parse_int(value: Optional[str]) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+# Enterprise Bot Management / managed transforms (absent on Free).
 _JA4_HEADERS = ("x-ja4", "cf-ja4", "x-ja4-fingerprint", "ja4", "x-ja3", "cf-ja3-hash")
-_JA4H_HEADERS = ("x-ja4h", "cf-ja4h", "ja4h")                       # HTTP-layer
-_HTTP2_HEADERS = ("x-http2-fingerprint", "cf-http2-fingerprint",    # HTTP/2 preface
-                  "x-akamai-http2", "http2-fingerprint")
+_JA4H_HEADERS = ("x-ja4h", "cf-ja4h", "ja4h")
+_HTTP2_HEADERS = (
+    "x-http2-fingerprint", "cf-http2-fingerprint",
+    "x-akamai-http2", "http2-fingerprint",
+)
+# Free Worker forwarder (tools/cloudflare/forward-cf-headers.js) + common aliases.
+_CF_ASN_HEADERS = ("x-vp-cf-asn", "cf-asn", "x-asn")
+_CF_AS_ORG_HEADERS = ("x-vp-cf-as-org", "cf-as-organization", "x-as-organization")
+_CF_TLS_HEADERS = ("x-vp-cf-tls-version", "cf-tls-version", "x-tls-version")
+_CF_HTTP_PROTO_HEADERS = ("x-vp-cf-http-protocol", "cf-http-protocol")
+_CF_BOT_SCORE_HEADERS = ("cf-bot-score", "x-bot-score", "x-vp-cf-bot-score")
+_CF_VERIFIED_BOT_HEADERS = ("cf-verified-bot", "x-vp-cf-verified-bot")
 
 
 def evaluate_network(headers: dict, direct_ip: Optional[str] = None) -> NetworkSignals:
-    """Compute the network-layer risk contribution from request headers.
-
-    `headers` should be a case-insensitively-accessible lower-keyed dict.
-    Scoring is additive and capped at 100; each signal is intentionally
-    conservative (advisory) since the IP can be spoofed absent a trusted edge:
-      - datacenter/hosting IP:      +55  (strong: humans rarely browse from one)
-      - non-browser User-Agent:     +60  (very strong: curl/requests/etc.)
-      - any fingerprint flagged:    +40  (JA4/JA4H/HTTP2 on a known-bad list —
-                                          only possible when an edge supplies it)
-    """
+    """Compute network-layer risk from request headers (lower-cased keys)."""
     ua = (headers.get("user-agent") or "").lower()
+    cf_connecting = headers.get("cf-connecting-ip")
     ip = extract_client_ip(
         headers.get("x-forwarded-for"),
         headers.get("x-real-ip"),
         direct_ip,
+        cf_connecting_ip=cf_connecting,
     )
 
     reasons: list = []
     score = 0.0
 
-    is_dc = _ip_is_datacenter(ip)
+    # --- Cloudflare edge presence (Free orange-cloud) --------------------
+    cf_ray = headers.get("cf-ray")
+    cf_edge_seen = bool(cf_connecting or cf_ray or headers.get("cf-visitor"))
+    if cf_edge_seen:
+        reasons.append("cloudflare edge headers present")
+
+    # Worker / Enterprise ASN org (works on Free when Worker forwards it).
+    cf_asn_num = _extract_fp(headers, _CF_ASN_HEADERS)
+    cf_as_org = _extract_fp(headers, _CF_AS_ORG_HEADERS)
+    cf_tls = _extract_fp(headers, _CF_TLS_HEADERS)
+    cf_http_proto = _extract_fp(headers, _CF_HTTP_PROTO_HEADERS)
+    cf_bot_score = _parse_int(_extract_fp(headers, _CF_BOT_SCORE_HEADERS))
+    cf_verified_bot = (_extract_fp(headers, _CF_VERIFIED_BOT_HEADERS) or "").lower()
+
+    asn_from_db = lookup_asn(ip)
+    asn = None
+    if cf_asn_num and cf_as_org:
+        asn = f"AS{cf_asn_num} {cf_as_org}".strip()
+    elif cf_asn_num:
+        asn = f"AS{cf_asn_num}"
+    elif cf_as_org:
+        asn = cf_as_org
+    else:
+        asn = asn_from_db
+
+    is_dc = _ip_in_datacenter_cidrs(ip) or _org_looks_hosting(cf_as_org) or _org_looks_hosting(asn)
     if is_dc:
-        score += 55.0
-        reasons.append("datacenter/hosting source IP")
+        # Slightly stronger when CF ASN org confirms hosting (harder to spoof
+        # than client XFF alone when CF-Connecting-IP is trusted).
+        bump = 60.0 if (cf_as_org and _org_looks_hosting(cf_as_org) and cf_edge_seen) else 55.0
+        score += bump
+        reasons.append("datacenter/hosting source IP or ASN")
 
     non_browser = any(m in ua for m in _NON_BROWSER_UA_MARKERS)
     if non_browser:
         score += 60.0
         reasons.append("non-browser client User-Agent")
 
-    # Three distinct edge-forwarded fingerprint layers (strategy §B.4: "JA4,
-    # JA4H, and HTTP/2 fingerprints as request headers"). All None without an
-    # edge — the signal is wired and ready, contributing nothing until then.
+    # Enterprise bot score (1-99, low = bot). Soft-weight; never sole block
+    # unless extremely low — humans can score oddly on VPNs.
+    if cf_bot_score is not None:
+        if cf_verified_bot in ("true", "1", "yes"):
+            reasons.append("cloudflare verified bot")
+        elif cf_bot_score <= 5:
+            score += 70.0
+            reasons.append(f"cf-bot-score definite bot ({cf_bot_score})")
+        elif cf_bot_score <= 29:
+            score += 45.0
+            reasons.append(f"cf-bot-score likely bot ({cf_bot_score})")
+        elif cf_bot_score <= 49:
+            score += 20.0
+            reasons.append(f"cf-bot-score elevated ({cf_bot_score})")
+
+    # TLS / HTTP protocol from Free Worker forwarder — scrapers often odd.
+    if cf_tls:
+        tls_l = cf_tls.lower()
+        if tls_l in ("tlsv1", "tlsv1.0", "tlsv1.1", "none", ""):
+            score += 25.0
+            reasons.append(f"weak or missing TLS ({cf_tls})")
+    if cf_http_proto:
+        proto = cf_http_proto.lower()
+        if proto in ("http/1.0", "http/0.9"):
+            score += 15.0
+            reasons.append(f"obsolete HTTP protocol ({cf_http_proto})")
+
     ja4 = _extract_fp(headers, _JA4_HEADERS)
     ja4h = _extract_fp(headers, _JA4H_HEADERS)
     http2 = _extract_fp(headers, _HTTP2_HEADERS)
     ja4_present = ja4 is not None
 
-    # With an edge supplying fingerprints, match each against a known-bad set
-    # (env-configured, comma-separated). We don't invent verdicts for unknown
-    # fingerprints — only a match on a maintained list scores.
-    def _known_bad(env_name):
+    def _known_bad(env_name: str) -> set:
         return {v.strip() for v in os.getenv(env_name, "").split(",") if v.strip()}
-    for label, value, env in (("JA4", ja4, "KNOWN_BAD_JA4"),
-                              ("JA4H", ja4h, "KNOWN_BAD_JA4H"),
-                              ("HTTP2", http2, "KNOWN_BAD_HTTP2")):
+
+    for label, value, env in (
+        ("JA4", ja4, "KNOWN_BAD_JA4"),
+        ("JA4H", ja4h, "KNOWN_BAD_JA4H"),
+        ("HTTP2", http2, "KNOWN_BAD_HTTP2"),
+    ):
         if value and value in _known_bad(env):
             score += 40.0
             reasons.append(f"{label} fingerprint on known-bad list ({value})")
 
+    # Deduplicate reasons that fire on every CF request (edge present is info).
+    # Keep "cloudflare edge headers present" only when nothing else scored —
+    # otherwise strip it so a clean residential CF user stays at 0.
+    if score == 0.0 and "cloudflare edge headers present" in reasons:
+        reasons = []
+    elif "cloudflare edge headers present" in reasons and score > 0:
+        reasons = [r for r in reasons if r != "cloudflare edge headers present"]
+
     return NetworkSignals(
         network_score=min(score, 100.0),
         client_ip=ip,
-        asn=lookup_asn(ip),
+        asn=asn,
         is_datacenter_ip=is_dc,
         non_browser_ua=non_browser,
         ja4=ja4,
         ja4h=ja4h,
         http2=http2,
         ja4_present=ja4_present,
+        cf_edge_seen=cf_edge_seen,
+        cf_bot_score=cf_bot_score,
+        cf_as_org=cf_as_org,
+        cf_tls_version=cf_tls,
         reasons=reasons,
     )
+
+
+def fuse_network_and_velocity(
+    network_score: float,
+    velocity_score: float,
+    *,
+    is_datacenter_ip: bool = False,
+) -> float:
+    """P1.2: fuse per-request network risk with cross-session velocity.
+
+    max() alone is kept as the floor (any axis can block). When traffic is
+    already from hosting ASN/IP *and* velocity is elevated, amplify so farms
+    that drip just under a single threshold still cross 50.
+    """
+    base = max(float(network_score or 0), float(velocity_score or 0))
+    if is_datacenter_ip and velocity_score >= 20:
+        amplified = min(100.0, velocity_score * 1.35 + 15.0)
+        base = max(base, amplified)
+    if network_score >= 40 and velocity_score >= 30:
+        base = max(base, min(100.0, (network_score + velocity_score) / 2 + 15.0))
+    return min(100.0, base)

@@ -259,8 +259,9 @@ async def predict(
         # Cross-session velocity (strategy step 6 / §B.5): rolling counts keyed
         # by IP, /24, ASN, and a stable client fingerprint hash, plus UA
         # rotation and inter-arrival regularity. Same un-forgeable network axis
-        # as the per-request signals above, so fuse by max — any can raise it.
+        # as the per-request signals above — fuse with datacenter amplification.
         import hashlib
+        from core.network_signals import fuse_network_and_velocity
         fp_basis = "|".join(str(fingerprint.get(k, '')) for k in
                             ('user_agent', 'platform', 'has_touch'))
         fingerprint_hash = hashlib.sha256(fp_basis.encode()).hexdigest()[:16] if fp_basis.strip('|') else None
@@ -270,7 +271,11 @@ async def predict(
             asn=net.asn,
             fingerprint_hash=fingerprint_hash,
         )
-        network_score = max(net.network_score, vel.velocity_score)
+        network_score = fuse_network_and_velocity(
+            net.network_score,
+            vel.velocity_score,
+            is_datacenter_ip=net.is_datacenter_ip,
+        )
         # A tripped honeypot is decisive — push the (un-forgeable) network axis
         # to 100 so the session blocks regardless of how human the behaviour and
         # fingerprint look.

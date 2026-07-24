@@ -1,7 +1,9 @@
+import base64
 import html
 import logging
 import os
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger("veilproof.email")
@@ -13,7 +15,6 @@ DASHBOARD_URL = (os.getenv("DASHBOARD_URL") or "https://veilproof.tech/dashboard
 DOCS_URL = (os.getenv("DOCS_URL") or "https://veilproof.tech/docs").rstrip("/")
 SUPPORT_URL = (os.getenv("SUPPORT_URL") or "https://veilproof.tech/docs").rstrip("/")
 SITE_URL = (os.getenv("SITE_URL") or "https://veilproof.tech").rstrip("/")
-MARK_URL = (os.getenv("EMAIL_MARK_URL") or f"{SITE_URL}/veilproof-mark.png").strip()
 SUPPORT_EMAIL = (os.getenv("SUPPORT_EMAIL") or "support@veilproof.tech").strip()
 BRAND = "VeilProof"
 BLUE = "#3578ff"
@@ -24,6 +25,21 @@ SURFACE = "#0f1628"
 INK = "#e8edf5"
 MUTED = "#8b949e"
 YEAR = datetime.now(timezone.utc).year
+LOGO_CID = "vp-mark"
+_MARK_PATH = Path(__file__).resolve().parent / "assets" / "veilproof-mark-email.png"
+_MARK_B64: Optional[str] = None
+
+
+def _logo_b64() -> Optional[str]:
+    global _MARK_B64
+    if _MARK_B64 is not None:
+        return _MARK_B64 or None
+    try:
+        _MARK_B64 = base64.b64encode(_MARK_PATH.read_bytes()).decode("ascii")
+    except OSError:
+        logger.warning("email logo missing at %s", _MARK_PATH)
+        _MARK_B64 = ""
+    return _MARK_B64 or None
 
 
 def email_enabled() -> bool:
@@ -61,6 +77,11 @@ def _font_stack() -> str:
 
 
 def _brand_bar() -> str:
+    mark = f"""
+<a href="{_esc(SITE_URL)}" style="text-decoration:none;display:inline-block;">
+  <img src="cid:{LOGO_CID}" width="28" height="28" alt="{_esc(BRAND)}"
+    style="display:block;border:0;outline:none;width:28px;height:28px;" />
+</a>"""
     return f"""
 <tr>
   <td style="padding:0;background:{NAVY};">
@@ -69,12 +90,7 @@ def _brand_bar() -> str:
         <td style="padding:22px 28px 18px;">
           <table role="presentation" cellspacing="0" cellpadding="0">
             <tr>
-              <td valign="middle" style="padding-right:10px;">
-                <a href="{_esc(SITE_URL)}" style="text-decoration:none;">
-                  <img src="{_esc(MARK_URL)}" width="28" height="28" alt=""
-                    style="display:block;border:0;outline:none;width:28px;height:28px;" />
-                </a>
-              </td>
+              <td valign="middle" style="padding-right:10px;">{mark}</td>
               <td valign="middle">
                 <a href="{_esc(SITE_URL)}"
                   style="text-decoration:none;font-size:15px;font-weight:700;letter-spacing:.14em;
@@ -240,6 +256,16 @@ def send_email(
             payload["reply_to"] = EMAIL_REPLY_TO
         if tags:
             payload["tags"] = [{"name": "category", "value": t} for t in tags[:3]]
+        logo = _logo_b64()
+        if logo and "cid:" + LOGO_CID in html_body:
+            payload["attachments"] = [
+                {
+                    "filename": "veilproof-mark.png",
+                    "content": logo,
+                    "content_id": LOGO_CID,
+                    "content_type": "image/png",
+                }
+            ]
         resend.Emails.send(payload)
         return True
     except Exception:

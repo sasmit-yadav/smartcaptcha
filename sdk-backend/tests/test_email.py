@@ -20,8 +20,9 @@ def test_email_disabled_without_api_key():
 def test_welcome_templates_render():
     wrapped = email_mod._wrap_html("t", "<p>x</p>")
     assert "VEILPROOF" in wrapped
-    assert "veilproof-mark.png" in wrapped
+    assert f"cid:{email_mod.LOGO_CID}" in wrapped
     assert "#3578ff" in wrapped
+    assert email_mod._logo_b64()
     name = email_mod._display_name("Ada Lovelace", "ada@example.com")
     assert name == "Ada"
     assert email_mod._display_name(None, "builder@example.com") == "builder"

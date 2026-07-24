@@ -340,8 +340,148 @@ def init_db():
             )
         """)
 
+        # Session ECDSA public keys for /api/predict signing (multi-dyno safe).
+        # In-memory alone breaks under Heroku multi-dyno / rolling restart.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS signing_session_keys (
+                project_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                public_jwk JSONB NOT NULL,
+                fingerprint TEXT NOT NULL,
+                issued_at DOUBLE PRECISION NOT NULL,
+                expires_at DOUBLE PRECISION NOT NULL,
+                PRIMARY KEY (project_id, session_id)
+            )
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_signing_keys_expires
+            ON signing_session_keys (expires_at)
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS signing_spent_nonces (
+                project_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                nonce TEXT NOT NULL,
+                valid_until DOUBLE PRECISION NOT NULL,
+                PRIMARY KEY (project_id, session_id, nonce)
+            )
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_signing_nonces_valid
+            ON signing_spent_nonces (valid_until)
+        """)
+
         conn.commit()
         print("[DB] PostgreSQL initialized (telemetry schema)")
+    finally:
+        release_connection(conn)
+
+
+def upsert_signing_session_key(
+    project_id: str,
+    session_id: str,
+    public_jwk: dict,
+    fingerprint: str,
+    issued_at: float,
+    expires_at: float,
+) -> None:
+    """Persist a browser ECDSA public key so any dyno can verify signatures."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO signing_session_keys (
+                project_id, session_id, public_jwk, fingerprint, issued_at, expires_at
+            ) VALUES (%s, %s, %s::jsonb, %s, %s, %s)
+            ON CONFLICT (project_id, session_id) DO UPDATE SET
+                public_jwk = EXCLUDED.public_jwk,
+                fingerprint = EXCLUDED.fingerprint,
+                issued_at = EXCLUDED.issued_at,
+                expires_at = EXCLUDED.expires_at
+            """,
+            (
+                str(project_id),
+                session_id,
+                json.dumps(public_jwk),
+                fingerprint,
+                issued_at,
+                expires_at,
+            ),
+        )
+        conn.commit()
+    finally:
+        release_connection(conn)
+
+
+def load_signing_session_key(project_id: str, session_id: str):
+    """Return (public_jwk, fingerprint, issued_at, expires_at) or None."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT public_jwk, fingerprint, issued_at, expires_at
+            FROM signing_session_keys
+            WHERE project_id = %s AND session_id = %s
+            """,
+            (str(project_id), session_id),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        public_jwk, fingerprint, issued_at, expires_at = row
+        if isinstance(public_jwk, str):
+            public_jwk = json.loads(public_jwk)
+        return public_jwk, fingerprint, float(issued_at), float(expires_at)
+    finally:
+        release_connection(conn)
+
+
+def claim_signing_nonce(
+    project_id: str, session_id: str, nonce: str, valid_until: float
+) -> bool:
+    """Atomically mark a nonce spent. Returns False if already used (replay)."""
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        # Drop expired nonces for this session opportunistically.
+        cursor.execute(
+            """
+            DELETE FROM signing_spent_nonces
+            WHERE project_id = %s AND session_id = %s AND valid_until < %s
+            """,
+            (str(project_id), session_id, time.time()),
+        )
+        cursor.execute(
+            """
+            INSERT INTO signing_spent_nonces (
+                project_id, session_id, nonce, valid_until
+            ) VALUES (%s, %s, %s, %s)
+            ON CONFLICT DO NOTHING
+            RETURNING nonce
+            """,
+            (str(project_id), session_id, nonce, valid_until),
+        )
+        claimed = cursor.fetchone() is not None
+        conn.commit()
+        return claimed
+    finally:
+        release_connection(conn)
+
+
+def count_signing_nonces(project_id: str, session_id: str) -> int:
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT COUNT(*) FROM signing_spent_nonces
+            WHERE project_id = %s AND session_id = %s AND valid_until >= %s
+            """,
+            (str(project_id), session_id, time.time()),
+        )
+        return int(cursor.fetchone()[0])
     finally:
         release_connection(conn)
 

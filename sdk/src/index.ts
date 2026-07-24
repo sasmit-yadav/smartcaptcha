@@ -80,7 +80,7 @@ function validateConfig(config: VeilProofConfig): { valid: boolean; error?: stri
 // Check for browser environment (SSR safety)
 const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined';
 
-const SDK_VERSION = '1.1.5';
+const SDK_VERSION = '1.1.6';
 const DEFAULT_ENDPOINT = 'https://api.veilproof.tech';
 
 /** Run a collector lifecycle call without letting an internal bug crash the host page (S2.1). */
@@ -338,12 +338,21 @@ const VeilProof: VeilProofAPI = {
         const body = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-          const message = body?.detail || body?.error || `Request failed with status ${response.status}`;
+          const detail = body?.detail;
+          const message =
+            (typeof detail === 'string' && detail) ||
+            (detail && typeof detail === 'object' && (detail.message || detail.error_code)) ||
+            body?.error ||
+            `Request failed with status ${response.status}`;
+          const messageText = typeof message === 'string' ? message : JSON.stringify(message);
           if (
             response.status === 401 &&
             envelope &&
             attempt === 0 &&
-            String(message).includes('signature verification failed')
+            (messageText.includes('signature verification failed') ||
+              messageText.includes('no_session_key') ||
+              messageText.includes('no active session key') ||
+              (typeof detail === 'object' && detail?.error_code === 'no_session_key'))
           ) {
             await sendPrediction(1);
             return;
@@ -351,8 +360,8 @@ const VeilProof: VeilProofAPI = {
           // Non-2xx: body is an error shape (e.g. FastAPI's {detail: "..."}),
           // not a DecisionResult — never pass it through as-is (previously
           // caused a downstream crash when callers read result.action).
-          if (debug) console.warn('[VeilProof] Prediction request failed:', message);
-          callback({ error: message, action: 'block', risk_score: 100, behavior_score: 100, fingerprint_score: 100, confidence: 0 });
+          if (debug) console.warn('[VeilProof] Prediction request failed:', messageText);
+          callback({ error: messageText, action: 'block', risk_score: 100, behavior_score: 100, fingerprint_score: 100, confidence: 0 });
           return;
         }
 

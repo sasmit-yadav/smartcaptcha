@@ -62,6 +62,24 @@ _MAX_NONCES_PER_SESSION = int(os.getenv("REQUEST_SIGNING_MAX_NONCES_PER_SESSION"
 # Soft-mode readiness gate for ops dashboards (not auto-flipped).
 UNSIGNED_SHARE_STRICT_READY = float(os.getenv("REQUEST_SIGNING_UNSIGNED_READY", "0.01"))
 MIN_SAMPLES_STRICT_READY = int(os.getenv("REQUEST_SIGNING_MIN_SAMPLES_READY", "50"))
+# Persist keys/nonces to Postgres so strict signing survives multi-dyno.
+# memory = unit tests / emergency; auto = postgres outside pytest.
+_STORE_MODE = (os.getenv("REQUEST_SIGNING_STORE") or "auto").strip().lower()
+
+
+def _persist_enabled() -> bool:
+    if _STORE_MODE in ("memory", "off", "0"):
+        return False
+    if _STORE_MODE == "postgres":
+        return True
+    # auto
+    return "PYTEST_CURRENT_TEST" not in os.environ
+
+
+def _db():
+    """Lazy import so unit tests can run without a live DB pool."""
+    from core import database
+    return database
 
 _lock = threading.Lock()
 # In insertion order so the oldest state can be evicted when the hard bound
@@ -174,16 +192,42 @@ def register_session_key(project_id: str, session_id: str, public_jwk: dict) -> 
     state_key = (str(project_id), session_id)
     public_key, fingerprint = _public_key_from_jwk(public_jwk)
     now = time.time()
+    expires_at = now + SESSION_KEY_TTL_SECONDS
+
+    # Cross-dyno conflict check against Postgres when enabled.
+    if _persist_enabled():
+        try:
+            existing_row = _db().load_signing_session_key(str(project_id), session_id)
+            if existing_row is not None:
+                _jwk, existing_fp, issued_at, row_expires = existing_row
+                if existing_fp == fingerprint:
+                    _db().upsert_signing_session_key(
+                        str(project_id), session_id, public_jwk, fingerprint, now, expires_at
+                    )
+                elif now <= row_expires:
+                    raise RegistrationError("a different key is already registered for this session")
+                else:
+                    _db().upsert_signing_session_key(
+                        str(project_id), session_id, public_jwk, fingerprint, now, expires_at
+                    )
+            else:
+                _db().upsert_signing_session_key(
+                    str(project_id), session_id, public_jwk, fingerprint, now, expires_at
+                )
+        except RegistrationError:
+            raise
+        except Exception:
+            # Fall through to in-memory — never fail registration because of
+            # a transient DB blip if the local dyno can still serve traffic.
+            pass
+
     with _lock:
         existing = _sessions.get(state_key)
         if existing is not None:
             if existing.fingerprint == fingerprint:
-                # Renewal keeps still-live nonce history, so a request accepted
-                # just before key expiry cannot become replayable after the
-                # same browser refreshes its registration.
                 existing.issued_at = now
                 _sessions.move_to_end(state_key)
-                return int((now + SESSION_KEY_TTL_SECONDS) * 1000)
+                return int(expires_at * 1000)
             if now - existing.issued_at <= SESSION_KEY_TTL_SECONDS:
                 raise RegistrationError("a different key is already registered for this session")
             _sessions.pop(state_key, None)
@@ -197,7 +241,48 @@ def register_session_key(project_id: str, session_id: str, public_jwk: dict) -> 
             issued_at=now,
             spent_nonces=OrderedDict(),
         )
-        return int((now + SESSION_KEY_TTL_SECONDS) * 1000)
+        return int(expires_at * 1000)
+
+
+def _load_session_state(project_id: str, session_id: str, now: float):
+    """Return (state, expired_flag). state is None when missing or expired."""
+    state_key = (str(project_id), session_id)
+    with _lock:
+        state = _sessions.get(state_key)
+        if state is not None:
+            if now - state.issued_at > SESSION_KEY_TTL_SECONDS:
+                return None, True
+            return state, False
+
+    if not _persist_enabled():
+        return None, False
+    try:
+        row = _db().load_signing_session_key(str(project_id), session_id)
+    except Exception:
+        return None, False
+    if row is None:
+        return None, False
+    public_jwk, fingerprint, issued_at, expires_at = row
+    if now > expires_at:
+        return None, True
+    try:
+        public_key, fp = _public_key_from_jwk(public_jwk)
+    except RegistrationError:
+        return None, False
+    if fp != fingerprint:
+        return None, False
+    state = SessionKeyState(
+        public_key=public_key,
+        fingerprint=fingerprint,
+        issued_at=issued_at,
+        spent_nonces=OrderedDict(),
+    )
+    with _lock:
+        _sessions[state_key] = state
+        _sessions.move_to_end(state_key)
+        while len(_sessions) >= _MAX_SESSIONS:
+            _sessions.popitem(last=False)
+    return state, False
 
 
 def _header_presence(timestamp_header, nonce, signature_hex) -> tuple[int, bool]:
@@ -255,19 +340,53 @@ def verify_signature(project_id: Optional[str], session_id: Optional[str],
     if abs(now - timestamp_ms / 1000.0) > MAX_CLOCK_SKEW_SECONDS:
         return _fail("timestamp outside allowed window", ERROR_TIMESTAMP_SKEW)
 
-    with _lock:
-        state = _sessions.get(state_key)
-        if state is None:
-            return _fail(
-                "no active session key (register the public key first)",
-                ERROR_NO_SESSION_KEY,
-            )
-        if now - state.issued_at > SESSION_KEY_TTL_SECONDS:
+    state, expired = _load_session_state(str(project_id), session_id, now)
+    if state is None:
+        if expired:
             return _fail("session key expired", ERROR_KEY_EXPIRED)
+        return _fail(
+            "no active session key (register the public key first)",
+            ERROR_NO_SESSION_KEY,
+        )
 
+    valid_until = timestamp_ms / 1000.0 + MAX_CLOCK_SKEW_SECONDS
+
+    # Verify cryptography BEFORE consuming the nonce so a bad signature
+    # cannot burn a fresh nonce (Stripe-style: authenticate then record).
+    try:
+        raw_signature = bytes.fromhex(signature_hex)
+        if len(raw_signature) != 64:
+            raise ValueError
+        r = int.from_bytes(raw_signature[:32], "big")
+        s = int.from_bytes(raw_signature[32:], "big")
+        der_signature = encode_dss_signature(r, s)
+        message = f"{session_id}.{timestamp_ms}.{nonce}.".encode() + raw_body
+        state.public_key.verify(
+            der_signature,
+            message,
+            ec.ECDSA(hashes.SHA256()),
+        )
+    except (InvalidSignature, TypeError, ValueError):
+        return _fail("signature mismatch", ERROR_SIGNATURE_MISMATCH)
+
+    # Multi-dyno: claim nonce in Postgres (atomic). Memory is a cache.
+    if _persist_enabled():
+        try:
+            if _db().count_signing_nonces(str(project_id), session_id) >= _MAX_NONCES_PER_SESSION:
+                return _fail(
+                    "too many signed requests in freshness window",
+                    ERROR_NONCE_FLOOD,
+                )
+            if not _db().claim_signing_nonce(str(project_id), session_id, nonce, valid_until):
+                return _fail("nonce already used (replay)", ERROR_NONCE_REPLAY)
+        except Exception:
+            # Fall back to in-memory nonce tracking on DB errors.
+            pass
+
+    with _lock:
         expired_nonces = [
-            spent_nonce for spent_nonce, valid_until in state.spent_nonces.items()
-            if valid_until < now
+            spent_nonce for spent_nonce, until in state.spent_nonces.items()
+            if until < now
         ]
         for spent_nonce in expired_nonces:
             state.spent_nonces.pop(spent_nonce, None)
@@ -278,26 +397,8 @@ def verify_signature(project_id: Optional[str], session_id: Optional[str],
                 "too many signed requests in freshness window",
                 ERROR_NONCE_FLOOD,
             )
-
-        try:
-            raw_signature = bytes.fromhex(signature_hex)
-            if len(raw_signature) != 64:
-                raise ValueError
-            r = int.from_bytes(raw_signature[:32], "big")
-            s = int.from_bytes(raw_signature[32:], "big")
-            der_signature = encode_dss_signature(r, s)
-            message = f"{session_id}.{timestamp_ms}.{nonce}.".encode() + raw_body
-            state.public_key.verify(
-                der_signature,
-                message,
-                ec.ECDSA(hashes.SHA256()),
-            )
-        except (InvalidSignature, TypeError, ValueError):
-            return _fail("signature mismatch", ERROR_SIGNATURE_MISMATCH)
-
-        state.spent_nonces[nonce] = (
-            timestamp_ms / 1000.0 + MAX_CLOCK_SKEW_SECONDS
-        )
+        state.spent_nonces[nonce] = valid_until
+        _sessions[state_key] = state
 
     return SignatureResult(ok=True)
 

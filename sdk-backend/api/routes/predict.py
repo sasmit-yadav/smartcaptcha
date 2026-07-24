@@ -229,12 +229,14 @@ async def predict(
         honeypot_triggered = bool(body.get('honeypot_triggered', False))
 
         # Extract features and fingerprint data
-        features = {k: v for k, v in body.items() if k not in ['webdriver_flag', 'user_agent', 'has_touch', 'platform', 'sdkVersion', 'sessionId', 'honeypot_triggered']}
+        features = {k: v for k, v in body.items() if k not in ['webdriver_flag', 'user_agent', 'has_touch', 'platform', 'sdkVersion', 'sessionId', 'honeypot_triggered', 'automation_score', 'automation_signals']}
         fingerprint = {
             'webdriver_flag': body.get('webdriver_flag', False),
             'user_agent': body.get('user_agent', ''),
             'has_touch': body.get('has_touch', False),
-            'platform': body.get('platform', '')
+            'platform': body.get('platform', ''),
+            'automation_score': float(body.get('automation_score', 0) or 0),
+            'automation_signals': body.get('automation_signals') or [],
         }
 
         # Network-layer signals (strategy step 2): IP/ASN reputation +

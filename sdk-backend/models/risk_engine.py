@@ -74,16 +74,26 @@ class RiskEngine:
                                      webdriver_flag: bool,
                                      user_agent: str,
                                      has_touch: bool,
-                                     platform: str) -> float:
+                                     platform: str,
+                                     automation_score: float = 0.0) -> float:
         """
         Rule-based risk score (0-100) from browser/device signals.
         Not model-derived — a fixed set of known automation tells.
+
+        `automation_score` comes from client-side stealth probes (spoofed
+        navigator.webdriver getter, Playwright globals, CDP Runtime.enable
+        leak). Real Chrome never needs these probes to fire; a stealth kit
+        that hides webdriver almost always trips at least one.
         """
         risk_score = 0.0
 
         # WebDriver flag is the strongest indicator - decisive on its own.
         if webdriver_flag:
             risk_score += 100.0
+
+        # Client stealth probes — treat high scores as decisive.
+        if automation_score >= 50:
+            risk_score = max(risk_score, min(100.0, float(automation_score)))
 
         # Known automation tools in the user agent.
         suspicious_ua_patterns = ('selenium', 'webdriver', 'headless', 'phantom', 'chromeless', 'automation')
@@ -156,7 +166,8 @@ class RiskEngine:
                           anomaly_score_zero: Optional[float] = None,
                           anomaly_score_block: Optional[float] = None,
                           network_score: float = 0.0,
-                          duplicate_score: float = 0.0) -> Dict:
+                          duplicate_score: float = 0.0,
+                          automation_score: float = 0.0) -> Dict:
         """Full risk evaluation for a session: component scores + final decision.
 
         `network_score` (0-100) comes from core/network_signals.evaluate_network
@@ -168,14 +179,23 @@ class RiskEngine:
         behavioral feature vector reuse across sessions on the same project
         (strategy doc Part D.2). Defaults to 0 so callers without it behave
         exactly as before.
+
+        `automation_score` (0-100) comes from client stealth probes in the
+        SDK (spoofed webdriver getter, Playwright/Selenium globals, CDP).
         """
         behavior_score = self.calculate_behavior_score(ml_probability, decision_threshold)
         fingerprint_score = self.calculate_fingerprint_score(
-            webdriver_flag, user_agent, has_touch, platform
+            webdriver_flag, user_agent, has_touch, platform, automation_score
         )
         anomaly_score = self.calculate_anomaly_score(
             raw_anomaly_score, anomaly_score_zero, anomaly_score_block
         )
+        # Stealth gap fix: when fingerprint is clean, amplify the anomaly
+        # axis so IsolationForest can still block novel bot styles the
+        # supervised model was never trained on (Playwright Bezier bots).
+        if fingerprint_score < 10 and anomaly_score > 0:
+            anomaly_score = min(100.0, anomaly_score * 1.75)
+
         risk_scores = self.calculate_overall_risk(
             behavior_score, fingerprint_score, anomaly_score, network_score, duplicate_score
         )

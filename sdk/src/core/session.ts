@@ -4,6 +4,7 @@
  */
 
 import type { SessionMeta } from '../types.js';
+import { detectAutomation } from './automation.js';
 
 const SESSION_KEY = 'sc_session_id';
 const START_KEY = 'sc_session_start';
@@ -11,6 +12,7 @@ const SOURCE_KEY = 'sc_session_source';
 
 let sessionId: string | null = null;
 let startTime: number | null = null;
+let automationCache: ReturnType<typeof detectAutomation> | null = null;
 
 export function initSession(source: 'demo' | 'client' | 'script-tag' = 'demo'): void {
   sessionId = sessionStorage.getItem(SESSION_KEY);
@@ -35,14 +37,17 @@ export function getSessionId(): string {
 
 export function getSessionMeta(): SessionMeta {
   const ua = navigator.userAgent;
-  
-  // V2: Detect webdriver flag (Selenium killer)
-  const webdriverFlag = navigator.webdriver || false;
-  
+
+  // Stealth kits redefine navigator.webdriver to undefined. detectAutomation()
+  // catches that spoof plus Playwright/Selenium globals and CDP leaks.
+  if (!automationCache) automationCache = detectAutomation();
+  const webdriverFlag =
+    Boolean(navigator.webdriver) || automationCache.webdriverFlag;
+
   // Get source from sessionStorage or use default
   const sourceStr = sessionStorage.getItem(SOURCE_KEY);
   const source = (sourceStr === 'client' || sourceStr === 'demo' || sourceStr === 'script-tag') ? sourceStr : 'demo';
-  
+
   return {
     sessionId: getSessionId(),
     startTime: startTime || Date.now(),
@@ -51,6 +56,8 @@ export function getSessionMeta(): SessionMeta {
     webdriverFlag,
     hasTouch: 'ontouchstart' in window,
     source,
+    automationScore: automationCache.automationScore,
+    automationSignals: automationCache.signals,
   };
 }
 

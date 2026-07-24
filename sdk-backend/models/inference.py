@@ -187,7 +187,7 @@ class BotDetector:
         return pd.DataFrame([prepared], columns=self.feature_columns).fillna(0)
 
     def _rule_risk_boost(self, features: Dict[str, Any]) -> float:
-        """Small deterministic guardrail for obvious automation signatures."""
+        """Deterministic guardrail for obvious / stealth automation signatures."""
         boost = 0.0
         event_count = float(features.get("event_count", 0) or 0)
         duration = float(features.get("session_duration", 0) or 0)
@@ -197,6 +197,11 @@ class BotDetector:
         path_efficiency = float(features.get("mouse_path_efficiency", 0) or 0)
         std_iki = float(features.get("std_iki", 0) or 0)
         click_std = float(features.get("click_interval_std", 0) or 0)
+        tremor = float(features.get("mouse_tremor_band_ratio", -1) or -1)
+        powerlaw_r2 = float(features.get("mouse_powerlaw_r2", 0) or 0)
+        movement_entropy = float(features.get("movement_entropy", 0) or 0)
+        jerk_std = float(features.get("mouse_jerk_std", 0) or 0)
+        curvature_std = float(features.get("mouse_curvature_std", 0) or 0)
 
         if duration and event_count / duration > 35:
             boost += 0.10
@@ -210,7 +215,25 @@ class BotDetector:
             boost += 0.10
         if path_efficiency > 0.98 and event_count >= 10:
             boost += 0.08
-        return min(boost, 0.35)
+
+        # Stealth Bezier / ghost-cursor fingerprints (webdriver may be hidden).
+        # Too-perfect power-law fit with long paths is rare in real hands.
+        if powerlaw_r2 > 0.97 and event_count >= 40 and path_efficiency > 0.85:
+            boost += 0.18
+        # Valid tremor sample rate but near-zero physiological tremor band.
+        if 0.0 <= tremor < 0.02 and event_count >= 40:
+            boost += 0.15
+        # Extremely low path entropy with lots of mouse events → scripted curve.
+        if movement_entropy > 0 and movement_entropy < 0.35 and event_count >= 80:
+            boost += 0.12
+        # Synthetic high-frequency jitter without human tremor spectrum.
+        if jerk_std > 200_000 and 0.0 <= tremor < 0.05 and event_count >= 40:
+            boost += 0.20
+        # Near-constant curvature segments (Bezier control-point regularity).
+        if 0 < curvature_std < 0.15 and event_count >= 60 and path_efficiency > 0.7:
+            boost += 0.10
+
+        return min(boost, 0.55)
 
     def predict_session(self, features: Dict[str, Any],
                        fingerprint_data: Optional[Dict[str, Any]] = None,
@@ -273,6 +296,7 @@ class BotDetector:
             anomaly_score_block=self.anomaly_score_block,
             network_score=network_score,
             duplicate_score=replay_result.duplicate_score,
+            automation_score=float(fingerprint_data.get('automation_score', 0) or 0),
         )
 
         overall_risk = risk_result['overall_risk']

@@ -18,6 +18,9 @@ export interface SessionMeta {
   webdriverFlag?: boolean;
   hasTouch?: boolean;
   source?: 'demo' | 'client' | 'script-tag'; // Source of the session
+  /** 0-100 from stealth-driver probes (Playwright spoof, CDP, globals). */
+  automationScore?: number;
+  automationSignals?: string[];
 }
 
 export interface TelemetryEvent {

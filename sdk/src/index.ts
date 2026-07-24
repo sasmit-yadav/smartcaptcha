@@ -80,7 +80,7 @@ function validateConfig(config: VeilProofConfig): { valid: boolean; error?: stri
 // Check for browser environment (SSR safety)
 const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined';
 
-const SDK_VERSION = '1.1.3';
+const SDK_VERSION = '1.1.4';
 const DEFAULT_ENDPOINT = 'https://api.veilproof.tech';
 
 /** Run a collector lifecycle call without letting an internal bug crash the host page (S2.1). */
@@ -275,7 +275,9 @@ const VeilProof: VeilProofAPI = {
         webdriver_flag: sessionMeta.webdriverFlag || false,
         user_agent: sessionMeta.userAgent || '',
         has_touch: sessionMeta.hasTouch || false,
-        platform: sessionMeta.platform || 'unknown'
+        platform: sessionMeta.platform || 'unknown',
+        automation_score: sessionMeta.automationScore || 0,
+        automation_signals: sessionMeta.automationSignals || [],
       };
 
       const requestBody = {

@@ -6,10 +6,12 @@
  * httpProtocol to Workers. Forwarding them lets sdk-backend/network_signals
  * score hosting ASNs without MaxMind or Enterprise.
  *
- * Deploy (Cloudflare dashboard → Workers → create):
- *   1. Paste this script.
- *   2. Add route: api.veilproof.tech/*  (or your API hostname)
- *   3. Ensure the zone is proxied (orange cloud).
+ * Production (2026-07-24):
+ *   Worker: wispy-term-8f37
+ *   Route:  api.veilproof.tech/*
+ *   Proof:  response header X-VP-Worker (ops only; not scored)
+ *
+ * Deploy: see tools/cloudflare/README.md
  *
  * Headers consumed by sdk-backend/core/network_signals.py:
  *   X-VP-CF-ASN, X-VP-CF-AS-Org, X-VP-CF-TLS-Version, X-VP-CF-HTTP-Protocol
@@ -34,6 +36,10 @@ export default {
       headers.set("X-VP-CF-Verified-Bot", String(cf.botManagement.verifiedBot));
     }
 
-    return fetch(new Request(request, { headers }));
+    const res = await fetch(new Request(request, { headers }));
+    const out = new Response(res.body, res);
+    // Ops proof that this Worker ran on the request path.
+    out.headers.set("X-VP-Worker", "wispy-term-8f37");
+    return out;
   },
 };

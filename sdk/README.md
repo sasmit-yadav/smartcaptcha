@@ -7,7 +7,7 @@ Behavioral telemetry SDK for invisible bot detection and fraud prevention.
 ### Script tag — zero JS (any HTML site: WordPress, Django templates, Rails views, ...)
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/veilproof@1.1.2/dist/veilproof.min.js"
+<script src="https://cdn.jsdelivr.net/npm/veilproof@1.1.3/dist/veilproof.min.js"
         data-site-key="vp_site_..."
         async defer></script>
 ```

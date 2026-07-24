@@ -1,9 +1,7 @@
-import base64
 import html
 import logging
 import os
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger("veilproof.email")
@@ -15,7 +13,6 @@ DASHBOARD_URL = (os.getenv("DASHBOARD_URL") or "https://veilproof.tech/dashboard
 DOCS_URL = (os.getenv("DOCS_URL") or "https://veilproof.tech/docs").rstrip("/")
 SUPPORT_URL = (os.getenv("SUPPORT_URL") or "https://veilproof.tech/docs").rstrip("/")
 SITE_URL = (os.getenv("SITE_URL") or "https://veilproof.tech").rstrip("/")
-SUPPORT_EMAIL = (os.getenv("SUPPORT_EMAIL") or "support@veilproof.tech").strip()
 BRAND = "VeilProof"
 BLUE = "#3578ff"
 BLUE_SOFT = "#5f91ff"
@@ -25,21 +22,6 @@ SURFACE = "#0f1628"
 INK = "#e8edf5"
 MUTED = "#8b949e"
 YEAR = datetime.now(timezone.utc).year
-LOGO_CID = "vp-mark"
-_MARK_PATH = Path(__file__).resolve().parent / "assets" / "veilproof-mark-email.png"
-_MARK_B64: Optional[str] = None
-
-
-def _logo_b64() -> Optional[str]:
-    global _MARK_B64
-    if _MARK_B64 is not None:
-        return _MARK_B64 or None
-    try:
-        _MARK_B64 = base64.b64encode(_MARK_PATH.read_bytes()).decode("ascii")
-    except OSError:
-        logger.warning("email logo missing at %s", _MARK_PATH)
-        _MARK_B64 = ""
-    return _MARK_B64 or None
 
 
 def email_enabled() -> bool:
@@ -77,29 +59,17 @@ def _font_stack() -> str:
 
 
 def _brand_bar() -> str:
-    mark = f"""
-<a href="{_esc(SITE_URL)}" style="text-decoration:none;display:inline-block;">
-  <img src="cid:{LOGO_CID}" width="28" height="28" alt="{_esc(BRAND)}"
-    style="display:block;border:0;outline:none;width:28px;height:28px;" />
-</a>"""
     return f"""
 <tr>
   <td style="padding:0;background:{NAVY};">
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
       <tr>
         <td style="padding:22px 28px 18px;">
-          <table role="presentation" cellspacing="0" cellpadding="0">
-            <tr>
-              <td valign="middle" style="padding-right:10px;">{mark}</td>
-              <td valign="middle">
-                <a href="{_esc(SITE_URL)}"
-                  style="text-decoration:none;font-size:15px;font-weight:700;letter-spacing:.14em;
-                  color:#f5f7fb;font-family:{_font_stack()};">
-                  VEILPROOF
-                </a>
-              </td>
-            </tr>
-          </table>
+          <a href="{_esc(SITE_URL)}"
+            style="text-decoration:none;font-size:15px;font-weight:700;letter-spacing:.14em;
+            color:#f5f7fb;font-family:{_font_stack()};">
+            VEILPROOF
+          </a>
         </td>
       </tr>
       <tr>
@@ -111,18 +81,9 @@ def _brand_bar() -> str:
 
 
 def _email_footer() -> str:
-    support_line = (
-        f'Reply to this email or write <a href="mailto:{_esc(SUPPORT_EMAIL)}" '
-        f'style="color:{BLUE_SOFT};text-decoration:none;">{_esc(SUPPORT_EMAIL)}</a>'
-        if SUPPORT_EMAIL
-        else f'<a href="{_esc(SUPPORT_URL)}" style="color:{BLUE_SOFT};text-decoration:none;">Help center</a>'
-    )
     return f"""
 <tr>
   <td style="padding:24px 28px 28px;background:{NAVY};">
-    <p style="margin:0 0 10px;font-size:12px;line-height:1.55;color:{MUTED};">
-      {support_line}
-    </p>
     <p style="margin:0;font-size:11px;line-height:1.5;color:#667083;">
       © {YEAR} {_esc(BRAND)} ·
       <a href="{_esc(DASHBOARD_URL)}" style="color:#667083;text-decoration:none;">Dashboard</a>
@@ -256,16 +217,6 @@ def send_email(
             payload["reply_to"] = EMAIL_REPLY_TO
         if tags:
             payload["tags"] = [{"name": "category", "value": t} for t in tags[:3]]
-        logo = _logo_b64()
-        if logo and "cid:" + LOGO_CID in html_body:
-            payload["attachments"] = [
-                {
-                    "filename": "veilproof-mark.png",
-                    "content": logo,
-                    "content_id": LOGO_CID,
-                    "content_type": "image/png",
-                }
-            ]
         resend.Emails.send(payload)
         return True
     except Exception:
@@ -345,8 +296,6 @@ First steps
 Dashboard: {DASHBOARD_URL}
 Docs: {DOCS_URL}
 
-Questions: {SUPPORT_EMAIL}
-
 © {YEAR} {BRAND}
 """
     return send_email(
@@ -389,8 +338,8 @@ def send_password_changed_email(
 {_meta_block(when, ip, user_agent)}
 {_cta("Review account", DASHBOARD_URL)}
 <p style="margin:16px 0 0;font-size:13px;color:{MUTED};">
-  If this wasn’t you, secure the account and contact
-  <a href="mailto:{_esc(SUPPORT_EMAIL)}" style="color:{BLUE_SOFT};">{_esc(SUPPORT_EMAIL)}</a>.
+  If this wasn’t you, secure the account from the dashboard and review
+  <a href="{_esc(SUPPORT_URL)}" style="color:{BLUE_SOFT};">docs</a>.
 </p>
 """,
     )
@@ -406,7 +355,7 @@ IP: {ip or "unknown"}
 Device: {(user_agent or "unknown")[:160]}
 
 Dashboard: {DASHBOARD_URL}
-Support: {SUPPORT_EMAIL}
+Docs: {SUPPORT_URL}
 
 © {YEAR} {BRAND}
 """
@@ -448,8 +397,8 @@ def send_api_key_created_email(
 {_meta_block(when, ip, user_agent)}
 {_cta("Open dashboard", DASHBOARD_URL)}
 <p style="margin:16px 0 0;font-size:13px;color:{MUTED};">
-  If this wasn’t you, revoke the keys and contact
-  <a href="mailto:{_esc(SUPPORT_EMAIL)}" style="color:{BLUE_SOFT};">{_esc(SUPPORT_EMAIL)}</a>.
+  If this wasn’t you, revoke the keys in the dashboard and review
+  <a href="{_esc(SUPPORT_URL)}" style="color:{BLUE_SOFT};">docs</a>.
 </p>
 """,
     )
@@ -465,7 +414,7 @@ IP: {ip or "unknown"}
 Device: {(user_agent or "unknown")[:160]}
 
 Dashboard: {DASHBOARD_URL}
-Support: {SUPPORT_EMAIL}
+Docs: {SUPPORT_URL}
 
 © {YEAR} {BRAND}
 """

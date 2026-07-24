@@ -669,6 +669,9 @@ def send_project_created_email(
         caution="If this wasn’t you, review your account in the dashboard and",
         security_context=False,
     )
+
+
+def send_password_reset_email(
     to: str,
     *,
     reset_url: str,

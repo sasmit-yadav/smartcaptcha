@@ -13,12 +13,16 @@ DASHBOARD_URL = (os.getenv("DASHBOARD_URL") or "https://veilproof.tech/dashboard
 DOCS_URL = (os.getenv("DOCS_URL") or "https://veilproof.tech/docs").rstrip("/")
 SUPPORT_URL = (os.getenv("SUPPORT_URL") or "https://veilproof.tech/docs").rstrip("/")
 SITE_URL = (os.getenv("SITE_URL") or "https://veilproof.tech").rstrip("/")
-LOGO_URL = (os.getenv("EMAIL_LOGO_URL") or f"{SITE_URL}/veilproof-logo.png").strip()
+MARK_URL = (os.getenv("EMAIL_MARK_URL") or f"{SITE_URL}/veilproof-mark.png").strip()
 SUPPORT_EMAIL = (os.getenv("SUPPORT_EMAIL") or "support@veilproof.tech").strip()
 BRAND = "VeilProof"
-ACCENT = "#f6821f"
-INK = "#0a0c12"
-MUTED = "#6b7280"
+BLUE = "#3578ff"
+BLUE_SOFT = "#5f91ff"
+NAVY = "#070c17"
+NAVY_2 = "#0c1322"
+SURFACE = "#0f1628"
+INK = "#e8edf5"
+MUTED = "#8b949e"
 YEAR = datetime.now(timezone.utc).year
 
 
@@ -56,45 +60,59 @@ def _font_stack() -> str:
     )
 
 
-def _logo_header() -> str:
+def _brand_bar() -> str:
     return f"""
 <tr>
-  <td align="center" style="padding:28px 28px 20px;background:#ffffff;">
-    <a href="{_esc(SITE_URL)}" style="text-decoration:none;">
-      <img src="{_esc(LOGO_URL)}" alt="{_esc(BRAND)}" width="148" height="auto"
-        style="display:block;border:0;outline:none;height:auto;max-width:148px;" />
-    </a>
-  </td>
-</tr>
-<tr>
-  <td style="padding:0 28px;">
-    <div style="height:1px;background:#eceef2;line-height:1px;font-size:1px;">&nbsp;</div>
+  <td style="padding:0;background:{NAVY};">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+      <tr>
+        <td style="padding:22px 28px 18px;">
+          <table role="presentation" cellspacing="0" cellpadding="0">
+            <tr>
+              <td valign="middle" style="padding-right:10px;">
+                <a href="{_esc(SITE_URL)}" style="text-decoration:none;">
+                  <img src="{_esc(MARK_URL)}" width="28" height="28" alt=""
+                    style="display:block;border:0;outline:none;width:28px;height:28px;" />
+                </a>
+              </td>
+              <td valign="middle">
+                <a href="{_esc(SITE_URL)}"
+                  style="text-decoration:none;font-size:15px;font-weight:700;letter-spacing:.14em;
+                  color:#f5f7fb;font-family:{_font_stack()};">
+                  VEILPROOF
+                </a>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:0;height:3px;line-height:3px;font-size:0;background:{BLUE};">&nbsp;</td>
+      </tr>
+    </table>
   </td>
 </tr>"""
 
 
 def _email_footer() -> str:
-    reply_hint = (
-        f'Questions? Just reply to this email or reach us at '
-        f'<a href="mailto:{_esc(SUPPORT_EMAIL)}" style="color:#111827;text-decoration:underline;">'
-        f"{_esc(SUPPORT_EMAIL)}</a> — we’re happy to help."
+    support_line = (
+        f'Reply to this email or write <a href="mailto:{_esc(SUPPORT_EMAIL)}" '
+        f'style="color:{BLUE_SOFT};text-decoration:none;">{_esc(SUPPORT_EMAIL)}</a>'
         if SUPPORT_EMAIL
-        else f'Questions? Visit <a href="{_esc(SUPPORT_URL)}" style="color:#111827;text-decoration:underline;">Help</a>.'
+        else f'<a href="{_esc(SUPPORT_URL)}" style="color:{BLUE_SOFT};text-decoration:none;">Help center</a>'
     )
     return f"""
 <tr>
-  <td style="padding:0 28px;">
-    <div style="height:1px;background:#eceef2;line-height:1px;font-size:1px;">&nbsp;</div>
-  </td>
-</tr>
-<tr>
-  <td style="padding:22px 28px 8px;font-size:13px;line-height:1.55;color:#4b5563;text-align:center;">
-    {reply_hint}
-  </td>
-</tr>
-<tr>
-  <td style="padding:0 28px 28px;font-size:12px;line-height:1.5;color:#9ca3af;text-align:center;">
-    © {YEAR} {_esc(BRAND)}
+  <td style="padding:24px 28px 28px;background:{NAVY};">
+    <p style="margin:0 0 10px;font-size:12px;line-height:1.55;color:{MUTED};">
+      {support_line}
+    </p>
+    <p style="margin:0;font-size:11px;line-height:1.5;color:#667083;">
+      © {YEAR} {_esc(BRAND)} ·
+      <a href="{_esc(DASHBOARD_URL)}" style="color:#667083;text-decoration:none;">Dashboard</a>
+      ·
+      <a href="{_esc(DOCS_URL)}" style="color:#667083;text-decoration:none;">Docs</a>
+    </p>
   </td>
 </tr>"""
 
@@ -105,20 +123,17 @@ def _shell(title: str, inner_rows: str) -> str:
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="color-scheme" content="light" />
-  <meta name="supported-color-schemes" content="light" />
+  <meta name="color-scheme" content="dark" />
   <title>{_esc(title)}</title>
 </head>
-<body style="margin:0;padding:0;background:#f3f4f6;font-family:{_font_stack()};color:#111827;">
-  <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">
-    {_esc(title)}
-  </div>
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f3f4f6;padding:28px 12px;">
+<body style="margin:0;padding:0;background:#050812;font-family:{_font_stack()};color:{INK};">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;">{_esc(title)}</div>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#050812;padding:32px 12px;">
     <tr>
       <td align="center">
         <table role="presentation" width="100%" cellspacing="0" cellpadding="0"
-          style="max-width:560px;background:#ffffff;border-radius:4px;overflow:hidden;">
-          {_logo_header()}
+          style="max-width:560px;background:{NAVY_2};border:1px solid #1a2236;border-radius:12px;overflow:hidden;">
+          {_brand_bar()}
           {inner_rows}
           {_email_footer()}
         </table>
@@ -129,14 +144,14 @@ def _shell(title: str, inner_rows: str) -> str:
 </html>"""
 
 
-def _pill_cta(label: str, url: str) -> str:
+def _cta(label: str, url: str) -> str:
     return f"""
-<table role="presentation" cellspacing="0" cellpadding="0" style="margin:28px auto 10px;">
+<table role="presentation" cellspacing="0" cellpadding="0" style="margin:8px 0 4px;">
   <tr>
-    <td align="center" bgcolor="{INK}" style="border-radius:999px;background:{INK};">
+    <td bgcolor="{BLUE}" style="border-radius:8px;background:{BLUE};">
       <a href="{_esc(url)}"
-        style="display:inline-block;padding:14px 28px;font-size:15px;font-weight:700;line-height:1.2;
-        color:#ffffff;text-decoration:none;border-radius:999px;background:{INK};">
+        style="display:inline-block;padding:12px 20px;font-size:14px;font-weight:650;line-height:1.2;
+        color:#ffffff;text-decoration:none;border-radius:8px;background:{BLUE};">
         {_esc(label)}
       </a>
     </td>
@@ -144,37 +159,42 @@ def _pill_cta(label: str, url: str) -> str:
 </table>"""
 
 
-def _feature_row(title: str, body: str) -> str:
+def _step(num: str, title: str, body: str) -> str:
     return f"""
 <tr>
-  <td valign="top" width="40" style="padding:0 14px 22px 0;">
-    <div style="width:28px;height:28px;border-radius:999px;background:#fff4e8;text-align:center;line-height:28px;">
-      <span style="color:{ACCENT};font-size:15px;font-weight:700;">✓</span>
+  <td valign="top" width="36" style="padding:0 12px 18px 0;">
+    <div style="width:28px;height:28px;border-radius:6px;background:{SURFACE};border:1px solid #243049;
+      text-align:center;line-height:28px;font-size:12px;font-weight:700;color:{BLUE_SOFT};">
+      {_esc(num)}
     </div>
   </td>
-  <td valign="top" style="padding:0 0 22px 0;">
-    <div style="font-size:16px;font-weight:700;color:#111827;margin:0 0 4px;">{_esc(title)}</div>
-    <div style="font-size:14px;line-height:1.55;color:#4b5563;">{_esc(body)}</div>
+  <td valign="top" style="padding:0 0 18px 0;">
+    <div style="font-size:14px;font-weight:650;color:{INK};margin:0 0 4px;">{_esc(title)}</div>
+    <div style="font-size:13px;line-height:1.55;color:{MUTED};">{_esc(body)}</div>
   </td>
 </tr>"""
 
 
 def _meta_block(when: str, ip: Optional[str], user_agent: Optional[str]) -> str:
-    rows = [f"<tr><td style='padding:4px 0;color:{MUTED};'>When</td><td style='padding:4px 0;'>{_esc(when)}</td></tr>"]
+    rows = [
+        f"<tr><td style='padding:5px 0;color:{MUTED};width:96px;'>When</td>"
+        f"<td style='padding:5px 0;color:{INK};'>{_esc(when)}</td></tr>"
+    ]
     if ip:
         rows.append(
-            f"<tr><td style='padding:4px 0;color:{MUTED};'>IP address</td><td style='padding:4px 0;'>{_esc(ip)}</td></tr>"
+            f"<tr><td style='padding:5px 0;color:{MUTED};'>IP</td>"
+            f"<td style='padding:5px 0;color:{INK};'>{_esc(ip)}</td></tr>"
         )
     if user_agent:
         ua = user_agent[:160] + ("…" if len(user_agent) > 160 else "")
         rows.append(
-            f"<tr><td style='padding:4px 0;color:{MUTED};vertical-align:top;'>Device</td>"
-            f"<td style='padding:4px 0;'>{_esc(ua)}</td></tr>"
+            f"<tr><td style='padding:5px 0;color:{MUTED};vertical-align:top;'>Device</td>"
+            f"<td style='padding:5px 0;color:{INK};'>{_esc(ua)}</td></tr>"
         )
     return (
-        "<table role='presentation' cellspacing='0' cellpadding='0' "
-        "style='width:100%;margin:18px 0;padding:14px 16px;background:#f9fafb;"
-        "border:1px solid #e5e7eb;border-radius:10px;font-size:13px;'>"
+        f"<table role='presentation' cellspacing='0' cellpadding='0' "
+        f"style='width:100%;margin:16px 0;padding:14px 16px;background:{SURFACE};"
+        f"border:1px solid #243049;border-radius:8px;font-size:13px;'>"
         + "".join(rows)
         + "</table>"
     )
@@ -185,7 +205,7 @@ def _wrap_html(title: str, body_html: str) -> str:
         title,
         f"""
 <tr>
-  <td style="padding:28px 28px 8px;font-size:15px;line-height:1.55;color:#111827;">
+  <td style="padding:28px 28px 12px;background:{NAVY_2};font-size:15px;line-height:1.6;color:{INK};">
     {body_html}
   </td>
 </tr>""",
@@ -236,99 +256,70 @@ def send_welcome_email(
     first = _display_name(full_name, to)
     greet = _greeting_name(full_name, to)
     method_line = (
-        "You signed up with Google — your account is ready."
+        "Signed in with Google — your workspace is ready."
         if signup_method == "google"
-        else "Your email account is ready."
+        else "Your email account is active."
     )
-    subject = f"Welcome to {BRAND} — keep bots out, keep humans moving"
-    mark = (
-        f'<span style="background:{ACCENT};color:#111827;padding:0 4px;border-radius:2px;'
-        f'font-weight:700;">{_esc(BRAND)}</span>'
-    )
-    badge = (
-        f'<span style="display:inline-block;padding:6px 12px;border:1px solid {ACCENT};'
-        f'border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.06em;'
-        f'color:{ACCENT};text-transform:uppercase;">'
-        f'Welcome to <span style="background:{ACCENT};color:{INK};padding:0 4px;border-radius:2px;">'
-        f'{_esc(BRAND.upper())}</span></span>'
-    )
-    features = "".join(
+    subject = f"Your {BRAND} account is ready"
+    steps = "".join(
         [
-            _feature_row(
-                "Invisible when it can be",
-                "Most real users pass quietly. Challenges only show when risk is high.",
-            ),
-            _feature_row(
-                "Keys that fit your stack",
-                "Create a site key and secret key, drop in one script, verify on your server.",
-            ),
-            _feature_row(
-                "Dashboard and docs, ready now",
-                "Manage domains, rotate keys, and follow a short integration path.",
-            ),
+            _step("1", "Create your keys", "Generate a site key and secret key for your project."),
+            _step("2", "Allow your domains", "Lock keys to the origins that will load the script."),
+            _step("3", "Wire verify", "Issue tokens in the browser, confirm them with siteverify on your server."),
         ]
     )
     html_body = _shell(
         subject,
         f"""
 <tr>
-  <td style="padding:0;background:{INK};">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-      <tr>
-        <td style="padding:36px 28px 32px;">
-          <div style="margin:0 0 18px;">{badge}</div>
-          <h1 style="margin:0 0 20px;font-size:28px;line-height:1.25;font-weight:800;color:#ffffff;">
-            Keep bots out.<br />Keep humans moving.
-          </h1>
-          <p style="margin:0 0 12px;font-size:15px;line-height:1.55;color:#e5e7eb;">
-            Hi {_esc(greet)}, welcome aboard.
-          </p>
-          <p style="margin:0;font-size:15px;line-height:1.6;color:#d1d5db;">
-            {mark} scores traffic in the background so your forms stay open to people —
-            and closed to automated abuse. {_esc(method_line)}
-          </p>
-        </td>
-      </tr>
-    </table>
+  <td style="padding:32px 28px 8px;background:{NAVY_2};">
+    <p style="margin:0 0 6px;font-size:12px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;color:{BLUE_SOFT};">
+      Account ready
+    </p>
+    <h1 style="margin:0 0 14px;font-size:24px;line-height:1.3;font-weight:700;color:#f5f7fb;">
+      Hi {_esc(first)} — you’re in.
+    </h1>
+    <p style="margin:0 0 12px;font-size:15px;line-height:1.65;color:#c5cdd8;">
+      {_esc(BRAND)} protects forms and auth flows without forcing every visitor through a puzzle.
+      {_esc(method_line)}
+    </p>
+    <p style="margin:0 0 8px;font-size:14px;line-height:1.6;color:{MUTED};">
+      Hi {_esc(greet)}, open the dashboard when you’re ready to issue keys and ship the integration.
+    </p>
   </td>
 </tr>
 <tr>
-  <td style="padding:32px 28px 8px;background:#ffffff;">
-    <h2 style="margin:0 0 22px;font-size:22px;line-height:1.3;font-weight:800;color:#111827;">
-      What you get from day one
-    </h2>
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
-      {features}
-    </table>
-    {_pill_cta("Open your dashboard", DASHBOARD_URL)}
-    <p style="margin:0 0 8px;text-align:center;font-size:12px;color:#9ca3af;">
-      Free tier available — no card required to start.
+  <td style="padding:20px 28px 8px;background:{NAVY_2};">
+    <p style="margin:0 0 16px;font-size:13px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:#667083;">
+      First steps
     </p>
-    <p style="margin:18px 0 0;text-align:center;font-size:13px;color:{MUTED};">
-      Prefer the docs first?
-      <a href="{_esc(DOCS_URL)}" style="color:#111827;text-decoration:underline;">Quick start</a>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+      {steps}
+    </table>
+    {_cta("Open dashboard", DASHBOARD_URL)}
+    <p style="margin:14px 0 0;font-size:13px;color:{MUTED};">
+      Integration guide:
+      <a href="{_esc(DOCS_URL)}" style="color:{BLUE_SOFT};text-decoration:none;">{_esc(DOCS_URL)}</a>
     </p>
   </td>
 </tr>""",
     )
-    text_body = f"""Welcome to {BRAND}
+    text_body = f"""Your {BRAND} account is ready
 
-Hi {greet}, welcome aboard.
+Hi {first} — you're in.
 
-{BRAND} scores traffic in the background so your forms stay open to people — and closed to automated abuse.
+{BRAND} protects forms and auth flows without forcing every visitor through a puzzle.
 {method_line}
 
-What you get from day one
-• Invisible when it can be — most real users pass quietly; challenges only when risk is high
-• Keys that fit your stack — site key + secret key, one script, server verify
-• Dashboard and docs — domains, keys, and a short integration path
+First steps
+1. Create your keys — site key + secret key for your project
+2. Allow your domains — lock keys to the origins that load the script
+3. Wire verify — tokens in the browser, siteverify on your server
 
-Open your dashboard: {DASHBOARD_URL}
+Dashboard: {DASHBOARD_URL}
 Docs: {DOCS_URL}
 
-Free tier available — no card required to start.
-
-Questions? Reach us at {SUPPORT_EMAIL}
+Questions: {SUPPORT_EMAIL}
 
 © {YEAR} {BRAND}
 """
@@ -362,19 +353,22 @@ def send_password_changed_email(
     html_body = _wrap_html(
         subject,
         f"""
-<h1 style="margin:0 0 12px;font-size:22px;line-height:1.3;font-weight:800;">Security update</h1>
-<p style="margin:0 0 12px;">Hi {_esc(first)},</p>
-<p style="margin:0 0 12px;">{_esc(event)}</p>
-<p style="margin:0 0 12px;">{_esc(detail)}</p>
+<p style="margin:0 0 6px;font-size:12px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;color:{BLUE_SOFT};">
+  Security
+</p>
+<h1 style="margin:0 0 14px;font-size:22px;line-height:1.3;font-weight:700;color:#f5f7fb;">Password update</h1>
+<p style="margin:0 0 12px;color:#c5cdd8;">Hi {_esc(first)},</p>
+<p style="margin:0 0 12px;color:#c5cdd8;">{_esc(event)}</p>
+<p style="margin:0 0 12px;color:{MUTED};">{_esc(detail)}</p>
 {_meta_block(when, ip, user_agent)}
-{_pill_cta("Review account security", DASHBOARD_URL)}
-<p style="margin:20px 0 0;font-size:13px;color:{MUTED};">
-  If you did not make this change, secure your account from the dashboard and contact
-  <a href="mailto:{_esc(SUPPORT_EMAIL)}" style="color:#111827;">{_esc(SUPPORT_EMAIL)}</a>.
+{_cta("Review account", DASHBOARD_URL)}
+<p style="margin:16px 0 0;font-size:13px;color:{MUTED};">
+  If this wasn’t you, secure the account and contact
+  <a href="mailto:{_esc(SUPPORT_EMAIL)}" style="color:{BLUE_SOFT};">{_esc(SUPPORT_EMAIL)}</a>.
 </p>
 """,
     )
-    text_body = f"""Security update
+    text_body = f"""Password update
 
 Hi {first},
 
@@ -382,12 +376,11 @@ Hi {first},
 {detail}
 
 When: {when}
-IP address: {ip or "unknown"}
+IP: {ip or "unknown"}
 Device: {(user_agent or "unknown")[:160]}
 
-Review account: {DASHBOARD_URL}
-
-If you did not make this change, secure your account immediately and contact {SUPPORT_EMAIL}.
+Dashboard: {DASHBOARD_URL}
+Support: {SUPPORT_EMAIL}
 
 © {YEAR} {BRAND}
 """
@@ -415,36 +408,38 @@ def send_api_key_created_email(
     html_body = _wrap_html(
         subject,
         f"""
-<h1 style="margin:0 0 12px;font-size:22px;line-height:1.3;font-weight:800;">New API keys created</h1>
-<p style="margin:0 0 12px;">Hi {_esc(first)},</p>
-<p style="margin:0 0 12px;">
-  A new site key and secret key pair was created for <strong>{_esc(project)}</strong>.
+<p style="margin:0 0 6px;font-size:12px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;color:{BLUE_SOFT};">
+  API keys
 </p>
-<p style="margin:0 0 12px;">
-  The secret key is only shown once in the dashboard. Treat it like a password and never expose it in browser code.
+<h1 style="margin:0 0 14px;font-size:22px;line-height:1.3;font-weight:700;color:#f5f7fb;">New keys issued</h1>
+<p style="margin:0 0 12px;color:#c5cdd8;">Hi {_esc(first)},</p>
+<p style="margin:0 0 12px;color:#c5cdd8;">
+  A site key and secret key pair was created for <strong style="color:#f5f7fb;">{_esc(project)}</strong>.
+</p>
+<p style="margin:0 0 12px;color:{MUTED};">
+  The secret is shown once in the dashboard. Keep it server-side only.
 </p>
 {_meta_block(when, ip, user_agent)}
-{_pill_cta("Open dashboard", DASHBOARD_URL)}
-<p style="margin:20px 0 0;font-size:13px;color:{MUTED};">
-  If you did not create these keys, revoke them in the dashboard and contact
-  <a href="mailto:{_esc(SUPPORT_EMAIL)}" style="color:#111827;">{_esc(SUPPORT_EMAIL)}</a>.
+{_cta("Open dashboard", DASHBOARD_URL)}
+<p style="margin:16px 0 0;font-size:13px;color:{MUTED};">
+  If this wasn’t you, revoke the keys and contact
+  <a href="mailto:{_esc(SUPPORT_EMAIL)}" style="color:{BLUE_SOFT};">{_esc(SUPPORT_EMAIL)}</a>.
 </p>
 """,
     )
-    text_body = f"""New API keys created
+    text_body = f"""New keys issued
 
 Hi {first},
 
-A new site key and secret key pair was created for {project}.
-The secret key is only shown once in the dashboard. Treat it like a password and never expose it in browser code.
+A site key and secret key pair was created for {project}.
+The secret is shown once in the dashboard. Keep it server-side only.
 
 When: {when}
-IP address: {ip or "unknown"}
+IP: {ip or "unknown"}
 Device: {(user_agent or "unknown")[:160]}
 
 Dashboard: {DASHBOARD_URL}
-
-If you did not create these keys, revoke them immediately and contact {SUPPORT_EMAIL}.
+Support: {SUPPORT_EMAIL}
 
 © {YEAR} {BRAND}
 """

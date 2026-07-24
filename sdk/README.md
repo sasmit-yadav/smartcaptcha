@@ -2,12 +2,17 @@
 
 Behavioral telemetry SDK for invisible bot detection and fraud prevention.
 
+**Current public version: `1.1.6`** (npm + jsDelivr). Production API:
+`https://api.veilproof.tech` — **strict** request signing; stealth
+`webdriver→undefined` blocked; Cloudflare Free Worker forwards ASN/org for
+server `network_score` (see repo `tools/cloudflare/`, docs freeze through P1).
+
 ## Installation
 
 ### Script tag — zero JS (any HTML site: WordPress, Django templates, Rails views, ...)
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/veilproof@1.1.7/dist/veilproof.min.js"
+<script src="https://cdn.jsdelivr.net/npm/veilproof@1.1.6/dist/veilproof.min.js"
         data-site-key="vp_site_..."
         async defer></script>
 ```

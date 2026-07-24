@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Rocket, Code, Server, Layers, ShieldCheck, BookOpen } from 'lucide-react';
+import { Rocket, Code, Server, Layers, ShieldCheck, BookOpen, LifeBuoy, Cog } from 'lucide-react';
 import SiteNav from '../../components/chrome/SiteNav';
 import SiteFooter from '../../components/chrome/SiteFooter';
 import CodeBlock from '../../components/docs/CodeBlock';
@@ -9,22 +9,25 @@ import TabbedCode from '../../components/docs/TabbedCode';
 import Callout from '../../components/docs/Callout';
 import EndpointCard from '../../components/docs/EndpointCard';
 import {
-  scriptTagSnippet, scriptTagFormSnippet, npmInstallSnippet, npmInitSnippet,
+  scriptTagSnippet, scriptTagFormSnippet, htmlCompleteSnippet, programmaticHtmlSnippet,
+  npmInstallSnippet, npmInitSnippet,
   reactSnippet, nextjsSnippet, vueSnippet,
   siteverifyCurlSnippet, siteverifyNodeSnippet, siteverifyPythonFlaskSnippet,
   siteverifyPythonDjangoSnippet, siteverifyPhpSnippet,
   siteverifyJavaSnippet, siteverifyRubySnippet, siteverifyGoSnippet, siteverifyCsharpSnippet,
   siteverifySuccessResponse, siteverifyBlockedResponse, siteverifyErrorResponse,
-  predictAllowResponse, predictBlockResponse, CDN_URL,
+  predictAllowResponse, predictBlockResponse, CDN_URL, API_HOST,
 } from '../../components/docs/docSnippets';
 
 const NAV = [
   { id: 'start', title: 'Getting Started', icon: Rocket },
+  { id: 'how', title: 'How It Works', icon: Cog },
   { id: 'client', title: 'Client Integration', icon: Code },
   { id: 'server', title: 'Server Verification', icon: Server },
   { id: 'api', title: 'API Reference', icon: Layers },
-  { id: 'security', title: 'Security Best Practices', icon: ShieldCheck },
+  { id: 'security', title: 'Security', icon: ShieldCheck },
   { id: 'sdk', title: 'SDK Reference', icon: BookOpen },
+  { id: 'help', title: 'Troubleshooting', icon: LifeBuoy },
 ];
 
 function Section({ title, children }) {
@@ -42,6 +45,25 @@ function H3({ children }) {
 
 function P({ children }) {
   return <p className="text-mute leading-relaxed">{children}</p>;
+}
+
+function Checklist({ items }) {
+  return (
+    <ol className="space-y-3 list-decimal list-inside text-mute text-sm leading-relaxed">
+      {items.map((item) => (
+        <li key={item} className="pl-1">{item}</li>
+      ))}
+    </ol>
+  );
+}
+
+function Mistake({ title, children }) {
+  return (
+    <div className="border border-hairline rounded-xl p-4 bg-surfaceSoft/40">
+      <div className="font-semibold text-sm text-ink mb-1">{title}</div>
+      <div className="text-mute text-sm leading-relaxed">{children}</div>
+    </div>
+  );
 }
 
 export default function DocsPage() {
@@ -67,74 +89,293 @@ export default function DocsPage() {
     start: (
       <Section title="Getting Started">
         <P>
-          VeilProof is an invisible bot-detection layer: a browser SDK collects
-          behavioral signals, your customer's server decides who to trust —
-          not the browser. Three steps to integrate:
+          VeilProof is invisible bot detection. The <strong className="text-ink">browser SDK</strong> collects
+          signals and returns a short-lived token. Your <strong className="text-ink">server</strong> redeems
+          that token with a secret key and decides allow vs block. The browser alone is never trusted.
         </P>
+
         <div className="grid md:grid-cols-3 gap-4">
           <div className="card p-5">
             <div className="text-primary font-bold text-sm uppercase tracking-wide mb-2">1. Get keys</div>
-            <p className="text-mute text-sm">Create a project in the dashboard — you get a <strong className="text-ink">site key</strong> (browser) and a <strong className="text-ink">secret key</strong> (server), always as a pair.</p>
+            <p className="text-mute text-sm">
+              In the <a className="text-primary underline" href="/dashboard">dashboard</a>, create a project.
+              You receive a pair: <code className="text-primary">vp_site_…</code> (public) and{' '}
+              <code className="text-primary">vp_secret_…</code> (private).
+            </p>
           </div>
           <div className="card p-5">
-            <div className="text-primary font-bold text-sm uppercase tracking-wide mb-2">2. Drop in the script</div>
-            <p className="text-mute text-sm">Add one script tag (or <code className="text-primary">npm install</code>) with your site key. No JS required for plain HTML forms.</p>
+            <div className="text-primary font-bold text-sm uppercase tracking-wide mb-2">2. Add the SDK</div>
+            <p className="text-mute text-sm">
+              One script tag (or <code className="text-primary">npm install veilproof</code>) with your{' '}
+              <strong className="text-ink">site key</strong>. Prefer the classic form pattern if you want zero custom JS.
+            </p>
           </div>
           <div className="card p-5">
-            <div className="text-primary font-bold text-sm uppercase tracking-wide mb-2">3. Verify server-side</div>
-            <p className="text-mute text-sm">Your server redeems the token with your secret key at <code className="text-primary">/api/siteverify</code> before trusting the request.</p>
+            <div className="text-primary font-bold text-sm uppercase tracking-wide mb-2">3. Verify on server</div>
+            <p className="text-mute text-sm">
+              On every protected request, call <code className="text-primary">POST {API_HOST}/api/siteverify</code>{' '}
+              with your <strong className="text-ink">secret key</strong>, then check{' '}
+              <code className="text-primary">action !== &quot;block&quot;</code>.
+            </p>
           </div>
         </div>
 
-        <H3>Site key vs. secret key</H3>
+        <H3>5-minute checklist</H3>
+        <Checklist
+          items={[
+            'Create keys in the dashboard and store the secret in a server env var (never in HTML/JS).',
+            'Add the CDN script with data-site-key set to your real vp_site_… value (not the placeholder).',
+            'Either mark the form with data-veilproof, or call VeilProof.getToken() and send the token to your API.',
+            'On your server, read the token and POST it to /api/siteverify with X-API-Key: vp_secret_…',
+            'Reject the request when success is false OR action is "block".',
+            'In the dashboard, allowlist your real domain(s) before going live.',
+          ]}
+        />
+
+        <H3>Site key vs secret key</H3>
         <Callout variant="danger">
-          <strong>Never put your secret key in browser code.</strong> The site
-          key (<code>vp_site_...</code>) is public — it's meant to sit in your
-          HTML/JS. The secret key (<code>vp_secret_...</code>) only ever runs
-          on your server, to call <code>/api/siteverify</code>. The SDK
-          refuses to initialize with a secret key.
+          <strong>Never put <code>vp_secret_…</code> in browser code.</strong> The site key
+          (<code> vp_site_…</code>) is public and belongs in HTML/JS. The secret key only runs on
+          your server for <code>/api/siteverify</code>. If you pass a secret into the SDK, init fails on purpose.
         </Callout>
 
-        <H3>Quick start</H3>
-        <CodeBlock language="html" code={scriptTagSnippet()} />
+        <H3>Fastest path — copy this HTML</H3>
+        <P>
+          Paste into a page, replace the site key, point <code className="text-primary">action</code> at your
+          backend, then verify <code className="text-primary">veilproof-token</code> server-side (next section).
+        </P>
+        <CodeBlock language="html" code={htmlCompleteSnippet()} />
+        <p className="text-mute text-sm">
+          Full CDN URL: <code className="text-primary">{CDN_URL}</code>
+        </p>
+      </Section>
+    ),
+
+    how: (
+      <Section title="How It Works">
+        <P>
+          This section explains what happens under the hood so you know what each score means,
+          why both a browser SDK and server verify step are required, and what VeilProof does
+          <em> not</em> do (no CAPTCHA puzzles, no challenge widgets).
+        </P>
+
+        <H3>End-to-end request flow</H3>
+        <div className="card p-5 space-y-3 text-sm text-mute leading-relaxed">
+          <p><strong className="text-ink">1. Page load</strong> — SDK starts with your site key and begins collecting interaction signals (mouse, keyboard, scroll, environment probes).</p>
+          <p><strong className="text-ink">2. Signing register</strong> — SDK creates a browser session key and registers it at <code className="text-primary">/api/signing/register</code>. Later predict calls are ECDSA-signed so bodies cannot be trivially replayed or spliced.</p>
+          <p><strong className="text-ink">3. Predict</strong> — On submit / <code className="text-primary">getToken()</code>, the SDK POSTs a signed feature payload to <code className="text-primary">/api/predict</code>. The API returns <code className="text-primary">action</code>, component scores, and a short-lived <code className="text-primary">verification_token</code>.</p>
+          <p><strong className="text-ink">4. Your server</strong> — You send that token to <code className="text-primary">/api/siteverify</code> with your secret key. Only then should you trust allow vs block.</p>
+          <p><strong className="text-ink">5. Your app</strong> — If <code className="text-primary">success</code> and <code className="text-primary">action !== &quot;block&quot;</code>, run signup / checkout / etc.</p>
+        </div>
+
+        <H3>What the SDK collects (browser)</H3>
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="card p-5">
+            <div className="font-semibold text-ink text-sm mb-2">Behavioral signals</div>
+            <p className="text-mute text-sm">
+              Timing and motion features from real interaction: mouse velocity/curvature/jerk,
+              keystroke intervals, click spacing, session length, event density, and
+              computer-use / teleport-style kinematics when present.
+            </p>
+          </div>
+          <div className="card p-5">
+            <div className="font-semibold text-ink text-sm mb-2">Environment / automation</div>
+            <p className="text-mute text-sm">
+              Automation probes (for example webdriver tells), UA/platform coherence checks,
+              and related fingerprint inputs. These feed <code className="text-primary">fingerprint_score</code>.
+            </p>
+          </div>
+          <div className="card p-5">
+            <div className="font-semibold text-ink text-sm mb-2">Request integrity</div>
+            <p className="text-mute text-sm">
+              Per-session ECDSA signatures + nonce + freshness on <code className="text-primary">/api/predict</code>.
+              Unsigned or tampered predicts are rejected in strict mode (production).
+            </p>
+          </div>
+          <div className="card p-5">
+            <div className="font-semibold text-ink text-sm mb-2">Network context (edge)</div>
+            <p className="text-mute text-sm">
+              Production sits behind Cloudflare. A Worker forwards ASN / org / TLS / HTTP hints
+              to origin so datacenter exits can raise network risk without trusting client-spoofable headers.
+            </p>
+          </div>
+        </div>
+
+        <H3>How the API decides allow vs block</H3>
+        <P>
+          Predict combines several independent risk axes into one overall score. The default
+          product rule is binary:
+        </P>
+        <CodeBlock code={`overall_risk = max(
+  behavior_score,      // ML + deterministic behavior rules
+  fingerprint_score,   // automation / environment
+  anomaly_score,       // off-manifold vs human training (when available)
+  network_score,       // IP / ASN / edge signals
+  duplicate_score      // near-identical feature replay across sessions
+)
+// block if overall_risk >= 50, else allow`} />
+        <div className="overflow-x-auto card">
+          <table className="w-full text-sm">
+            <thead className="bg-surfaceSoft text-mute">
+              <tr>
+                <th className="text-left p-3 font-bold">Score</th>
+                <th className="text-left p-3 font-bold">What it reflects</th>
+              </tr>
+            </thead>
+            <tbody className="text-mute">
+              {[
+                ['behavior_score', 'How bot-like the interaction looks (model + rules).'],
+                ['fingerprint_score', 'How bot-like the browser/environment looks.'],
+                ['risk_score', 'The fused overall risk used for the verdict (0–100).'],
+                ['action', '"allow" or "block" only — there is no mid-band challenge UI.'],
+                ['confidence', 'How far risk_score sits from the 50 boundary (not a statistical CI).'],
+                ['verification_token', 'JWT-like token: 120s TTL, single-use, redeemed at siteverify.'],
+              ].map(([f, m]) => (
+                <tr key={f} className="border-t border-hairline">
+                  <td className="p-3"><code className="text-primary">{f}</code></td>
+                  <td className="p-3">{m}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <H3>Why siteverify exists (trust boundary)</H3>
+        <Callout variant="info">
+          Anything returned to the browser can be ignored or forged by a sophisticated bot.
+          <code className="text-primary"> /api/predict</code> is for collecting a scored token.
+          <code className="text-primary"> /api/siteverify</code> (secret key, server-only) proves that
+          token is authentic, unexpired, and not replayed — and returns the same allow/block
+          decision for your backend to enforce.
+        </Callout>
+        <P>
+          <code className="text-primary">success: true</code> means “this token is real.”
+          <code className="text-primary"> action</code> means “human vs bot verdict.” You need both checks.
+        </P>
+
+        <H3>What VeilProof is not</H3>
+        <ul className="list-disc list-inside text-mute text-sm space-y-2">
+          <li>Not a visible CAPTCHA / image challenge / Turnstile widget.</li>
+          <li>Not “backend config only” — without the SDK there is no behavioral token to verify.</li>
+          <li>Not a guarantee of zero false positives; short/abrupt sessions can look automation-like.</li>
+          <li>Not something you should reimplement by POSTing handmade JSON to <code className="text-primary">/api/predict</code> (signing will reject it).</li>
+        </ul>
+
+        <H3>Privacy &amp; data posture (high level)</H3>
+        <P>
+          The SDK is designed to send derived behavioral features and environment signals needed
+          for risk scoring — not your form field contents (email, message text, passwords). Your
+          app still posts its own business fields to <em>your</em> server separately from VeilProof.
+        </P>
       </Section>
     ),
 
     client: (
       <Section title="Client Integration">
         <P>
-          The browser's decision is not a trust boundary — a bot can ignore or
-          fake it. The SDK's job is only to collect signals and hand you a
-          short-lived token; verification happens on your server (next section).
+          Pick <strong className="text-ink">one</strong> pattern. Mixing{' '}
+          <code className="text-primary">data-veilproof</code> auto-submit with your own{' '}
+          <code className="text-primary">getToken()</code> + <code className="text-primary">fetch</code> on the
+          same form causes double-submit bugs.
         </P>
 
-        <H3>Script tag — any HTML site (WordPress, Django templates, Rails views...)</H3>
-        <P>Zero JS required. Auto-initializes from <code className="text-primary">data-site-key</code>:</P>
-        <CodeBlock language="html" code={scriptTagSnippet()} />
-        <p className="text-mute text-sm">Add <code className="text-primary">data-debug=&quot;true&quot;</code> for console logging, or <code className="text-primary">data-endpoint</code> to override the API host.</p>
+        <Callout variant="info">
+          The browser decision is <strong>not</strong> a trust boundary. Bots can ignore it.
+          Always redeem the token on your server (Server Verification).
+        </Callout>
 
-        <H3>Classic HTML form — no JS at all</H3>
-        <P>Add <code className="text-primary">data-veilproof</code> to any form — the SDK injects a hidden token field before it submits:</P>
+        <H3>Pattern A — classic HTML form (recommended for simple sites)</H3>
+        <P>
+          Zero app JS. The SDK intercepts submit, injects a hidden field named{' '}
+          <code className="text-primary">veilproof-token</code>, then submits the form normally.
+        </P>
         <CodeBlock language="html" code={scriptTagFormSnippet()} />
+        <Callout variant="warn">
+          Your server must read <code>veilproof-token</code> (with a hyphen). Looking for{' '}
+          <code>veilproof_token</code> or <code>veilproofToken</code> on a classic form POST is the
+          #1 &quot;Missing token&quot; mistake.
+        </Callout>
 
-        <H3>npm / ESM (React, Vue, Next.js)</H3>
+        <H3>Pattern B — programmatic getToken() (SPAs / custom fetch)</H3>
+        <P>
+          Use this when you submit with <code className="text-primary">fetch</code> / XHR and do{' '}
+          <strong className="text-ink">not</strong> put <code className="text-primary">data-veilproof</code> on the form.
+        </P>
+        <CodeBlock language="html" code={programmaticHtmlSnippet()} />
+
+        <H3>Script tag attributes</H3>
+        <CodeBlock language="html" code={scriptTagSnippet()} />
+        <div className="overflow-x-auto card">
+          <table className="w-full text-sm">
+            <thead className="bg-surfaceSoft text-mute">
+              <tr>
+                <th className="text-left p-3 font-bold">Attribute</th>
+                <th className="text-left p-3 font-bold">Required?</th>
+                <th className="text-left p-3 font-bold">Meaning</th>
+              </tr>
+            </thead>
+            <tbody className="text-mute">
+              {[
+                ['data-site-key', 'Yes', 'Your public vp_site_… key'],
+                ['data-endpoint', 'No', `API host. Default is already ${API_HOST}`],
+                ['data-debug', 'No', 'Set "true" while integrating; remove in production'],
+                ['data-token-field', 'No', 'Hidden form field name. Default: veilproof-token'],
+                ['async / defer', 'Recommended', 'Load without blocking page render'],
+              ].map(([a, r, m]) => (
+                <tr key={a} className="border-t border-hairline">
+                  <td className="p-3"><code className="text-primary">{a}</code></td>
+                  <td className="p-3">{r}</td>
+                  <td className="p-3">{m}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <H3>Pattern C — npm / React / Next / Vue</H3>
         <TabbedCode tabs={[
           { label: 'Install', code: npmInstallSnippet() },
           { label: 'Vanilla JS', code: npmInitSnippet() },
           { label: 'React', code: reactSnippet() },
-          { label: 'Next.js (App Router)', code: nextjsSnippet() },
+          { label: 'Next.js', code: nextjsSnippet() },
           { label: 'Vue 3', code: vueSnippet() },
         ]} />
+        <Callout variant="info">
+          In Next.js, init the SDK only in a <code>&apos;use client&apos;</code> component.
+          Keep <code>VEILPROOF_SECRET_KEY</code> on the server (no <code>NEXT_PUBLIC_</code> prefix).
+        </Callout>
       </Section>
     ),
 
     server: (
       <Section title="Server Verification (siteverify)">
         <P>
-          This is the actual trust boundary. Your server redeems the token
-          the browser received with your <strong className="text-ink">secret key</strong> —
-          only then is the decision trustworthy.
+          This is the trust boundary. After the browser gets a token, your server redeems it with
+          the <strong className="text-ink">secret key</strong>. Until that happens, do not create
+          accounts, process payments, or accept the form.
         </P>
+
+        <H3>Exact server checklist</H3>
+        <Checklist
+          items={[
+            'Read the token from the request (veilproof-token for HTML forms, or the JSON field you chose).',
+            `POST JSON { "token": "..." } to ${API_HOST}/api/siteverify`,
+            'Send header X-API-Key: your vp_secret_… (or use the secret form field).',
+            'Parse JSON even when HTTP status is 200.',
+            'If success is false → reject (bad/expired/replayed token).',
+            'If action === "block" → reject (bot).',
+            'Only then run business logic.',
+          ]}
+        />
+
+        <Callout variant="danger">
+          <strong><code>success: true</code> does not mean human.</strong> It only means the token
+          is genuine, unexpired, and not already redeemed. Detected bots still get{' '}
+          <code>success: true</code> with <code>action: &quot;block&quot;</code>. Skipping the{' '}
+          <code>action</code> check lets every detected bot through.
+        </Callout>
+
+        <H3>Copy-paste by language</H3>
         <TabbedCode tabs={[
           { label: 'curl', code: siteverifyCurlSnippet() },
           { label: 'Node / Express', code: siteverifyNodeSnippet() },
@@ -147,38 +388,49 @@ export default function DocsPage() {
           { label: 'C# (.NET)', code: siteverifyCsharpSnippet() },
         ]} />
         <p className="text-mute text-sm">
-          The <code className="text-primary">curl</code> tab only shows the request —
-          it can't check the response for you. Every other tab shows the full
-          pattern, including the <code className="text-primary">action</code> check below.
-          Don't wire up your own handler from the curl example alone.
+          Prefer the language tabs over curl for production wiring — they include the{' '}
+          <code className="text-primary">action === &quot;block&quot;</code> check.
         </p>
 
-        <H3>Interpreting the result</H3>
-        <Callout variant="danger">
-          <strong><code>success: true</code> does not mean the visitor is human.</strong> It
-          only means the token is genuine, unexpired, and hasn't been redeemed
-          before — the same way a valid-but-expired coupon code is still a
-          &quot;real&quot; code. A detected bot is still issued a validly-signed
-          token; <code>/api/siteverify</code> will happily return
-          <code> success: true</code> for it. You must check
-          <code className="text-primary"> action !== &apos;block&apos;</code> yourself,
-          every time, before trusting the request. Skipping this check means
-          every bot VeilProof detects gets through anyway.
-        </Callout>
-        <P>
-          Check <code className="text-primary">action</code> (<code className="text-primary">allow</code> / <code className="text-primary">block</code>) and
-          <code className="text-primary"> risk_score</code> (0-100). Most integrations trust <code className="text-primary">action</code> directly;
-          if you want finer control, threshold on <code className="text-primary">risk_score</code> yourself.
-        </P>
-        <Callout variant="warn">
-          <strong>Fail-open vs. fail-closed:</strong> if <code>/api/siteverify</code> is
-          unreachable, decide deliberately whether to let the request through
-          (fail-open — better UX, worse security) or block it (fail-closed —
-          the SDK itself fails closed on <code>/api/predict</code> errors).
-        </Callout>
+        <H3>How to read the response</H3>
+        <div className="overflow-x-auto card">
+          <table className="w-full text-sm">
+            <thead className="bg-surfaceSoft text-mute">
+              <tr>
+                <th className="text-left p-3 font-bold">Field</th>
+                <th className="text-left p-3 font-bold">What to do</th>
+              </tr>
+            </thead>
+            <tbody className="text-mute">
+              {[
+                ['success', 'Must be true. False → missing/invalid/expired/replayed token.'],
+                ['action', '"allow" or "block". Reject on "block".'],
+                ['risk_score', '0–100. Optional finer control; ≥ 50 usually means block.'],
+                ['hostname', 'Host the SDK reported — useful for domain audits.'],
+                ['session_id', 'Debug / support correlation id.'],
+                ['error-codes', 'Present when success is false (see Troubleshooting).'],
+              ].map(([f, m]) => (
+                <tr key={f} className="border-t border-hairline">
+                  <td className="p-3"><code className="text-primary">{f}</code></td>
+                  <td className="p-3">{m}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
 
-        <H3>Tokens are single-use and expire in 120 seconds</H3>
-        <P>A replayed or expired token returns <code className="text-primary">timeout-or-duplicate</code>. Don't cache or retry a token across requests.</P>
+        <H3>Token lifetime</H3>
+        <P>
+          Tokens are <strong className="text-ink">single-use</strong> and expire in{' '}
+          <strong className="text-ink">120 seconds</strong>. Do not cache, log long-term, or retry
+          the same token. A second redeem returns <code className="text-primary">timeout-or-duplicate</code>.
+        </P>
+
+        <Callout variant="warn">
+          <strong>Fail-open vs fail-closed:</strong> if <code>/api/siteverify</code> is unreachable,
+          choose deliberately — fail-open (better UX) or fail-closed (safer). Document the choice
+          for your team.
+        </Callout>
       </Section>
     ),
 
@@ -186,37 +438,40 @@ export default function DocsPage() {
       <Section title="API Reference">
         <EndpointCard method="POST" path="/api/siteverify" auth="Secret key (X-API-Key header or `secret` form field)">
           <div className="space-y-3">
-            <p className="text-mute text-sm">Accepts JSON <code className="text-primary">{'{ "token": "..." }'}</code> or classic form-encoded <code className="text-primary">secret=...&amp;response=...</code>. Failures return HTTP 200 — check <code className="text-primary">success</code>, not the status code.</p>
+            <p className="text-mute text-sm">
+              Body: JSON <code className="text-primary">{'{ "token": "..." }'}</code> or form fields{' '}
+              <code className="text-primary">secret</code> + <code className="text-primary">response</code>.
+              Failures often still return HTTP 200 — always inspect <code className="text-primary">success</code>.
+            </p>
             <div>
-              <h4 className="font-semibold text-sm text-mute mb-1">Success response — visitor allowed</h4>
+              <h4 className="font-semibold text-sm text-mute mb-1">Allowed visitor</h4>
               <CodeBlock code={siteverifySuccessResponse} />
             </div>
             <div>
-              <h4 className="font-semibold text-sm text-mute mb-1">Success response — bot blocked (note: still <code className="text-primary">success: true</code>)</h4>
+              <h4 className="font-semibold text-sm text-mute mb-1">
+                Detected bot (still <code className="text-primary">success: true</code>)
+              </h4>
               <CodeBlock code={siteverifyBlockedResponse} />
-              <p className="text-mute text-xs mt-2">
-                This is the response for a bot VeilProof correctly detected. <code className="text-primary">success</code> is
-                still <code className="text-primary">true</code> — only <code className="text-primary">action</code> tells
-                you it was blocked. See the danger callout in Server Verification.
-              </p>
             </div>
             <div>
-              <h4 className="font-semibold text-sm text-mute mb-1">Error response — invalid or expired token</h4>
+              <h4 className="font-semibold text-sm text-mute mb-1">Invalid / expired / replayed token</h4>
               <CodeBlock code={siteverifyErrorResponse} />
-              <p className="text-mute text-xs mt-2">Codes: <code className="text-primary">missing-input-secret</code>, <code className="text-primary">invalid-input-secret</code>, <code className="text-primary">missing-input-response</code>, <code className="text-primary">invalid-input-response</code>, <code className="text-primary">timeout-or-duplicate</code>.</p>
             </div>
           </div>
         </EndpointCard>
 
-        <EndpointCard method="POST" path="/api/predict" auth="Site key (SDK-internal)">
+        <EndpointCard method="POST" path="/api/predict" auth="Site key (SDK-internal — do not call yourself)">
           <div className="space-y-3">
-            <p className="text-mute text-sm">Called automatically by the SDK — you shouldn't call this directly. Returns the risk decision plus a <code className="text-primary">verification_token</code> for <code className="text-primary">/api/siteverify</code>.</p>
+            <p className="text-mute text-sm">
+              The SDK calls this automatically (with request signing). You only need the resulting{' '}
+              <code className="text-primary">verification_token</code> for siteverify.
+            </p>
             <div>
-              <h4 className="font-semibold text-sm text-mute mb-1">Response — visitor allowed</h4>
+              <h4 className="font-semibold text-sm text-mute mb-1">Allow</h4>
               <CodeBlock code={predictAllowResponse} />
             </div>
             <div>
-              <h4 className="font-semibold text-sm text-mute mb-1">Response — bot blocked</h4>
+              <h4 className="font-semibold text-sm text-mute mb-1">Block</h4>
               <CodeBlock code={predictBlockResponse} />
             </div>
             <table className="w-full text-sm mt-2">
@@ -225,12 +480,12 @@ export default function DocsPage() {
               </thead>
               <tbody className="text-mute">
                 {[
-                  ['action', '"allow" or "block" — the verdict. Binary only; there is no "challenge" state.'],
-                  ['risk_score', '0–100 combined risk score. ≥ 50 blocks.'],
-                  ['behavior_score', "0–100, VeilProof's behavioral risk signal."],
-                  ['fingerprint_score', "0–100, VeilProof's device/environment risk signal."],
-                  ['confidence', '0–1, how far risk_score sits from the 50-point decision boundary — not a statistical confidence interval.'],
-                  ['verification_token', 'Short-lived (120s), single-use token to redeem at /api/siteverify.'],
+                  ['action', '"allow" or "block" only (no challenge mode).'],
+                  ['risk_score', '0–100 combined risk. ≥ 50 blocks by default.'],
+                  ['behavior_score', 'Behavioral risk 0–100.'],
+                  ['fingerprint_score', 'Device / automation risk 0–100.'],
+                  ['confidence', 'Distance from the 50-point boundary (not a statistical CI).'],
+                  ['verification_token', 'Redeem within 120s at /api/siteverify (single-use).'],
                 ].map(([f, m]) => (
                   <tr key={f} className="border-t border-hairline">
                     <td className="p-2"><code className="text-primary">{f}</code></td>
@@ -239,47 +494,40 @@ export default function DocsPage() {
                 ))}
               </tbody>
             </table>
-            <p className="text-mute text-xs">
-              <code className="text-primary">risk_score</code> combines multiple independent
-              signals into one number — check <code className="text-primary">action</code> for
-              the verdict, or threshold on <code className="text-primary">risk_score</code>
-              yourself for finer control.
-            </p>
           </div>
         </EndpointCard>
       </Section>
     ),
 
     security: (
-      <Section title="Security Best Practices">
+      <Section title="Security">
         <Callout variant="danger">
-          <strong>Secret keys never touch the browser.</strong> Store them as
-          a server-side environment variable, same as a payment API key.
+          <strong>Secret keys never touch the browser.</strong> Store{' '}
+          <code>VEILPROOF_SECRET_KEY</code> like a payment API key.
         </Callout>
         <Callout variant="info">
-          <strong>Site keys are not secret</strong> — they ship in the
-          browser bundle no matter where you read them from. The examples in
-          this guide read the site key from an env var (<code>NEXT_PUBLIC_*</code>,
-          <code> VITE_*</code>, etc.) purely for config hygiene — one place to
-          rotate it, no accidental commits of a stale key — not because it
-          hides the value from users. Don't let that convention create a
-          false sense of security about the site key; the actual security
-          boundary is the secret key never appearing in client code, plus
-          allowed-domain restrictions below.
+          Site keys are public by design. Env vars like <code>NEXT_PUBLIC_*</code> /{' '}
+          <code>VITE_*</code> are for config hygiene, not secrecy.
         </Callout>
-        <H3>Restrict allowed domains</H3>
-        <P>Set your project's allowed domains in the dashboard — a leaked site key only works from domains you configured.</P>
-        <H3>Tokens: replay and TTL</H3>
-        <P>Verification tokens are single-use and expire after 120 seconds. Don't log or store them beyond the verification call.</P>
+        <H3>Allowlist domains</H3>
+        <P>
+          In the dashboard, restrict which origins may use your site key. A leaked site key then
+          only works on domains you approved.
+        </P>
+        <H3>Tokens</H3>
+        <P>Single-use, 120s TTL. Do not store beyond the verify call.</P>
         <H3>Content-Security-Policy</H3>
-        <P>If you set a CSP, allow the SDK's origin in <code className="text-primary">connect-src</code>:</P>
-        <CodeBlock code={`Content-Security-Policy: connect-src 'self' https://api.veilproof.tech; script-src 'self' https://cdn.jsdelivr.net;`} />
+        <P>If you use CSP, allow the CDN script and API host:</P>
+        <CodeBlock code={`Content-Security-Policy: script-src 'self' https://cdn.jsdelivr.net; connect-src 'self' https://api.veilproof.tech;`} />
       </Section>
     ),
 
     sdk: (
       <Section title="SDK Reference">
-        <P>Full method list — see the <a className="text-primary underline" href="https://www.npmjs.com/package/veilproof" target="_blank" rel="noreferrer">npm README</a> for details.</P>
+        <P>
+          Package: <a className="text-primary underline" href="https://www.npmjs.com/package/veilproof" target="_blank" rel="noreferrer">veilproof on npm</a>.
+          Pin <code className="text-primary">1.1.10</code> (or newer) in production.
+        </P>
         <div className="overflow-x-auto card">
           <table className="w-full text-sm">
             <thead className="bg-surfaceSoft text-mute">
@@ -287,12 +535,12 @@ export default function DocsPage() {
             </thead>
             <tbody className="text-mute">
               {[
-                ['VeilProof.init(config)', 'Initialize with your site key (auto-called by script-tag)'],
-                ['VeilProof.getToken(callback?)', 'Get a verification token — callback or Promise'],
-                ['VeilProof.getDecision(callback)', 'Raw decision result (used internally by getToken)'],
-                ['VeilProof.getSessionId()', 'Current session ID'],
-                ['VeilProof.selfTest(callback)', 'Diagnose init/network/event-collection issues'],
-                ['VeilProof.destroy()', 'Stop tracking and flush remaining events'],
+                ['VeilProof.init(config)', 'Initialize with site key (auto from script-tag data-site-key)'],
+                ['VeilProof.getToken(cb?)', 'Get verification token — callback or Promise'],
+                ['VeilProof.getDecision(cb)', 'Raw predict result (used inside getToken)'],
+                ['VeilProof.getSessionId()', 'Current session id'],
+                ['VeilProof.selfTest(cb)', 'Diagnose init / network / event collection'],
+                ['VeilProof.destroy()', 'Stop tracking and flush'],
               ].map(([m, d]) => (
                 <tr key={m} className="border-t border-hairline">
                   <td className="p-3 font-mono text-primary">{m}</td>
@@ -302,9 +550,80 @@ export default function DocsPage() {
             </tbody>
           </table>
         </div>
-        <H3>Troubleshooting with selfTest()</H3>
+        <H3>selfTest()</H3>
         <CodeBlock code={`VeilProof.selfTest((results) => console.log(results));\n// { tests: [...], passed, failed, overall }`} />
         <p className="text-mute text-xs">CDN: <code className="text-primary">{CDN_URL}</code></p>
+      </Section>
+    ),
+
+    help: (
+      <Section title="Troubleshooting">
+        <P>Most integration failures are one of the issues below. Fix in order.</P>
+
+        <Mistake title="Missing token / 400 on my server">
+          Classic <code className="text-primary">data-veilproof</code> forms post{' '}
+          <code className="text-primary">veilproof-token</code> (hyphen). If you read{' '}
+          <code className="text-primary">veilproofToken</code> or <code className="text-primary">veilproof_token</code>{' '}
+          from a normal form POST, it will be empty. JSON <code className="text-primary">fetch</code> bodies
+          use whatever field name you chose in your client code.
+        </Mistake>
+
+        <Mistake title="success: true but bots still get in">
+          You verified the token but did not check <code className="text-primary">action === &quot;block&quot;</code>.
+          Add that check before business logic.
+        </Mistake>
+
+        <Mistake title="window.VeilProof is undefined">
+          Script blocked by CSP, wrong CDN URL, or your submit handler ran before the script loaded.
+          Wait for load, allow <code className="text-primary">cdn.jsdelivr.net</code> in{' '}
+          <code className="text-primary">script-src</code>, and confirm Network shows HTTP 200 for the SDK.
+        </Mistake>
+
+        <Mistake title="SDK init error / refuses key">
+          You passed a <code className="text-primary">vp_secret_…</code> into the browser. Use{' '}
+          <code className="text-primary">vp_site_…</code> only in the client.
+        </Mistake>
+
+        <Mistake title="401 request signing / signing_required">
+          Predict requires the official SDK (it signs requests). Do not POST handmade JSON to{' '}
+          <code className="text-primary">/api/predict</code> from your own code. Always use{' '}
+          <code className="text-primary">getToken()</code> or <code className="text-primary">data-veilproof</code>.
+        </Mistake>
+
+        <Mistake title="timeout-or-duplicate">
+          Token already redeemed or older than 120 seconds. Call <code className="text-primary">getToken()</code>{' '}
+          again for a fresh token; never reuse one.
+        </Mistake>
+
+        <Mistake title="invalid-input-secret">
+          Wrong or truncated secret key, or you sent the site key instead of the secret to siteverify.
+          Confirm <code className="text-primary">X-API-Key</code> starts with <code className="text-primary">vp_secret_</code>.
+        </Mistake>
+
+        <Mistake title="Works on localhost, fails in production">
+          Add your production domain in the dashboard allowlist. Also update CSP{' '}
+          <code className="text-primary">connect-src</code> to include{' '}
+          <code className="text-primary">{API_HOST}</code>.
+        </Mistake>
+
+        <Mistake title="Form submits twice / races">
+          Do not combine <code className="text-primary">data-veilproof</code> with a custom{' '}
+          <code className="text-primary">getToken()</code> + <code className="text-primary">fetch</code> handler
+          on the same form. Pick Pattern A or Pattern B.
+        </Mistake>
+
+        <Mistake title="Real humans sometimes blocked">
+          Ask users to interact briefly (mouse + typing) before submit. Extremely instant submits
+          look bot-like. If it persists, contact support with <code className="text-primary">session_id</code>{' '}
+          from the siteverify response.
+        </Mistake>
+
+        <H3>Quick diagnosis</H3>
+        <CodeBlock code={`// In the browser console after the SDK loads:\nVeilProof.selfTest((r) => console.log(r));`} />
+        <Callout variant="info">
+          Still stuck? Open the dashboard, confirm keys + allowed domains, and compare your flow
+          to Getting Started → Fastest path HTML + Server Verification → Node example.
+        </Callout>
       </Section>
     ),
   };

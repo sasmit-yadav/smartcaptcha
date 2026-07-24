@@ -1,5 +1,10 @@
 # Model Version History
 
+> **Product status (2026-07-24):** detection stack through **P1** is documented in
+> `docs/INDEX.md` / `docs/VeilProof_Status_Through_2026-07-24.md`. Next training
+> wave is **P2** (Camoufox/rebrowser labeled sessions). This file remains the
+> historical artifact log for shipped model packages.
+
 ## V4 (Current) - 2026-06-22
 
 ### Recovery Roadmap Implementation

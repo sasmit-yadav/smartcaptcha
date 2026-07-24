@@ -20,10 +20,11 @@ def test_email_disabled_without_api_key():
 def test_welcome_templates_render():
     wrapped = email_mod._wrap_html("t", "<p>x</p>")
     assert "VeilProof" in wrapped
-    assert "Dashboard" in wrapped
+    assert "veilproof-logo.png" in wrapped
     name = email_mod._display_name("Ada Lovelace", "ada@example.com")
     assert name == "Ada"
     assert email_mod._display_name(None, "builder@example.com") == "builder"
+    assert email_mod._greeting_name("Ada Lovelace", "ada@example.com") == "Ada Lovelace"
 
 
 def test_password_changed_noop_without_key():

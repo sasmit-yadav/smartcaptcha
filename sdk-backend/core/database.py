@@ -193,11 +193,51 @@ def init_db():
         cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_auth_refresh_user ON auth_refresh_tokens (user_id)"
         )
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS auth_password_reset_tokens (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL,
+                token_hash VARCHAR(64) UNIQUE NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                used_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT NOW(),
+                user_agent TEXT,
+                ip TEXT
+            )
+        """)
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_auth_reset_user ON auth_password_reset_tokens (user_id)"
+        )
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS auth_email_verify_tokens (
+                id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                user_id UUID NOT NULL,
+                token_hash VARCHAR(64) UNIQUE NOT NULL,
+                expires_at TIMESTAMP NOT NULL,
+                used_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT NOW(),
+                user_agent TEXT,
+                ip TEXT
+            )
+        """)
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_auth_verify_user ON auth_email_verify_tokens (user_id)"
+        )
         cursor.execute(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS has_password BOOLEAN DEFAULT TRUE"
         )
         cursor.execute(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS google_linked BOOLEAN DEFAULT FALSE"
+        )
+        cursor.execute(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMP"
+        )
+        cursor.execute(
+            """
+            UPDATE users
+            SET email_verified_at = COALESCE(email_verified_at, created_at, NOW())
+            WHERE email_verified_at IS NULL
+            """
         )
         # Google-only accounts (no password login) are treated as Google-linked.
         cursor.execute(
@@ -208,13 +248,6 @@ def init_db():
             """
         )
 
-        # Auto-upgrade admin accounts
-        cursor.execute("""
-            UPDATE users 
-            SET is_admin = TRUE 
-            WHERE email IN ('developer@veilproof.com', 'developer@nextcaptcha.com', 'hulkb690@gmail.com')
-        """)
-        
         # Create sessions table (Phase 3.2 + extended fields + event_count + V2 telemetry)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS sessions (

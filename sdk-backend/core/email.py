@@ -616,11 +616,145 @@ def send_project_created_email(
         title="Project created",
         lines=[
             f"A new project named {project} was created on your {BRAND} account.",
-            "Next, create keys and add the domains that will load the client script.",
+            "Next, add allowed domains, then create keys for the integration.",
         ],
         tags=["project"],
         ip=ip,
         user_agent=user_agent,
         extra_rows=[("Project", project)],
         caution="If this wasn’t you, review your account in the dashboard and",
+    )
+
+
+def send_password_reset_email(
+    to: str,
+    *,
+    reset_url: str,
+    full_name: Optional[str] = None,
+    ip: Optional[str] = None,
+    user_agent: Optional[str] = None,
+) -> bool:
+    first = _display_name(full_name, to)
+    when = _utc_now_label()
+    subject = f"Reset your {BRAND} password"
+    html_body = _wrap_html(
+        subject,
+        f"""
+<p style="margin:0 0 6px;font-size:12px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;color:{BLUE_SOFT};">
+  Security
+</p>
+<h1 style="margin:0 0 14px;font-size:22px;line-height:1.3;font-weight:700;color:#f5f7fb;">Reset your password</h1>
+<p style="margin:0 0 12px;color:#c5cdd8;">Hi {_esc(first)},</p>
+<p style="margin:0 0 12px;color:#c5cdd8;">
+  We received a request to reset the password for your {_esc(BRAND)} account.
+</p>
+<p style="margin:0 0 12px;color:{MUTED};">
+  This link expires in 60 minutes and can be used once.
+</p>
+{_meta_block(when, ip, user_agent)}
+{_cta("Reset password", reset_url)}
+<p style="margin:16px 0 0;font-size:13px;color:{MUTED};">
+  If you did not request this, you can ignore this email. Your password will stay the same.
+</p>
+""",
+    )
+    text_body = f"""Reset your {BRAND} password
+
+Hi {first},
+
+We received a request to reset the password for your {BRAND} account.
+This link expires in 60 minutes and can be used once.
+
+When: {when}
+IP: {ip or "unknown"}
+Device: {(user_agent or "unknown")[:160]}
+
+Reset password: {reset_url}
+
+If you did not request this, ignore this email.
+
+© {YEAR} {BRAND}
+"""
+    return send_email(
+        to=to,
+        subject=subject,
+        html_body=html_body,
+        text_body=text_body,
+        tags=["security", "password-reset"],
+    )
+
+
+def send_password_reset_google_only_email(
+    to: str,
+    *,
+    full_name: Optional[str] = None,
+    ip: Optional[str] = None,
+    user_agent: Optional[str] = None,
+) -> bool:
+    return _notice(
+        to=to,
+        full_name=full_name,
+        subject=f"Password reset requested for your {BRAND} account",
+        eyebrow="Security",
+        title="Use Google to sign in",
+        lines=[
+            f"Someone requested a password reset for your {BRAND} account.",
+            "This account signs in with Google and does not use a password reset link.",
+            "Open the dashboard and continue with Google. You can set a password later from Account settings.",
+        ],
+        tags=["security", "password-reset"],
+        ip=ip,
+        user_agent=user_agent,
+        cta_label="Open dashboard",
+        caution="If this wasn’t you, review your account in the dashboard and",
+    )
+
+
+def send_email_verification_email(
+    to: str,
+    *,
+    verify_url: str,
+    full_name: Optional[str] = None,
+) -> bool:
+    first = _display_name(full_name, to)
+    subject = f"Verify your {BRAND} email"
+    html_body = _wrap_html(
+        subject,
+        f"""
+<p style="margin:0 0 6px;font-size:12px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;color:{BLUE_SOFT};">
+  Account
+</p>
+<h1 style="margin:0 0 14px;font-size:22px;line-height:1.3;font-weight:700;color:#f5f7fb;">Verify your email</h1>
+<p style="margin:0 0 12px;color:#c5cdd8;">Hi {_esc(first)},</p>
+<p style="margin:0 0 12px;color:#c5cdd8;">
+  Confirm this email address to create API keys and finish setting up {_esc(BRAND)}.
+</p>
+<p style="margin:0 0 12px;color:{MUTED};">
+  This link expires in 48 hours.
+</p>
+{_cta("Verify email", verify_url)}
+<p style="margin:16px 0 0;font-size:13px;color:{MUTED};">
+  If you did not create a {_esc(BRAND)} account, you can ignore this email.
+</p>
+""",
+    )
+    text_body = f"""Verify your {BRAND} email
+
+Hi {first},
+
+Confirm this email address to create API keys and finish setting up {BRAND}.
+This link expires in 48 hours.
+
+Verify email: {verify_url}
+
+If you did not create a {BRAND} account, ignore this email.
+
+© {YEAR} {BRAND}
+"""
+    return send_email(
+        to=to,
+        subject=subject,
+        html_body=html_body,
+        text_body=text_body,
+        tags=["account", "verify"],
     )

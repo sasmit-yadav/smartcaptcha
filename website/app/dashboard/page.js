@@ -396,6 +396,37 @@ export default function Dashboard() {
           </div>
         )}
 
+        {user && user.email_verified === false && (
+          <div className="mb-4 p-3 bg-canvas border border-hairline rounded-lg text-sm flex flex-col sm:flex-row sm:items-center gap-3">
+            <p className="flex-1 text-mute">
+              Verify <span className="text-ink">{user.email}</span> to create API keys. Check your inbox for the link.
+            </p>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={async () => {
+                setLoading(true);
+                setError('');
+                try {
+                  const res = await apiFetch('/admin/resend-verification', { method: 'POST' });
+                  const data = await res.json().catch(() => ({}));
+                  if (!res.ok || !data.success) {
+                    setError(typeof data.detail === 'string' ? data.detail : 'Unable to resend verification');
+                  } else {
+                    setSuccess(data.message || 'Verification email sent');
+                  }
+                } catch {
+                  setError('Unable to resend verification');
+                }
+                setLoading(false);
+              }}
+              className="px-4 h-9 rounded-md text-sm font-semibold bg-primary hover:bg-primaryDark text-white disabled:opacity-50"
+            >
+              Resend verification
+            </button>
+          </div>
+        )}
+
         <div className="mb-6 card p-4 flex flex-col md:flex-row md:items-center gap-3">
           <div className="flex-1 flex flex-wrap gap-2">
             {projects.map((project) => (
@@ -451,7 +482,7 @@ export default function Dashboard() {
                 <p><strong className="text-ink">How to fill this:</strong> list the hostnames where your site key will run, separated by commas.</p>
                 <p>✅ Good: <code className="text-primary">myshop.com, www.myshop.com, localhost</code></p>
                 <p>❌ Avoid: <code className="text-primary">https://myshop.com/signup</code> (we strip this automatically, but hostnames are clearer)</p>
-                <p>Leave empty to allow <strong className="text-ink">any</strong> domain (fine for local testing; lock it down before launch).</p>
+                <p>Leave empty only while drafting — you must save at least one domain before creating keys. Empty does not mean “all domains”.</p>
               </div>
             </div>
             <div className="mt-4 flex gap-3">
@@ -495,7 +526,7 @@ export default function Dashboard() {
                 {loading ? 'Saving...' : 'Save domains'}
               </button>
               <span className="text-mute text-xs">
-                Empty = all domains allowed. Use commas or new lines between hosts.
+                Add at least one domain before creating keys. Use commas or new lines between hosts.
               </span>
             </div>
           </div>

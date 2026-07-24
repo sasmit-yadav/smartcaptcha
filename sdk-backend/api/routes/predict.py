@@ -26,14 +26,14 @@ logger = logging.getLogger("uvicorn.error")
 def _check_allowed_domain(origin: str, allowed_domains) -> bool:
     """
     Check a request Origin against a project's allowed_domains list.
-    A leaked API key should only work from the domains its owner configured
-    — without this, allowed_domains was stored but never enforced.
+    Empty list = no browser origins allowed (must configure domains).
+    '*' = allow any origin. Missing Origin (server-side) is not blocked.
     """
-    if not allowed_domains or "*" in allowed_domains:
-        return True
     if not origin:
-        # No Origin header (server-to-server / non-browser caller) — can't
-        # check, so don't block a legitimate backend integration.
+        return True
+    if not allowed_domains:
+        return False
+    if "*" in allowed_domains:
         return True
 
     host = urlparse(origin).hostname or origin

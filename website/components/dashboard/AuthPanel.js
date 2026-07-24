@@ -13,7 +13,9 @@ const GOOGLE_CLIENT_ID =
  * Parent owns session persistence via onAuthenticated({ user, access_token, refresh_token }).
  */
 export default function AuthPanel({ initialMode = 'login', onAuthenticated }) {
-  const [authMode, setAuthMode] = useState(initialMode === 'signup' ? 'signup' : 'login');
+  const [authMode, setAuthMode] = useState(
+    initialMode === 'signup' ? 'signup' : initialMode === 'forgot' ? 'forgot' : 'login'
+  );
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -25,11 +27,12 @@ export default function AuthPanel({ initialMode = 'login', onAuthenticated }) {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const mode = new URLSearchParams(window.location.search).get('mode');
-    if (mode === 'signup' || mode === 'login') setAuthMode(mode);
+    if (mode === 'signup' || mode === 'login' || mode === 'forgot') setAuthMode(mode);
   }, []);
 
   const renderGoogleButton = () => {
     if (!window.google?.accounts?.id) return;
+    if (authMode === 'forgot') return;
     window.google.accounts.id.initialize({
       client_id: GOOGLE_CLIENT_ID,
       callback: handleGoogleCredential,
@@ -89,6 +92,33 @@ export default function AuthPanel({ initialMode = 'login', onAuthenticated }) {
     setLoading(false);
   };
 
+  const handleForgot = async (event) => {
+    event.preventDefault();
+    setLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/forgot-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(typeof data.detail === 'string' ? data.detail : 'Unable to send reset email');
+        setLoading(false);
+        return;
+      }
+      setSuccess(
+        data.message ||
+          'If an account exists for that email, we’ve sent password reset instructions.'
+      );
+    } catch {
+      setError('Unable to send reset email');
+    }
+    setLoading(false);
+  };
+
   const handleEmailAuth = async (event) => {
     event.preventDefault();
     setLoading(true);
@@ -133,7 +163,7 @@ export default function AuthPanel({ initialMode = 'login', onAuthenticated }) {
         return;
       }
       if (authMode === 'signup') {
-        setSuccess('Account created — loading your dashboard…');
+        setSuccess('Account created — check your email to verify, then create keys.');
       }
       finishAuth(data);
     } catch {
@@ -152,6 +182,61 @@ export default function AuthPanel({ initialMode = 'login', onAuthenticated }) {
       window.history.replaceState(null, '', url.pathname + url.search);
     }
   };
+
+  if (authMode === 'forgot') {
+    return (
+      <div className="dashboard-login-panel max-w-md w-full card p-8">
+        <div className="text-center mb-6">
+          <img src="/veilproof-mark.png" alt="VeilProof" className="dashboard-login-logo" />
+          <h1 className="text-2xl font-semibold mb-2">Forgot password</h1>
+          <p className="text-mute text-sm">
+            Enter your email and we’ll send reset instructions if an account exists.
+          </p>
+        </div>
+        <form onSubmit={handleForgot} className="space-y-3 mb-5" noValidate>
+          <label className="block text-xs font-bold text-mute uppercase tracking-wider">
+            Email
+            <input
+              type="email"
+              name="email"
+              required
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@company.com"
+              className="mt-2 w-full h-11 px-4 bg-canvas border border-hairline rounded-md text-ink normal-case tracking-normal font-normal outline-none focus:border-primary/60"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full h-11 bg-primary hover:bg-primaryDark disabled:opacity-50 text-white rounded-md font-bold text-sm transition-colors"
+          >
+            {loading ? 'Please wait…' : 'Send reset link'}
+          </button>
+        </form>
+        <button
+          type="button"
+          onClick={() => switchMode('login')}
+          className="text-sm text-primary hover:underline"
+        >
+          Back to log in
+        </button>
+        {error && (
+          <div className="mt-4 p-3 bg-dangerSoft border border-danger/25 rounded-lg text-danger text-sm flex items-center gap-2">
+            <XCircle className="w-4 h-4 shrink-0" />
+            {error}
+          </div>
+        )}
+        {success && (
+          <div className="mt-4 p-3 bg-primarySoft border border-primary/25 rounded-lg text-primary text-sm flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            {success}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard-login-panel max-w-md w-full card p-8">
@@ -233,6 +318,17 @@ export default function AuthPanel({ initialMode = 'login', onAuthenticated }) {
             className="mt-2 w-full h-11 px-4 bg-canvas border border-hairline rounded-md text-ink normal-case tracking-normal font-normal outline-none focus:border-primary/60"
           />
         </label>
+        {authMode === 'login' && (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => switchMode('forgot')}
+              className="text-xs text-primary hover:underline"
+            >
+              Forgot password?
+            </button>
+          </div>
+        )}
         {authMode === 'signup' && (
           <>
             <label className="block text-xs font-bold text-mute uppercase tracking-wider">

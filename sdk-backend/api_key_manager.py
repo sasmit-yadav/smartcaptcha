@@ -349,10 +349,10 @@ class UserManager:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute("""
-                    INSERT INTO users (email, password_hash, full_name, company_name, is_admin, has_password, google_linked)
-                    VALUES (%s, %s, %s, %s, %s, TRUE, FALSE)
+                    INSERT INTO users (email, password_hash, full_name, company_name, is_admin, has_password, google_linked, email_verified_at)
+                    VALUES (%s, %s, %s, %s, %s, TRUE, FALSE, NULL)
                     RETURNING id, email, full_name, company_name, is_admin, created_at,
-                              TRUE AS has_password, FALSE AS google_linked
+                              TRUE AS has_password, FALSE AS google_linked, email_verified_at
                 """, (email, password_hash, full_name, company_name, is_admin))
                 result = cursor.fetchone()
                 conn.commit()
@@ -360,7 +360,7 @@ class UserManager:
                 cursor.execute("""
                     INSERT INTO projects (owner_id, name, allowed_domains)
                     VALUES (%s, %s, %s)
-                """, (user["id"], "Default Workspace", ["*"]))
+                """, (user["id"], "Default Workspace", []))
                 conn.commit()
                 return user
         except Exception as e:
@@ -392,7 +392,8 @@ class UserManager:
                 cursor.execute("""
                     SELECT id, email, password_hash, full_name, company_name, is_admin, is_active,
                            COALESCE(has_password, TRUE) AS has_password,
-                           COALESCE(google_linked, FALSE) AS google_linked
+                           COALESCE(google_linked, FALSE) AS google_linked,
+                           email_verified_at
                     FROM users
                     WHERE email = %s AND is_active = TRUE
                 """, (email,))
@@ -427,6 +428,7 @@ class UserManager:
                     SELECT id, email, full_name, company_name, is_admin, is_active,
                            COALESCE(has_password, TRUE) AS has_password,
                            COALESCE(google_linked, FALSE) AS google_linked,
+                           email_verified_at,
                            created_at
                     FROM users
                     WHERE id = %s::uuid AND is_active = TRUE
@@ -538,7 +540,8 @@ class UserManager:
                 cursor.execute("""
                     SELECT id, email, full_name, company_name, is_admin, is_active,
                            COALESCE(has_password, TRUE) AS has_password,
-                           COALESCE(google_linked, FALSE) AS google_linked
+                           COALESCE(google_linked, FALSE) AS google_linked,
+                           email_verified_at
                     FROM users
                     WHERE email = %s
                 """, (email,))
@@ -549,11 +552,29 @@ class UserManager:
                     if not user_dict.get("google_linked"):
                         cursor.execute(
                             """
-                            UPDATE users SET google_linked = TRUE
+                            UPDATE users
+                            SET google_linked = TRUE,
+                                email_verified_at = COALESCE(email_verified_at, NOW())
                             WHERE id = %s
                             RETURNING id, email, full_name, company_name, is_admin, is_active,
                                       COALESCE(has_password, TRUE) AS has_password,
-                                      TRUE AS google_linked
+                                      TRUE AS google_linked,
+                                      email_verified_at
+                            """,
+                            (user_dict["id"],),
+                        )
+                        user_dict = dict(cursor.fetchone())
+                        conn.commit()
+                    elif user_dict.get("email_verified_at") is None:
+                        cursor.execute(
+                            """
+                            UPDATE users
+                            SET email_verified_at = NOW()
+                            WHERE id = %s
+                            RETURNING id, email, full_name, company_name, is_admin, is_active,
+                                      COALESCE(has_password, TRUE) AS has_password,
+                                      COALESCE(google_linked, FALSE) AS google_linked,
+                                      email_verified_at
                             """,
                             (user_dict["id"],),
                         )
@@ -561,13 +582,12 @@ class UserManager:
                         conn.commit()
                 else:
                     dummy_hash = bcrypt.hashpw(secrets.token_hex(32).encode(), bcrypt.gensalt(rounds=12)).decode()
-                    is_admin_user = email in ["developer@veilproof.com", "developer@nextcaptcha.com", "hulkb690@gmail.com"]
                     cursor.execute("""
-                        INSERT INTO users (email, password_hash, full_name, is_admin, has_password, google_linked)
-                        VALUES (%s, %s, %s, %s, FALSE, TRUE)
+                        INSERT INTO users (email, password_hash, full_name, is_admin, has_password, google_linked, email_verified_at)
+                        VALUES (%s, %s, %s, FALSE, FALSE, TRUE, NOW())
                         RETURNING id, email, full_name, company_name, is_admin, created_at,
-                                  FALSE AS has_password, TRUE AS google_linked
-                    """, (email, dummy_hash, name, is_admin_user))
+                                  FALSE AS has_password, TRUE AS google_linked, email_verified_at
+                    """, (email, dummy_hash, name))
                     new_user = cursor.fetchone()
                     conn.commit()
                     user_dict = dict(new_user)
@@ -583,7 +603,7 @@ class UserManager:
                         INSERT INTO projects (owner_id, name, allowed_domains)
                         VALUES (%s, %s, %s)
                         RETURNING id
-                    """, (user_dict["id"], "Default Workspace", ["*"]))
+                    """, (user_dict["id"], "Default Workspace", []))
                     conn.commit()
                 user_dict["created_now"] = created_now
                 return user_dict
@@ -625,15 +645,15 @@ class UserManager:
             conn.close()
 
     @staticmethod
-    def normalize_allowed_domains(raw) -> Optional[List[str]]:
+    def normalize_allowed_domains(raw) -> List[str]:
         """Turn user input into clean hostnames for Origin checks.
 
         Accepts None, [], or a list of strings that may include URLs.
-        Empty / missing → None (treated as open allowlist by predict).
+        Empty / missing → [] (no browser origins allowed until configured).
         '*' alone → ['*'].
         """
         if not raw:
-            return None
+            return []
         cleaned = []
         for item in raw:
             if item is None:
@@ -643,19 +663,17 @@ class UserManager:
                 continue
             if d == "*":
                 return ["*"]
-            # Users often paste https://example.com/path — keep hostname only.
             if "://" in d:
                 d = d.split("://", 1)[1]
             d = d.split("/")[0]
             d = d.split("?")[0]
             if d.startswith("*."):
                 d = d[2:]
-            # Drop port: Origin hostname matching ignores it.
             if ":" in d and not d.startswith("["):
                 d = d.rsplit(":", 1)[0]
             if d and d not in cleaned:
                 cleaned.append(d)
-        return cleaned or None
+        return cleaned
 
     @staticmethod
     def update_project_domains(project_id: str, allowed_domains: List[str] = None) -> Optional[Dict]:

@@ -25,16 +25,24 @@ from core.auth import (
     rotate_refresh_token,
 )
 from core.email import (
+    SITE_URL,
     send_api_key_created_email,
     send_api_key_revoked_email,
     send_api_key_rotated_email,
     send_domains_updated_email,
+    send_email_verification_email,
     send_new_signin_email,
     send_password_changed_email,
+    send_password_reset_email,
+    send_password_reset_google_only_email,
     send_project_created_email,
     send_welcome_email,
 )
-from core.rate_limit import rate_limit
+from core.email_verify import create_verify_token, consume_verify_token, is_email_verified
+from core.password_policy import normalize_email, validate_email
+from core.password_reset import create_reset_token, consume_reset_token
+from core.rate_limit import enforce, rate_limit
+
 
 router = APIRouter()
 
@@ -128,6 +136,7 @@ def _public_user(user: dict) -> dict:
         "is_admin": bool(user.get("is_admin", False)),
         "has_password": has_password,
         "google_linked": google_linked,
+        "email_verified": user.get("email_verified_at") is not None,
         "auth_methods": methods,
     }
 
@@ -135,6 +144,45 @@ def _public_user(user: dict) -> dict:
 class ChangePasswordRequest(BaseModel):
     current_password: Optional[str] = Field(None, max_length=72)
     new_password: str = Field(..., min_length=12, max_length=72)
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str = Field(..., max_length=254)
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=200)
+    new_password: str = Field(..., min_length=12, max_length=72)
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str = Field(..., min_length=20, max_length=200)
+
+
+GENERIC_FORGOT_MESSAGE = (
+    "If an account exists for that email, we’ve sent password reset instructions."
+)
+
+
+def _require_email_verified(user: CurrentUser) -> dict:
+    profile = UserManager.get_user_by_id(user.user_id)
+    if not profile:
+        raise HTTPException(status_code=401, detail="Account not found")
+    if not is_email_verified(profile):
+        raise HTTPException(
+            status_code=403,
+            detail="Verify your email before creating API keys. Check your inbox or resend verification from the dashboard.",
+        )
+    return profile
+
+
+def _require_project_domains(project: dict) -> None:
+    domains = project.get("allowed_domains") or []
+    if not domains:
+        raise HTTPException(
+            status_code=400,
+            detail="Add at least one allowed domain before creating API keys.",
+        )
 
 
 def _require_project_owner(project_id: str, user: CurrentUser) -> dict:
@@ -180,6 +228,17 @@ async def register_user(
         full_name=user.get("full_name"),
         signup_method="email",
     )
+    try:
+        verify_raw = create_verify_token(str(user["id"]), ip=ip, user_agent=ua)
+        verify_url = f"{SITE_URL.rstrip('/')}/verify-email?token={verify_raw}"
+        background_tasks.add_task(
+            send_email_verification_email,
+            user["email"],
+            verify_url=verify_url,
+            full_name=user.get("full_name"),
+        )
+    except Exception:
+        pass
     return {"success": True, "user": _public_user(user), **tokens}
 
 
@@ -296,6 +355,153 @@ async def change_password(
         "message": "Password updated. Other devices must sign in again.",
         **tokens,
     }
+
+
+@router.post(
+    "/admin/forgot-password",
+    dependencies=[Depends(rate_limit("admin_forgot_password", limit=3, window_seconds=3600))],
+)
+async def forgot_password(
+    body: ForgotPasswordRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
+    """Always returns the same message. Sends reset mail only when appropriate."""
+    ua, ip = _client_meta(request)
+    ok, _ = validate_email(body.email or "")
+    email = normalize_email(body.email) if ok else ""
+    if email:
+        enforce("admin_forgot_password_email", email, 3, 3600)
+        conn_user = None
+        try:
+            import psycopg2
+            from psycopg2.extras import RealDictCursor
+            from api_key_manager import DATABASE_URL
+
+            conn = psycopg2.connect(DATABASE_URL)
+            try:
+                with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                    cursor.execute(
+                        """
+                        SELECT id, email, full_name,
+                               COALESCE(has_password, TRUE) AS has_password,
+                               is_active
+                        FROM users
+                        WHERE email = %s
+                        """,
+                        (email,),
+                    )
+                    conn_user = cursor.fetchone()
+            finally:
+                conn.close()
+        except Exception:
+            conn_user = None
+
+        if conn_user and conn_user.get("is_active", True):
+            if not bool(conn_user.get("has_password", True)):
+                background_tasks.add_task(
+                    send_password_reset_google_only_email,
+                    conn_user["email"],
+                    full_name=conn_user.get("full_name"),
+                    ip=ip,
+                    user_agent=ua,
+                )
+            else:
+                try:
+                    raw = create_reset_token(str(conn_user["id"]), ip=ip, user_agent=ua)
+                    reset_url = f"{SITE_URL.rstrip('/')}/reset-password?token={raw}"
+                    background_tasks.add_task(
+                        send_password_reset_email,
+                        conn_user["email"],
+                        reset_url=reset_url,
+                        full_name=conn_user.get("full_name"),
+                        ip=ip,
+                        user_agent=ua,
+                    )
+                except Exception:
+                    pass
+
+    return {"success": True, "message": GENERIC_FORGOT_MESSAGE}
+
+
+@router.post(
+    "/admin/reset-password",
+    dependencies=[Depends(rate_limit("admin_reset_password", limit=10, window_seconds=3600))],
+)
+async def reset_password(
+    body: ResetPasswordRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
+    ua, ip = _client_meta(request)
+    try:
+        updated = consume_reset_token(body.token, body.new_password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Unable to reset password")
+
+    revoke_all_refresh_tokens(str(updated["id"]))
+    background_tasks.add_task(
+        send_password_changed_email,
+        updated["email"],
+        full_name=updated.get("full_name"),
+        ip=ip,
+        user_agent=ua,
+        was_set=False,
+    )
+    return {
+        "success": True,
+        "message": "Password updated. Sign in with your new password.",
+    }
+
+
+@router.post(
+    "/admin/verify-email",
+    dependencies=[Depends(rate_limit("admin_verify_email", limit=20, window_seconds=3600))],
+)
+async def verify_email(body: VerifyEmailRequest):
+    try:
+        updated = consume_verify_token(body.token)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Unable to verify email")
+    return {
+        "success": True,
+        "already_verified": bool(updated.get("already_verified")),
+        "user": _public_user(updated),
+        "message": "Email verified." if not updated.get("already_verified") else "Email was already verified.",
+    }
+
+
+@router.post(
+    "/admin/resend-verification",
+    dependencies=[Depends(rate_limit("admin_resend_verification", limit=3, window_seconds=3600))],
+)
+async def resend_verification(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: CurrentUser = Depends(get_current_user),
+):
+    ua, ip = _client_meta(request)
+    profile = UserManager.get_user_by_id(user.user_id)
+    if not profile:
+        raise HTTPException(status_code=401, detail="Account not found")
+    if is_email_verified(profile):
+        return {"success": True, "message": "Email is already verified."}
+    try:
+        raw = create_verify_token(str(profile["id"]), ip=ip, user_agent=ua)
+        verify_url = f"{SITE_URL.rstrip('/')}/verify-email?token={raw}"
+        background_tasks.add_task(
+            send_email_verification_email,
+            profile["email"],
+            verify_url=verify_url,
+            full_name=profile.get("full_name"),
+        )
+    except Exception:
+        raise HTTPException(status_code=400, detail="Unable to send verification email")
+    return {"success": True, "message": "Verification email sent."}
 
 
 @router.post("/admin/google-login", dependencies=[Depends(rate_limit("admin_google_login", limit=20, window_seconds=60))])
@@ -441,6 +647,8 @@ async def create_api_key(
 ):
     """Create a new API key for a project the authenticated user owns."""
     project = _require_project_owner(key_data.project_id, user)
+    _require_email_verified(user)
+    _require_project_domains(project)
     try:
         api_key_info = APIKeyManager.create_api_key(
             project_id=key_data.project_id,
@@ -474,6 +682,8 @@ async def create_api_key_pair(
     for new integrations). Both plaintexts are only ever returned here, once.
     """
     project = _require_project_owner(key_data.project_id, user)
+    _require_email_verified(user)
+    _require_project_domains(project)
     try:
         pair = APIKeyManager.create_key_pair(key_data.project_id)
     except Exception as e:

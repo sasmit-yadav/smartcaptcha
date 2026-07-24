@@ -48,6 +48,7 @@ export function normalizeAccountProfile(raw) {
     is_admin: Boolean(raw.is_admin),
     has_password: hasPassword,
     google_linked: googleLinked,
+    email_verified: raw.email_verified === true || raw.email_verified_at != null,
     auth_methods: authMethods,
   };
 }

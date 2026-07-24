@@ -29,14 +29,28 @@ def test_welcome_templates_render():
     assert email_mod._greeting_name("Ada Lovelace", "ada@example.com") == "Ada Lovelace"
 
 
-def test_password_changed_noop_without_key():
+def test_security_notices_noop_without_key():
+    kwargs = dict(full_name="Ada", ip="1.2.3.4", user_agent="Mozilla/5.0")
+    assert email_mod.send_password_changed_email("a@b.com", **kwargs, was_set=False) is False
+    assert email_mod.send_new_signin_email("a@b.com", **kwargs, method="password") is False
+    assert email_mod.send_api_key_created_email("a@b.com", project_name="Demo", **kwargs) is False
+    assert email_mod.send_api_key_rotated_email("a@b.com", project_name="Demo", **kwargs) is False
+    assert email_mod.send_api_key_revoked_email("a@b.com", project_name="Demo", **kwargs) is False
     assert (
-        email_mod.send_password_changed_email(
-            "a@b.com",
-            full_name="Ada",
-            ip="1.2.3.4",
-            user_agent="Mozilla/5.0",
-            was_set=False,
+        email_mod.send_domains_updated_email(
+            "a@b.com", project_name="Demo", domains=["example.com"], **kwargs
         )
         is False
     )
+    assert email_mod.send_project_created_email("a@b.com", project_name="Demo", **kwargs) is False
+
+
+def test_notice_template_shape():
+    html_body = email_mod._wrap_html(
+        "subj",
+        email_mod._meta_block("01 Jan 2026", "1.2.3.4", "Chrome", [("Project", "Demo")]),
+    )
+    assert "When" in html_body
+    assert "1.2.3.4" in html_body
+    assert "Project" in html_body
+    assert "VEILPROOF" in html_body

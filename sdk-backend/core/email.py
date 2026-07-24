@@ -2,7 +2,7 @@ import html
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 
 logger = logging.getLogger("veilproof.email")
 
@@ -152,9 +152,14 @@ def _step(num: str, title: str, body: str) -> str:
 </tr>"""
 
 
-def _meta_block(when: str, ip: Optional[str], user_agent: Optional[str]) -> str:
+def _meta_block(
+    when: str,
+    ip: Optional[str] = None,
+    user_agent: Optional[str] = None,
+    extra_rows: Optional[List[tuple]] = None,
+) -> str:
     rows = [
-        f"<tr><td style='padding:5px 0;color:{MUTED};width:96px;'>When</td>"
+        f"<tr><td style='padding:5px 0;color:{MUTED};width:110px;'>When</td>"
         f"<td style='padding:5px 0;color:{INK};'>{_esc(when)}</td></tr>"
     ]
     if ip:
@@ -167,6 +172,13 @@ def _meta_block(when: str, ip: Optional[str], user_agent: Optional[str]) -> str:
         rows.append(
             f"<tr><td style='padding:5px 0;color:{MUTED};vertical-align:top;'>Device</td>"
             f"<td style='padding:5px 0;color:{INK};'>{_esc(ua)}</td></tr>"
+        )
+    for label, value in extra_rows or []:
+        if value is None or value == "":
+            continue
+        rows.append(
+            f"<tr><td style='padding:5px 0;color:{MUTED};vertical-align:top;'>{_esc(label)}</td>"
+            f"<td style='padding:5px 0;color:{INK};'>{_esc(str(value))}</td></tr>"
         )
     return (
         f"<table role='presentation' cellspacing='0' cellpadding='0' "
@@ -186,6 +198,76 @@ def _wrap_html(title: str, body_html: str) -> str:
     {body_html}
   </td>
 </tr>""",
+    )
+
+
+def _notice(
+    *,
+    to: str,
+    full_name: Optional[str],
+    subject: str,
+    eyebrow: str,
+    title: str,
+    lines: List[str],
+    tags: List[str],
+    ip: Optional[str] = None,
+    user_agent: Optional[str] = None,
+    extra_rows: Optional[List[tuple]] = None,
+    cta_label: str = "Open dashboard",
+    caution: Optional[str] = None,
+) -> bool:
+    first = _display_name(full_name, to)
+    when = _utc_now_label()
+    paras_html = "".join(
+        f'<p style="margin:0 0 12px;color:#c5cdd8;">{_esc(line)}</p>' for line in lines
+    )
+    caution_html = (
+        f'<p style="margin:16px 0 0;font-size:13px;color:{MUTED};">{_esc(caution)} '
+        f'<a href="{_esc(SUPPORT_URL)}" style="color:{BLUE_SOFT};">docs</a>.</p>'
+        if caution
+        else ""
+    )
+    html_body = _wrap_html(
+        subject,
+        f"""
+<p style="margin:0 0 6px;font-size:12px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;color:{BLUE_SOFT};">
+  {_esc(eyebrow)}
+</p>
+<h1 style="margin:0 0 14px;font-size:22px;line-height:1.3;font-weight:700;color:#f5f7fb;">{_esc(title)}</h1>
+<p style="margin:0 0 12px;color:#c5cdd8;">Hi {_esc(first)},</p>
+{paras_html}
+{_meta_block(when, ip, user_agent, extra_rows)}
+{_cta(cta_label, DASHBOARD_URL)}
+{caution_html}
+""",
+    )
+    text_lines = "\n".join(lines)
+    extra_txt = ""
+    for label, value in extra_rows or []:
+        if value is None or value == "":
+            continue
+        extra_txt += f"{label}: {value}\n"
+    caution_txt = f"\n{caution} See {SUPPORT_URL}." if caution else ""
+    text_body = f"""{title}
+
+Hi {first},
+
+{text_lines}
+
+When: {when}
+IP: {ip or "unknown"}
+Device: {(user_agent or "unknown")[:160]}
+{extra_txt}
+Dashboard: {DASHBOARD_URL}{caution_txt}
+
+© {YEAR} {BRAND}
+"""
+    return send_email(
+        to=to,
+        subject=subject,
+        html_body=html_body,
+        text_body=text_body,
+        tags=tags,
     )
 
 
@@ -315,56 +397,60 @@ def send_password_changed_email(
     user_agent: Optional[str] = None,
     was_set: bool = False,
 ) -> bool:
-    first = _display_name(full_name, to)
-    when = _utc_now_label()
     if was_set:
         subject = f"Password added to your {BRAND} account"
-        event = "A password was added to your account."
-        detail = "You can now sign in with email and password, in addition to any linked Google sign-in."
+        title = "Password added"
+        lines = [
+            "A password was added to your account.",
+            "You can now sign in with email and password, in addition to any linked Google sign-in.",
+        ]
     else:
         subject = f"Your {BRAND} password was changed"
-        event = "Your account password was changed."
-        detail = "If you made this change, no further action is needed. Other signed-in sessions were signed out."
-    html_body = _wrap_html(
-        subject,
-        f"""
-<p style="margin:0 0 6px;font-size:12px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;color:{BLUE_SOFT};">
-  Security
-</p>
-<h1 style="margin:0 0 14px;font-size:22px;line-height:1.3;font-weight:700;color:#f5f7fb;">Password update</h1>
-<p style="margin:0 0 12px;color:#c5cdd8;">Hi {_esc(first)},</p>
-<p style="margin:0 0 12px;color:#c5cdd8;">{_esc(event)}</p>
-<p style="margin:0 0 12px;color:{MUTED};">{_esc(detail)}</p>
-{_meta_block(when, ip, user_agent)}
-{_cta("Review account", DASHBOARD_URL)}
-<p style="margin:16px 0 0;font-size:13px;color:{MUTED};">
-  If this wasn’t you, secure the account from the dashboard and review
-  <a href="{_esc(SUPPORT_URL)}" style="color:{BLUE_SOFT};">docs</a>.
-</p>
-""",
-    )
-    text_body = f"""Password update
-
-Hi {first},
-
-{event}
-{detail}
-
-When: {when}
-IP: {ip or "unknown"}
-Device: {(user_agent or "unknown")[:160]}
-
-Dashboard: {DASHBOARD_URL}
-Docs: {SUPPORT_URL}
-
-© {YEAR} {BRAND}
-"""
-    return send_email(
+        title = "Password changed"
+        lines = [
+            "Your account password was changed.",
+            "If you made this change, no further action is needed. Other signed-in sessions were signed out.",
+        ]
+    return _notice(
         to=to,
+        full_name=full_name,
         subject=subject,
-        html_body=html_body,
-        text_body=text_body,
+        eyebrow="Security",
+        title=title,
+        lines=lines,
         tags=["security", "password"],
+        ip=ip,
+        user_agent=user_agent,
+        cta_label="Review account",
+        caution="If this wasn’t you, secure the account from the dashboard and review",
+    )
+
+
+def send_new_signin_email(
+    to: str,
+    *,
+    full_name: Optional[str] = None,
+    ip: Optional[str] = None,
+    user_agent: Optional[str] = None,
+    method: str = "password",
+) -> bool:
+    method_label = "Google" if method == "google" else "email and password"
+    return _notice(
+        to=to,
+        full_name=full_name,
+        subject=f"New sign-in to your {BRAND} account",
+        eyebrow="Security",
+        title="New sign-in",
+        lines=[
+            f"Someone just signed in to your {BRAND} account with {method_label}.",
+            "If this was you, you can ignore this message.",
+        ],
+        tags=["security", "signin"],
+        ip=ip,
+        user_agent=user_agent,
+        extra_rows=[("Method", method_label)],
+        cta_label="Review account",
+        caution="If this wasn’t you, change your password from the dashboard and review",
     )
 
 
@@ -375,53 +461,156 @@ def send_api_key_created_email(
     project_name: Optional[str] = None,
     ip: Optional[str] = None,
     user_agent: Optional[str] = None,
+    key_kind: str = "pair",
 ) -> bool:
-    first = _display_name(full_name, to)
-    when = _utc_now_label()
     project = (project_name or "your project").strip() or "your project"
-    subject = f"New API keys created for {project}"
-    html_body = _wrap_html(
-        subject,
-        f"""
-<p style="margin:0 0 6px;font-size:12px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;color:{BLUE_SOFT};">
-  API keys
-</p>
-<h1 style="margin:0 0 14px;font-size:22px;line-height:1.3;font-weight:700;color:#f5f7fb;">New keys issued</h1>
-<p style="margin:0 0 12px;color:#c5cdd8;">Hi {_esc(first)},</p>
-<p style="margin:0 0 12px;color:#c5cdd8;">
-  A site key and secret key pair was created for <strong style="color:#f5f7fb;">{_esc(project)}</strong>.
-</p>
-<p style="margin:0 0 12px;color:{MUTED};">
-  The secret is shown once in the dashboard. Keep it server-side only.
-</p>
-{_meta_block(when, ip, user_agent)}
-{_cta("Open dashboard", DASHBOARD_URL)}
-<p style="margin:16px 0 0;font-size:13px;color:{MUTED};">
-  If this wasn’t you, revoke the keys in the dashboard and review
-  <a href="{_esc(SUPPORT_URL)}" style="color:{BLUE_SOFT};">docs</a>.
-</p>
-""",
-    )
-    text_body = f"""New keys issued
-
-Hi {first},
-
-A site key and secret key pair was created for {project}.
-The secret is shown once in the dashboard. Keep it server-side only.
-
-When: {when}
-IP: {ip or "unknown"}
-Device: {(user_agent or "unknown")[:160]}
-
-Dashboard: {DASHBOARD_URL}
-Docs: {SUPPORT_URL}
-
-© {YEAR} {BRAND}
-"""
-    return send_email(
+    if key_kind == "pair":
+        subject = f"New API keys created for {project}"
+        title = "New keys issued"
+        lines = [
+            f"A site key and secret key pair was created for {project}.",
+            "The secret is shown once in the dashboard. Keep it server-side only.",
+        ]
+    else:
+        subject = f"New API key created for {project}"
+        title = "New API key issued"
+        lines = [
+            f"A new API key was created for {project}.",
+            "Treat secret keys like passwords and never expose them in browser code.",
+        ]
+    return _notice(
         to=to,
+        full_name=full_name,
         subject=subject,
-        html_body=html_body,
-        text_body=text_body,
+        eyebrow="API keys",
+        title=title,
+        lines=lines,
         tags=["security", "api-keys"],
+        ip=ip,
+        user_agent=user_agent,
+        extra_rows=[("Project", project)],
+        caution="If this wasn’t you, revoke the keys in the dashboard and review",
+    )
+
+
+def send_api_key_rotated_email(
+    to: str,
+    *,
+    full_name: Optional[str] = None,
+    project_name: Optional[str] = None,
+    ip: Optional[str] = None,
+    user_agent: Optional[str] = None,
+    grace_hours: Optional[float] = None,
+) -> bool:
+    project = (project_name or "your project").strip() or "your project"
+    if grace_hours and grace_hours > 0:
+        grace_line = f"The previous key stays valid for about {grace_hours:g} hour(s), then stops working."
+    else:
+        grace_line = "The previous key was deactivated immediately."
+    return _notice(
+        to=to,
+        full_name=full_name,
+        subject=f"API key rotated for {project}",
+        eyebrow="API keys",
+        title="API key rotated",
+        lines=[
+            f"An API key was rotated for {project}.",
+            grace_line,
+            "Update your servers with the new secret if you haven’t already.",
+        ],
+        tags=["security", "api-keys"],
+        ip=ip,
+        user_agent=user_agent,
+        extra_rows=[("Project", project)],
+        caution="If this wasn’t you, revoke keys in the dashboard and review",
+    )
+
+
+def send_api_key_revoked_email(
+    to: str,
+    *,
+    full_name: Optional[str] = None,
+    project_name: Optional[str] = None,
+    ip: Optional[str] = None,
+    user_agent: Optional[str] = None,
+) -> bool:
+    project = (project_name or "your project").strip() or "your project"
+    return _notice(
+        to=to,
+        full_name=full_name,
+        subject=f"API key revoked for {project}",
+        eyebrow="API keys",
+        title="API key revoked",
+        lines=[
+            f"An API key was revoked for {project}.",
+            "Requests that used that key will fail immediately.",
+        ],
+        tags=["security", "api-keys"],
+        ip=ip,
+        user_agent=user_agent,
+        extra_rows=[("Project", project)],
+        caution="If this wasn’t you, review your account in the dashboard and",
+    )
+
+
+def send_domains_updated_email(
+    to: str,
+    *,
+    full_name: Optional[str] = None,
+    project_name: Optional[str] = None,
+    domains: Optional[List[str]] = None,
+    ip: Optional[str] = None,
+    user_agent: Optional[str] = None,
+) -> bool:
+    project = (project_name or "your project").strip() or "your project"
+    domain_list = domains or []
+    if domain_list:
+        domain_summary = ", ".join(domain_list[:12])
+        if len(domain_list) > 12:
+            domain_summary += f" (+{len(domain_list) - 12} more)"
+        domains_line = f"Allowed domains are now: {domain_summary}."
+    else:
+        domains_line = "Allowed domains were cleared for this project."
+    return _notice(
+        to=to,
+        full_name=full_name,
+        subject=f"Allowed domains updated for {project}",
+        eyebrow="Project",
+        title="Domains updated",
+        lines=[
+            f"Allowed domains were updated for {project}.",
+            domains_line,
+        ],
+        tags=["security", "domains"],
+        ip=ip,
+        user_agent=user_agent,
+        extra_rows=[("Project", project)],
+        caution="If this wasn’t you, restore the correct domains in the dashboard and review",
+    )
+
+
+def send_project_created_email(
+    to: str,
+    *,
+    full_name: Optional[str] = None,
+    project_name: Optional[str] = None,
+    ip: Optional[str] = None,
+    user_agent: Optional[str] = None,
+) -> bool:
+    project = (project_name or "your project").strip() or "your project"
+    return _notice(
+        to=to,
+        full_name=full_name,
+        subject=f"Project created: {project}",
+        eyebrow="Project",
+        title="Project created",
+        lines=[
+            f"A new project named {project} was created on your {BRAND} account.",
+            "Next, create keys and add the domains that will load the client script.",
+        ],
+        tags=["project"],
+        ip=ip,
+        user_agent=user_agent,
+        extra_rows=[("Project", project)],
+        caution="If this wasn’t you, review your account in the dashboard and",
     )

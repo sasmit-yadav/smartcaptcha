@@ -26,7 +26,12 @@ from core.auth import (
 )
 from core.email import (
     send_api_key_created_email,
+    send_api_key_revoked_email,
+    send_api_key_rotated_email,
+    send_domains_updated_email,
+    send_new_signin_email,
     send_password_changed_email,
+    send_project_created_email,
     send_welcome_email,
 )
 from core.rate_limit import rate_limit
@@ -179,7 +184,11 @@ async def register_user(
 
 
 @router.post("/admin/login", dependencies=[Depends(rate_limit("admin_login", limit=10, window_seconds=60))])
-async def login_user(login_data: UserLogin, request: Request):
+async def login_user(
+    login_data: UserLogin,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
     """Email/password login → access + refresh tokens."""
     user = UserManager.verify_user(login_data.email, login_data.password)
     if not user:
@@ -193,6 +202,14 @@ async def login_user(login_data: UserLogin, request: Request):
         bool(user.get("is_admin", False)),
         user_agent=ua,
         ip=ip,
+    )
+    background_tasks.add_task(
+        send_new_signin_email,
+        user["email"],
+        full_name=user.get("full_name"),
+        ip=ip,
+        user_agent=ua,
+        method="password",
     )
     return {"success": True, "user": _public_user(user), **tokens}
 
@@ -328,6 +345,15 @@ async def google_login(
                     full_name=user.get("full_name"),
                     signup_method="google",
                 )
+            else:
+                background_tasks.add_task(
+                    send_new_signin_email,
+                    user["email"],
+                    full_name=user.get("full_name"),
+                    ip=ip,
+                    user_agent=ua,
+                    method="google",
+                )
             return {"success": True, "user": _public_user(user), **tokens}
 
     except HTTPException:
@@ -339,7 +365,12 @@ async def google_login(
 
 
 @router.post("/admin/projects")
-async def create_project(project_data: ProjectCreate, user: CurrentUser = Depends(get_current_user)):
+async def create_project(
+    project_data: ProjectCreate,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: CurrentUser = Depends(get_current_user),
+):
     """Create a new project for the authenticated user."""
     try:
         project = UserManager.create_project(
@@ -347,9 +378,19 @@ async def create_project(project_data: ProjectCreate, user: CurrentUser = Depend
             name=project_data.name,
             allowed_domains=project_data.allowed_domains
         )
-        return {"success": True, "project": project}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    ua, ip = _client_meta(request)
+    profile = UserManager.get_user_by_id(user.user_id) or {}
+    background_tasks.add_task(
+        send_project_created_email,
+        user.email,
+        full_name=profile.get("full_name"),
+        project_name=project.get("name"),
+        ip=ip,
+        user_agent=ua,
+    )
+    return {"success": True, "project": project}
 
 
 @router.get("/admin/projects")
@@ -363,33 +404,62 @@ async def list_projects(user: CurrentUser = Depends(get_current_user)):
 async def update_project_domains(
     project_id: str,
     body: ProjectDomainsUpdate,
+    request: Request,
+    background_tasks: BackgroundTasks,
     user: CurrentUser = Depends(get_current_user),
 ):
     """Update allowed domains for a project the authenticated user owns."""
-    _require_project_owner(project_id, user)
+    project = _require_project_owner(project_id, user)
     try:
-        project = UserManager.update_project_domains(project_id, body.allowed_domains)
-        if not project:
+        updated = UserManager.update_project_domains(project_id, body.allowed_domains)
+        if not updated:
             raise HTTPException(status_code=404, detail="Project not found")
-        return {"success": True, "project": project}
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    ua, ip = _client_meta(request)
+    profile = UserManager.get_user_by_id(user.user_id) or {}
+    background_tasks.add_task(
+        send_domains_updated_email,
+        user.email,
+        full_name=profile.get("full_name"),
+        project_name=updated.get("name") or project.get("name"),
+        domains=updated.get("allowed_domains") or body.allowed_domains or [],
+        ip=ip,
+        user_agent=ua,
+    )
+    return {"success": True, "project": updated}
 
 
 @router.post("/admin/api-keys")
-async def create_api_key(key_data: APIKeyCreate, user: CurrentUser = Depends(get_current_user)):
+async def create_api_key(
+    key_data: APIKeyCreate,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: CurrentUser = Depends(get_current_user),
+):
     """Create a new API key for a project the authenticated user owns."""
-    _require_project_owner(key_data.project_id, user)
+    project = _require_project_owner(key_data.project_id, user)
     try:
         api_key_info = APIKeyManager.create_api_key(
             project_id=key_data.project_id,
             key_type=key_data.key_type
         )
-        return {"success": True, "api_key": api_key_info}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    ua, ip = _client_meta(request)
+    profile = UserManager.get_user_by_id(user.user_id) or {}
+    background_tasks.add_task(
+        send_api_key_created_email,
+        user.email,
+        full_name=profile.get("full_name"),
+        project_name=project.get("name"),
+        ip=ip,
+        user_agent=ua,
+        key_kind="single",
+    )
+    return {"success": True, "api_key": api_key_info}
 
 
 @router.post("/admin/api-keys/pair")
@@ -422,7 +492,13 @@ async def create_api_key_pair(
 
 
 @router.post("/admin/api-keys/{key_id}/rotate")
-async def rotate_api_key(key_id: str, rotate_data: APIKeyRotate, user: CurrentUser = Depends(get_current_user)):
+async def rotate_api_key(
+    key_id: str,
+    rotate_data: APIKeyRotate,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: CurrentUser = Depends(get_current_user),
+):
     """
     Rotate an API key belonging to a project the authenticated user owns.
     The old key keeps working for `grace_hours` (0 = deactivated immediately).
@@ -430,13 +506,24 @@ async def rotate_api_key(key_id: str, rotate_data: APIKeyRotate, user: CurrentUs
     project_id = APIKeyManager.get_key_project_id(key_id)
     if not project_id:
         raise HTTPException(status_code=404, detail="API key not found")
-    _require_project_owner(project_id, user)
+    project = _require_project_owner(project_id, user)
 
     try:
         result = APIKeyManager.rotate_api_key(key_id, project_id, grace_hours=rotate_data.grace_hours)
-        return {"success": True, **result}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    ua, ip = _client_meta(request)
+    profile = UserManager.get_user_by_id(user.user_id) or {}
+    background_tasks.add_task(
+        send_api_key_rotated_email,
+        user.email,
+        full_name=profile.get("full_name"),
+        project_name=project.get("name"),
+        ip=ip,
+        user_agent=ua,
+        grace_hours=rotate_data.grace_hours,
+    )
+    return {"success": True, **result}
 
 
 @router.get("/admin/api-keys/{project_id}")
@@ -448,14 +535,29 @@ async def list_api_keys(project_id: str, user: CurrentUser = Depends(get_current
 
 
 @router.delete("/admin/api-keys/{key_id}")
-async def revoke_api_key(key_id: str, user: CurrentUser = Depends(get_current_user)):
+async def revoke_api_key(
+    key_id: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: CurrentUser = Depends(get_current_user),
+):
     """Revoke an API key belonging to a project the authenticated user owns."""
     project_id = APIKeyManager.get_key_project_id(key_id)
     if not project_id:
         raise HTTPException(status_code=404, detail="API key not found")
-    _require_project_owner(project_id, user)
+    project = _require_project_owner(project_id, user)
 
     success = APIKeyManager.revoke_api_key(key_id, project_id=project_id)
     if not success:
         raise HTTPException(status_code=404, detail="API key not found")
+    ua, ip = _client_meta(request)
+    profile = UserManager.get_user_by_id(user.user_id) or {}
+    background_tasks.add_task(
+        send_api_key_revoked_email,
+        user.email,
+        full_name=profile.get("full_name"),
+        project_name=project.get("name"),
+        ip=ip,
+        user_agent=ua,
+    )
     return {"success": True, "message": "API key revoked"}

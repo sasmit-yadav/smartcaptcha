@@ -27,6 +27,8 @@ def test_welcome_templates_render():
     assert name == "Ada"
     assert email_mod._display_name(None, "builder@example.com") == "builder"
     assert email_mod._greeting_name("Ada Lovelace", "ada@example.com") == "Ada Lovelace"
+    ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
+    assert email_mod._friendly_device(ua) == "Chrome on Windows"
 
 
 def test_security_notices_noop_without_key():

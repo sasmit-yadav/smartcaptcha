@@ -156,6 +156,42 @@ def _step(num: str, title: str, body: str) -> str:
 </tr>"""
 
 
+def _friendly_device(user_agent: Optional[str]) -> Optional[str]:
+    ua = (user_agent or "").strip()
+    if not ua:
+        return None
+    low = ua.lower()
+    browser = "Browser"
+    if "edg/" in low or "edgios" in low:
+        browser = "Edge"
+    elif "chrome/" in low and "chromium" not in low.split("chrome/")[0]:
+        browser = "Chrome"
+    elif "firefox/" in low or "fxios" in low:
+        browser = "Firefox"
+    elif "safari/" in low and "chrome/" not in low and "chromium" not in low:
+        browser = "Safari"
+    elif "opera" in low or "opr/" in low:
+        browser = "Opera"
+
+    system = "unknown device"
+    if "windows" in low:
+        system = "Windows"
+    elif "android" in low:
+        system = "Android"
+    elif "iphone" in low or "ipod" in low:
+        system = "iPhone"
+    elif "ipad" in low:
+        system = "iPad"
+    elif "mac os x" in low or "macintosh" in low:
+        system = "Mac"
+    elif "cros" in low:
+        system = "ChromeOS"
+    elif "linux" in low:
+        system = "Linux"
+
+    return f"{browser} on {system}"
+
+
 def _meta_block(
     when: str,
     ip: Optional[str] = None,
@@ -168,14 +204,14 @@ def _meta_block(
     ]
     if ip:
         rows.append(
-            f"<tr><td style='padding:5px 0;color:{MUTED};'>IP</td>"
+            f"<tr><td style='padding:5px 0;color:{MUTED};'>IP address</td>"
             f"<td style='padding:5px 0;color:{INK};'>{_esc(ip)}</td></tr>"
         )
-    if user_agent:
-        ua = user_agent[:160] + ("…" if len(user_agent) > 160 else "")
+    device = _friendly_device(user_agent)
+    if device:
         rows.append(
-            f"<tr><td style='padding:5px 0;color:{MUTED};vertical-align:top;'>Device</td>"
-            f"<td style='padding:5px 0;color:{INK};'>{_esc(ua)}</td></tr>"
+            f"<tr><td style='padding:5px 0;color:{MUTED};'>Browser</td>"
+            f"<td style='padding:5px 0;color:{INK};'>{_esc(device)}</td></tr>"
         )
     for label, value in extra_rows or []:
         if value is None or value == "":
@@ -219,6 +255,7 @@ def _notice(
     extra_rows: Optional[List[tuple]] = None,
     cta_label: str = "Open dashboard",
     caution: Optional[str] = None,
+    security_context: bool = True,
 ) -> bool:
     first = _display_name(full_name, to)
     when = _utc_now_label()
@@ -231,6 +268,8 @@ def _notice(
         if caution
         else ""
     )
+    show_meta = security_context and (ip or user_agent or extra_rows)
+    meta_html = _meta_block(when, ip, user_agent, extra_rows) if show_meta else ""
     html_body = _wrap_html(
         subject,
         f"""
@@ -240,7 +279,7 @@ def _notice(
 <h1 style="margin:0 0 14px;font-size:22px;line-height:1.3;font-weight:700;color:#f5f7fb;">{_esc(title)}</h1>
 <p style="margin:0 0 12px;color:#c5cdd8;">Hi {_esc(first)},</p>
 {paras_html}
-{_meta_block(when, ip, user_agent, extra_rows)}
+{meta_html}
 {_cta(cta_label, DASHBOARD_URL)}
 {caution_html}
 """,
@@ -252,16 +291,21 @@ def _notice(
             continue
         extra_txt += f"{label}: {value}\n"
     caution_txt = f"\n{caution} See {SUPPORT_URL}." if caution else ""
+    meta_txt = ""
+    if show_meta:
+        device = _friendly_device(user_agent) or "unknown"
+        meta_txt = (
+            f"\nWhen: {when}\n"
+            f"IP address: {ip or 'unknown'}\n"
+            f"Browser: {device}\n"
+            f"{extra_txt}"
+        )
     text_body = f"""{title}
 
 Hi {first},
 
 {text_lines}
-
-When: {when}
-IP: {ip or "unknown"}
-Device: {(user_agent or "unknown")[:160]}
-{extra_txt}
+{meta_txt}
 Dashboard: {DASHBOARD_URL}{caution_txt}
 
 © {YEAR} {BRAND}
@@ -623,10 +667,8 @@ def send_project_created_email(
         user_agent=user_agent,
         extra_rows=[("Project", project)],
         caution="If this wasn’t you, review your account in the dashboard and",
+        security_context=False,
     )
-
-
-def send_password_reset_email(
     to: str,
     *,
     reset_url: str,
@@ -658,6 +700,7 @@ def send_password_reset_email(
 </p>
 """,
     )
+    device = _friendly_device(user_agent) or "unknown"
     text_body = f"""Reset your {BRAND} password
 
 Hi {first},
@@ -666,8 +709,8 @@ We received a request to reset the password for your {BRAND} account.
 This link expires in 60 minutes and can be used once.
 
 When: {when}
-IP: {ip or "unknown"}
-Device: {(user_agent or "unknown")[:160]}
+IP address: {ip or "unknown"}
+Browser: {device}
 
 Reset password: {reset_url}
 

@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import CodeBlock from '../../components/docs/CodeBlock';
 import SiteNav from '../../components/chrome/SiteNav';
+import AuthPanel from '../../components/dashboard/AuthPanel';
 import { scriptTagSnippet, siteverifyCurlSnippet } from '../../components/docs/docSnippets';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.veilproof.tech';
@@ -53,13 +54,6 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [authMode, setAuthMode] = useState('login'); // login | signup
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [fullName, setFullName] = useState('');
-
-  const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '40763777720-bb2cmdjfi2p15h03pclgpfoklachvmpp.apps.googleusercontent.com';
 
   const persistSession = (data) => {
     setUser(data.user);
@@ -124,122 +118,20 @@ export default function Dashboard() {
     }
   };
 
-  const initializeGoogleSignIn = () => {
-    if (window.google && window.google.accounts) {
-      window.google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: handleGoogleLoginSuccess
-      });
-
-      const buttonContainer = document.getElementById('google-btn-container');
-      if (buttonContainer) {
-        buttonContainer.innerHTML = '';
-        window.google.accounts.id.renderButton(
-          buttonContainer,
-          { theme: 'filled_black', size: 'large', width: 380, shape: 'rectangular' }
-        );
-      }
-    }
+  const onAuthenticated = (data) => {
+    persistSession(data);
+    loadProjects(data.access_token);
   };
 
-  const handleGoogleLoginSuccess = async (response) => {
-    setLoading(true);
-    setError('');
-    try {
-      const res = await fetch(`${API_BASE_URL}/admin/google-login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id_token: response.credential })
-      });
-      const data = await res.json();
-      if (data.success) {
-        persistSession(data);
-        loadProjects(data.access_token);
-      } else {
-        setError(typeof data.detail === 'string' ? data.detail : 'Google sign-in failed');
-      }
-    } catch (err) {
-      setError('Failed to authenticate with Google');
-    }
-    setLoading(false);
-  };
-
-  const handleEmailAuth = async (event) => {
-    event.preventDefault();
-    setLoading(true);
-    setError('');
-    setSuccess('');
-
-    if (authMode === 'signup') {
-      if (password !== confirmPassword) {
-        setError('Passwords do not match');
-        setLoading(false);
-        return;
-      }
-      if (password.length < 12) {
-        setError('Password must be at least 12 characters');
-        setLoading(false);
-        return;
-      }
-    }
-
-    try {
-      const path = authMode === 'signup' ? '/admin/register' : '/admin/login';
-      const body =
-        authMode === 'signup'
-          ? { email, password, full_name: fullName || undefined }
-          : { email, password };
-      const res = await fetch(`${API_BASE_URL}${path}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        const detail = data.detail;
-        setError(typeof detail === 'string' ? detail : Array.isArray(detail) ? detail[0]?.msg || 'Request failed' : 'Authentication failed');
-        setLoading(false);
-        return;
-      }
-      persistSession(data);
-      setPassword('');
-      setConfirmPassword('');
-      loadProjects(data.access_token);
-    } catch {
-      setError(authMode === 'signup' ? 'Signup failed' : 'Login failed');
-    }
-    setLoading(false);
-  };
-
-  // Check for logged in user and load Google SDK
+  // Restore existing session
   useEffect(() => {
     const savedUser = localStorage.getItem('veilproof_user');
     const savedToken = localStorage.getItem('veilproof_token');
     if (savedUser && savedToken) {
       setUser(JSON.parse(savedUser));
       loadProjects(savedToken);
-    } else {
-      if (!document.getElementById('google-jssdk')) {
-        const script = document.createElement('script');
-        script.id = 'google-jssdk';
-        script.src = 'https://accounts.google.com/gsi/client';
-        script.async = true;
-        script.defer = true;
-        script.onload = () => {
-          setTimeout(initializeGoogleSignIn, 200);
-        };
-        document.body.appendChild(script);
-      } else {
-        setTimeout(initializeGoogleSignIn, 200);
-      }
     }
   }, []);
-
-  useEffect(() => {
-    if (!user) {
-      setTimeout(initializeGoogleSignIn, 250);
-    }
-  }, [user, authMode]);
 
   const loadProjects = async (token) => {
     try {
@@ -434,126 +326,8 @@ export default function Dashboard() {
     return (
       <div className="min-h-screen bg-canvas text-ink">
         <SiteNav />
-        <div className="dashboard-login min-h-[calc(100vh-64px)] flex items-center justify-center px-6">
-          <div className="dashboard-login-panel max-w-md w-full card p-8">
-          <div className="text-center mb-6">
-            <img src="/veilproof-mark.png" alt="VeilProof" className="dashboard-login-logo" />
-            <h1 className="text-2xl font-semibold mb-2">
-              <span className="font-brand font-bold uppercase tracking-wide">VeilProof</span> Dashboard
-            </h1>
-            <p className="text-mute text-sm">Sign in to manage projects, domains, and API keys</p>
-          </div>
-
-          <div className="flex mb-5 p-1 bg-canvas border border-hairline rounded-lg">
-            <button
-              type="button"
-              onClick={() => { setAuthMode('login'); setError(''); }}
-              className={`flex-1 h-9 rounded-md text-sm font-semibold transition-colors ${
-                authMode === 'login' ? 'bg-white/10 text-ink' : 'text-mute hover:text-ink'
-              }`}
-            >
-              Log in
-            </button>
-            <button
-              type="button"
-              onClick={() => { setAuthMode('signup'); setError(''); }}
-              className={`flex-1 h-9 rounded-md text-sm font-semibold transition-colors ${
-                authMode === 'signup' ? 'bg-white/10 text-ink' : 'text-mute hover:text-ink'
-              }`}
-            >
-              Sign up
-            </button>
-          </div>
-
-          <form onSubmit={handleEmailAuth} className="space-y-3 mb-5">
-            {authMode === 'signup' && (
-              <label className="block text-xs font-bold text-mute uppercase tracking-wider">
-                Full name <span className="font-normal normal-case">(optional)</span>
-                <input
-                  type="text"
-                  autoComplete="name"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="mt-2 w-full h-11 px-4 bg-canvas border border-hairline rounded-md text-ink normal-case tracking-normal font-normal outline-none focus:border-primary/60"
-                />
-              </label>
-            )}
-            <label className="block text-xs font-bold text-mute uppercase tracking-wider">
-              Email
-              <input
-                type="email"
-                required
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="mt-2 w-full h-11 px-4 bg-canvas border border-hairline rounded-md text-ink normal-case tracking-normal font-normal outline-none focus:border-primary/60"
-              />
-            </label>
-            <label className="block text-xs font-bold text-mute uppercase tracking-wider">
-              Password
-              <input
-                type="password"
-                required
-                minLength={authMode === 'signup' ? 12 : 1}
-                autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="mt-2 w-full h-11 px-4 bg-canvas border border-hairline rounded-md text-ink normal-case tracking-normal font-normal outline-none focus:border-primary/60"
-              />
-            </label>
-            {authMode === 'signup' && (
-              <>
-                <label className="block text-xs font-bold text-mute uppercase tracking-wider">
-                  Confirm password
-                  <input
-                    type="password"
-                    required
-                    minLength={12}
-                    autoComplete="new-password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    className="mt-2 w-full h-11 px-4 bg-canvas border border-hairline rounded-md text-ink normal-case tracking-normal font-normal outline-none focus:border-primary/60"
-                  />
-                </label>
-                <p className="text-mute text-xs leading-relaxed">
-                  Use at least 12 characters. Avoid common passwords and your email name.
-                </p>
-              </>
-            )}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full h-11 bg-primary hover:bg-primaryDark disabled:opacity-50 text-white rounded-md font-bold text-sm transition-colors"
-            >
-              {loading ? 'Please wait…' : authMode === 'signup' ? 'Create account' : 'Log in'}
-            </button>
-          </form>
-
-          <div className="relative my-5">
-            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-hairline" /></div>
-            <div className="relative flex justify-center text-xs uppercase tracking-wider">
-              <span className="bg-[var(--card-bg,transparent)] px-3 text-mute">or continue with Google</span>
-            </div>
-          </div>
-
-          <div className="space-y-6 flex flex-col items-center">
-            <div id="google-btn-container" className="w-full flex justify-center py-1 min-h-[50px]"></div>
-          </div>
-
-          {error && (
-            <div className="mt-4 p-3 bg-dangerSoft border border-danger/25 rounded-lg text-danger text-sm flex items-center gap-2">
-              <XCircle className="w-4 h-4 shrink-0" />
-              {error}
-            </div>
-          )}
-
-          {success && (
-            <div className="mt-4 p-3 bg-primarySoft border border-primary/25 rounded-lg text-primary text-sm flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-              {success}
-            </div>
-          )}
-          </div>
+        <div className="dashboard-login min-h-[calc(100vh-64px)] flex items-center justify-center px-6 py-10">
+          <AuthPanel onAuthenticated={onAuthenticated} />
         </div>
       </div>
     );

@@ -49,8 +49,8 @@ export default function SiteNav({ active, user, onLogout }) {
             </>
           ) : (
             <>
-              <a href="/dashboard" className="vp-login">Log in</a>
-              <a href="/dashboard" className="vp-nav-cta">Get started</a>
+              <a href="/dashboard?mode=login" className="vp-login">Log in</a>
+              <a href="/dashboard?mode=signup" className="vp-nav-cta">Get started</a>
             </>
           )}
           <button className="vp-menu-button" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle menu">
@@ -70,8 +70,8 @@ export default function SiteNav({ active, user, onLogout }) {
             </button>
           ) : (
             <>
-              <a href="/dashboard" onClick={() => setMenuOpen(false)}>Log in</a>
-              <a href="/dashboard" onClick={() => setMenuOpen(false)} className="vp-mobile-cta">Get started</a>
+              <a href="/dashboard?mode=login" onClick={() => setMenuOpen(false)}>Log in</a>
+              <a href="/dashboard?mode=signup" onClick={() => setMenuOpen(false)} className="vp-mobile-cta">Get started</a>
             </>
           )}
         </nav>

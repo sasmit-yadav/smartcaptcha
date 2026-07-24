@@ -543,6 +543,7 @@ class UserManager:
                     WHERE email = %s
                 """, (email,))
                 result = cursor.fetchone()
+                created_now = False
                 if result:
                     user_dict = dict(result)
                     if not user_dict.get("google_linked"):
@@ -570,6 +571,7 @@ class UserManager:
                     new_user = cursor.fetchone()
                     conn.commit()
                     user_dict = dict(new_user)
+                    created_now = True
 
                 if not user_dict.get("is_active", True):
                     raise ValueError("Account is disabled")
@@ -583,6 +585,7 @@ class UserManager:
                         RETURNING id
                     """, (user_dict["id"], "Default Workspace", ["*"]))
                     conn.commit()
+                user_dict["created_now"] = created_now
                 return user_dict
         finally:
             conn.close()

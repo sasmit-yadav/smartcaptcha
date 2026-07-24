@@ -12,7 +12,7 @@ Auth model:
 import os
 from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from api_key_manager import APIKeyManager, UserManager
@@ -23,6 +23,11 @@ from core.auth import (
     revoke_all_refresh_tokens,
     revoke_refresh_token,
     rotate_refresh_token,
+)
+from core.email import (
+    send_api_key_created_email,
+    send_password_changed_email,
+    send_welcome_email,
 )
 from core.rate_limit import rate_limit
 
@@ -138,7 +143,11 @@ def _require_project_owner(project_id: str, user: CurrentUser) -> dict:
 
 
 @router.post("/admin/register", dependencies=[Depends(rate_limit("admin_register", limit=5, window_seconds=60))])
-async def register_user(user_data: UserRegistration, request: Request):
+async def register_user(
+    user_data: UserRegistration,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
     """Register with email/password and issue access + refresh tokens."""
     try:
         user = UserManager.create_user(
@@ -159,6 +168,12 @@ async def register_user(user_data: UserRegistration, request: Request):
         bool(user.get("is_admin", False)),
         user_agent=ua,
         ip=ip,
+    )
+    background_tasks.add_task(
+        send_welcome_email,
+        user["email"],
+        full_name=user.get("full_name"),
+        signup_method="email",
     )
     return {"success": True, "user": _public_user(user), **tokens}
 
@@ -221,12 +236,15 @@ async def get_me(user: CurrentUser = Depends(get_current_user)):
 async def change_password(
     body: ChangePasswordRequest,
     request: Request,
+    background_tasks: BackgroundTasks,
     user: CurrentUser = Depends(get_current_user),
 ):
     """
     Change password (email accounts) or set a first password (Google-only accounts).
     Revokes other sessions, then re-issues tokens for this browser.
     """
+    before = UserManager.get_user_by_id(user.user_id) or {}
+    was_set = not bool(before.get("has_password"))
     try:
         updated = UserManager.change_password(
             user.user_id,
@@ -247,6 +265,14 @@ async def change_password(
         user_agent=ua,
         ip=ip,
     )
+    background_tasks.add_task(
+        send_password_changed_email,
+        updated["email"],
+        full_name=updated.get("full_name"),
+        ip=ip,
+        user_agent=ua,
+        was_set=was_set,
+    )
     return {
         "success": True,
         "user": _public_user(updated),
@@ -256,7 +282,11 @@ async def change_password(
 
 
 @router.post("/admin/google-login", dependencies=[Depends(rate_limit("admin_google_login", limit=20, window_seconds=60))])
-async def google_login(login_req: GoogleLoginRequest, request: Request):
+async def google_login(
+    login_req: GoogleLoginRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+):
     """Verify Google ID token, get or create user, issue session tokens."""
     import urllib.request
     import json
@@ -282,6 +312,7 @@ async def google_login(login_req: GoogleLoginRequest, request: Request):
 
             name = payload.get("name", "")
             user = UserManager.get_or_create_google_user(email=email, name=name)
+            created_now = bool(user.pop("created_now", False))
             ua, ip = _client_meta(request)
             tokens = issue_session_tokens(
                 str(user["id"]),
@@ -290,6 +321,13 @@ async def google_login(login_req: GoogleLoginRequest, request: Request):
                 user_agent=ua,
                 ip=ip,
             )
+            if created_now:
+                background_tasks.add_task(
+                    send_welcome_email,
+                    user["email"],
+                    full_name=user.get("full_name"),
+                    signup_method="google",
+                )
             return {"success": True, "user": _public_user(user), **tokens}
 
     except HTTPException:
@@ -355,17 +393,32 @@ async def create_api_key(key_data: APIKeyCreate, user: CurrentUser = Depends(get
 
 
 @router.post("/admin/api-keys/pair")
-async def create_api_key_pair(key_data: ProjectIdOnly, user: CurrentUser = Depends(get_current_user)):
+async def create_api_key_pair(
+    key_data: ProjectIdOnly,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user: CurrentUser = Depends(get_current_user),
+):
     """
     Create a site key + secret key pair for a project (the recommended flow
     for new integrations). Both plaintexts are only ever returned here, once.
     """
-    _require_project_owner(key_data.project_id, user)
+    project = _require_project_owner(key_data.project_id, user)
     try:
         pair = APIKeyManager.create_key_pair(key_data.project_id)
-        return {"success": True, **pair}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    ua, ip = _client_meta(request)
+    profile = UserManager.get_user_by_id(user.user_id) or {}
+    background_tasks.add_task(
+        send_api_key_created_email,
+        user.email,
+        full_name=profile.get("full_name"),
+        project_name=project.get("name"),
+        ip=ip,
+        user_agent=ua,
+    )
+    return {"success": True, **pair}
 
 
 @router.post("/admin/api-keys/{key_id}/rotate")

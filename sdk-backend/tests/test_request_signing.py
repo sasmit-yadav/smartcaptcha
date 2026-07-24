@@ -264,9 +264,8 @@ def test_session_store_enforces_hard_bound(monkeypatch):
     assert (PROJECT_ID, "s1") not in request_signing._sessions
 
 
-def test_unsigned_request_soft_mode_passes_through():
-    monkeypatch_mode = request_signing.REQUEST_SIGNING_MODE
-    assert monkeypatch_mode == "soft"  # default
+def test_unsigned_request_soft_mode_passes_through(monkeypatch):
+    monkeypatch.setattr(request_signing, "REQUEST_SIGNING_MODE", "soft")
     result = verify_signature("s1", None, None, b"{}", None)
     assert result.ok is True
     assert result.unsigned is True
@@ -277,6 +276,20 @@ def test_unsigned_request_strict_mode_rejected(monkeypatch):
     result = verify_signature("s1", None, None, b"{}", None)
     assert result.ok is False
     assert result.unsigned is False
+    assert result.error_code == "signing_required"
+
+
+def test_default_mode_is_strict():
+    assert request_signing.REQUEST_SIGNING_MODE == "strict"
+
+
+def test_partial_headers_rejected_in_soft_mode(monkeypatch):
+    monkeypatch.setattr(request_signing, "REQUEST_SIGNING_MODE", "soft")
+    result = _verify_signature(
+        PROJECT_ID, "s1", "1710000000000", None, b"{}", None
+    )
+    assert result.ok is False
+    assert result.error_code == "signing_incomplete"
 
 
 def test_disabled_accepts_everything(monkeypatch):

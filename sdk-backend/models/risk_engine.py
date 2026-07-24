@@ -75,7 +75,8 @@ class RiskEngine:
                                      user_agent: str,
                                      has_touch: bool,
                                      platform: str,
-                                     automation_score: float = 0.0) -> float:
+                                     automation_score: float = 0.0,
+                                     automation_signals: Optional[list] = None) -> float:
         """
         Rule-based risk score (0-100) from browser/device signals.
         Not model-derived — a fixed set of known automation tells.
@@ -84,16 +85,27 @@ class RiskEngine:
         navigator.webdriver getter, Playwright globals, CDP Runtime.enable
         leak). Real Chrome never needs these probes to fire; a stealth kit
         that hides webdriver almost always trips at least one.
+
+        CDP-only signals are inconclusive industry-wide (Chrome 2025+ and
+        CDP-minimal drivers often never trip the classic Runtime.enable
+        leak). A CDP hit alone is capped below the block threshold; silence
+        is never treated as proof of humanity.
         """
         risk_score = 0.0
+        effective_automation = self._effective_automation_score(
+            automation_score, automation_signals
+        )
 
         # WebDriver flag is the strongest indicator - decisive on its own.
         if webdriver_flag:
             risk_score += 100.0
 
-        # Client stealth probes — treat high scores as decisive.
-        if automation_score >= 50:
-            risk_score = max(risk_score, min(100.0, float(automation_score)))
+        # Client stealth probes — treat high *decisive* scores as block-worthy.
+        if effective_automation >= 50:
+            risk_score = max(risk_score, min(100.0, float(effective_automation)))
+        elif effective_automation > 0:
+            # Soft / inconclusive contribution (e.g. CDP-only).
+            risk_score = max(risk_score, float(effective_automation))
 
         # Known automation tools in the user agent.
         suspicious_ua_patterns = ('selenium', 'webdriver', 'headless', 'phantom', 'chromeless', 'automation')
@@ -110,6 +122,26 @@ class RiskEngine:
             risk_score += 15.0
 
         return min(risk_score, 100.0)
+
+    @staticmethod
+    def _effective_automation_score(automation_score: float,
+                                    automation_signals: Optional[list]) -> float:
+        """Cap inconclusive CDP-only evidence below the block threshold."""
+        score = float(automation_score or 0)
+        if score <= 0:
+            return 0.0
+        signals = [str(s) for s in (automation_signals or [])]
+        if not signals:
+            return score
+        decisive = [
+            s for s in signals
+            if not s.startswith('cdp_') and s != 'cdp_runtime_enable'
+        ]
+        cdp_only = any(s.startswith('cdp_') for s in signals) and not decisive
+        if cdp_only:
+            # Industry: CDP leak alone is soft evidence (≤35 < block@50).
+            return min(score, 35.0)
+        return score
 
     def calculate_anomaly_score(self, raw_anomaly_score: Optional[float],
                                  score_zero: Optional[float],
@@ -167,7 +199,8 @@ class RiskEngine:
                           anomaly_score_block: Optional[float] = None,
                           network_score: float = 0.0,
                           duplicate_score: float = 0.0,
-                          automation_score: float = 0.0) -> Dict:
+                          automation_score: float = 0.0,
+                          automation_signals: Optional[list] = None) -> Dict:
         """Full risk evaluation for a session: component scores + final decision.
 
         `network_score` (0-100) comes from core/network_signals.evaluate_network
@@ -180,12 +213,13 @@ class RiskEngine:
         (strategy doc Part D.2). Defaults to 0 so callers without it behave
         exactly as before.
 
-        `automation_score` (0-100) comes from client stealth probes in the
-        SDK (spoofed webdriver getter, Playwright/Selenium globals, CDP).
+        `automation_score` / `automation_signals` come from client stealth
+        probes. CDP-only signal sets are capped below the block threshold.
         """
         behavior_score = self.calculate_behavior_score(ml_probability, decision_threshold)
         fingerprint_score = self.calculate_fingerprint_score(
-            webdriver_flag, user_agent, has_touch, platform, automation_score
+            webdriver_flag, user_agent, has_touch, platform,
+            automation_score, automation_signals,
         )
         anomaly_score = self.calculate_anomaly_score(
             raw_anomaly_score, anomaly_score_zero, anomaly_score_block

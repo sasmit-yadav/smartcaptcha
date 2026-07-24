@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.5] - 2026-07-24
+
+### Security
+- CDP Runtime.enable leak is now **inconclusive soft evidence** only
+  (`automation_score` 30, never decisive alone). Decisive signals remain
+  `webdriver_true`, `webdriver_undefined`, non-native getters, and driver
+  globals. Aligns with industry practice after Chrome 2025+ / CDP-minimal
+  drivers made the classic console.stack probe unreliable as a sole verdict.
+
 ## [1.1.4] - 2026-07-24
 
 ### Security

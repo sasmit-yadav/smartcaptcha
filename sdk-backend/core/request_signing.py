@@ -22,15 +22,13 @@ make client-computed features trustworthy. Cross-session feature reuse is
 handled separately by core/replay_detection.py. This layer is deliberately
 limited to request integrity and exact-request replay protection.
 
-Soft-enforced by default (REQUEST_SIGNING_MODE=soft): requests with none of
-the signing headers at all (older SDK versions already deployed via CDN/npm,
-or environments without Web Crypto) are
-let through unsigned, same as before this feature existed. A request that
-DOES send signing headers but fails verification is always rejected
-regardless of mode — a bad signature is a tamper/forgery signal, not a
-legacy-client signal. Set REQUEST_SIGNING_MODE=strict once a signing-capable
-SDK version is the deployed baseline, to reject unsigned requests outright.
-REQUEST_SIGNING_DISABLED=1 is a full kill-switch (accepts everything).
+Modes (industry rollout pattern — Stripe/Cloudflare-style webhook signing):
+  - strict (DEFAULT): unsigned /api/predict is rejected. Production ready
+    once unsigned_share ≈ 0 (already observed on api.veilproof.tech).
+  - soft: unsigned allowed for emergency rollback / legacy CDN clients.
+    Incomplete signing headers (any present, not all) are ALWAYS rejected —
+    that is a tamper signal, never a legacy-client signal.
+  - REQUEST_SIGNING_DISABLED=1: full kill-switch (accepts everything).
 
 In-memory, single-instance store — same caveat as core/rate_limit.py and
 core/replay_detection.py: no Redis, so this only enforces correctly on one
@@ -53,21 +51,24 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 
 REQUEST_SIGNING_DISABLED = os.getenv("REQUEST_SIGNING_DISABLED", "0") == "1"
-REQUEST_SIGNING_MODE = os.getenv("REQUEST_SIGNING_MODE", "soft")  # "soft" | "strict"
+# Production default is strict. Soft remains an explicit rollback lever.
+_raw_mode = (os.getenv("REQUEST_SIGNING_MODE") or "strict").strip().lower()
+REQUEST_SIGNING_MODE = _raw_mode if _raw_mode in ("soft", "strict") else "strict"
 
 SESSION_KEY_TTL_SECONDS = int(os.getenv("SESSION_KEY_TTL_SECONDS", str(30 * 60)))
 MAX_CLOCK_SKEW_SECONDS = int(os.getenv("REQUEST_SIGNING_MAX_SKEW_SECONDS", "120"))
 _MAX_SESSIONS = int(os.getenv("REQUEST_SIGNING_MAX_SESSIONS", "50000"))
 _MAX_NONCES_PER_SESSION = int(os.getenv("REQUEST_SIGNING_MAX_NONCES_PER_SESSION", "512"))
+# Soft-mode readiness gate for ops dashboards (not auto-flipped).
+UNSIGNED_SHARE_STRICT_READY = float(os.getenv("REQUEST_SIGNING_UNSIGNED_READY", "0.01"))
+MIN_SAMPLES_STRICT_READY = int(os.getenv("REQUEST_SIGNING_MIN_SAMPLES_READY", "50"))
 
 _lock = threading.Lock()
 # In insertion order so the oldest state can be evicted when the hard bound
 # is reached. This is a real bound, not merely an expired-entry sweep.
 _sessions: OrderedDict = OrderedDict()
 
-# Soft-rollout observability: process-local counters (reset on dyno restart).
-# Exposed via /api/stats so unsigned share can be monitored before enabling
-# REQUEST_SIGNING_MODE=strict. Reasons are truncated to keep the map bounded.
+# Observability: process-local counters (reset on dyno restart).
 _stats = {
     "predict_signed": 0,
     "predict_unsigned": 0,
@@ -78,6 +79,19 @@ _stats = {
 _reject_reasons: dict = {}
 _MAX_REASON_KEYS = 32
 
+# Machine-stable error codes (API clients / dashboards). Reasons stay human.
+ERROR_SIGNING_REQUIRED = "signing_required"
+ERROR_SIGNING_INCOMPLETE = "signing_incomplete"
+ERROR_MISSING_SESSION = "missing_session_id"
+ERROR_MISSING_PROJECT = "missing_project_id"
+ERROR_BAD_TIMESTAMP = "malformed_timestamp"
+ERROR_TIMESTAMP_SKEW = "timestamp_skew"
+ERROR_NO_SESSION_KEY = "no_session_key"
+ERROR_KEY_EXPIRED = "session_key_expired"
+ERROR_NONCE_REPLAY = "nonce_replay"
+ERROR_NONCE_FLOOD = "nonce_flood"
+ERROR_SIGNATURE_MISMATCH = "signature_mismatch"
+
 
 @dataclass
 class SignatureResult:
@@ -87,6 +101,8 @@ class SignatureResult:
     # client / disableTelemetry) — distinguishes "nothing to verify" from an
     # active verification failure, for callers that want to log differently.
     unsigned: bool = False
+    # Stable machine code for HTTP clients (None when ok).
+    error_code: Optional[str] = None
 
 
 class RegistrationError(ValueError):
@@ -102,6 +118,10 @@ class SessionKeyState:
     # particular request timestamp can no longer pass the skew check (future
     # timestamps stay valid longer than acceptance_time + skew).
     spent_nonces: OrderedDict
+
+
+def _fail(reason: str, error_code: str, *, unsigned: bool = False) -> SignatureResult:
+    return SignatureResult(ok=False, reason=reason, unsigned=unsigned, error_code=error_code)
 
 
 def _b64url_decode(value: str) -> bytes:
@@ -180,6 +200,17 @@ def register_session_key(project_id: str, session_id: str, public_jwk: dict) -> 
         return int((now + SESSION_KEY_TTL_SECONDS) * 1000)
 
 
+def _header_presence(timestamp_header, nonce, signature_hex) -> tuple[int, bool]:
+    """Return (count_present, all_present). Empty strings count as absent."""
+    present = [
+        bool(timestamp_header and str(timestamp_header).strip()),
+        bool(nonce and str(nonce).strip()),
+        bool(signature_hex and str(signature_hex).strip()),
+    ]
+    count = sum(1 for p in present if p)
+    return count, count == 3
+
+
 def verify_signature(project_id: Optional[str], session_id: Optional[str],
                       timestamp_header: Optional[str],
                       nonce: Optional[str], raw_body: bytes,
@@ -195,34 +226,44 @@ def verify_signature(project_id: Optional[str], session_id: Optional[str],
     if REQUEST_SIGNING_DISABLED:
         return SignatureResult(ok=True, unsigned=True)
 
-    if not (timestamp_header and nonce and signature_hex):
+    present_count, all_present = _header_presence(timestamp_header, nonce, signature_hex)
+
+    # Partial headers = tamper / broken client. Always reject (even soft mode).
+    if present_count > 0 and not all_present:
+        return _fail(
+            "incomplete signing headers (need timestamp, nonce, and signature)",
+            ERROR_SIGNING_INCOMPLETE,
+        )
+
+    if not all_present:
         if REQUEST_SIGNING_MODE == "strict":
-            return SignatureResult(ok=False, reason="request signing required")
+            return _fail("request signing required", ERROR_SIGNING_REQUIRED)
         return SignatureResult(ok=True, unsigned=True)
 
     if not session_id:
-        return SignatureResult(ok=False, reason="missing session id")
+        return _fail("missing session id", ERROR_MISSING_SESSION)
     if not project_id:
-        return SignatureResult(ok=False, reason="missing project id")
+        return _fail("missing project id", ERROR_MISSING_PROJECT)
     state_key = (str(project_id), session_id)
 
     try:
         timestamp_ms = int(timestamp_header)
     except (TypeError, ValueError):
-        return SignatureResult(ok=False, reason="malformed timestamp")
+        return _fail("malformed timestamp", ERROR_BAD_TIMESTAMP)
 
     now = time.time()
     if abs(now - timestamp_ms / 1000.0) > MAX_CLOCK_SKEW_SECONDS:
-        return SignatureResult(ok=False, reason="timestamp outside allowed window")
+        return _fail("timestamp outside allowed window", ERROR_TIMESTAMP_SKEW)
 
     with _lock:
         state = _sessions.get(state_key)
         if state is None:
-            return SignatureResult(
-                ok=False, reason="no active session key (register the public key first)"
+            return _fail(
+                "no active session key (register the public key first)",
+                ERROR_NO_SESSION_KEY,
             )
         if now - state.issued_at > SESSION_KEY_TTL_SECONDS:
-            return SignatureResult(ok=False, reason="session key expired")
+            return _fail("session key expired", ERROR_KEY_EXPIRED)
 
         expired_nonces = [
             spent_nonce for spent_nonce, valid_until in state.spent_nonces.items()
@@ -231,9 +272,12 @@ def verify_signature(project_id: Optional[str], session_id: Optional[str],
         for spent_nonce in expired_nonces:
             state.spent_nonces.pop(spent_nonce, None)
         if nonce in state.spent_nonces:
-            return SignatureResult(ok=False, reason="nonce already used (replay)")
+            return _fail("nonce already used (replay)", ERROR_NONCE_REPLAY)
         if len(state.spent_nonces) >= _MAX_NONCES_PER_SESSION:
-            return SignatureResult(ok=False, reason="too many signed requests in freshness window")
+            return _fail(
+                "too many signed requests in freshness window",
+                ERROR_NONCE_FLOOD,
+            )
 
         try:
             raw_signature = bytes.fromhex(signature_hex)
@@ -249,7 +293,7 @@ def verify_signature(project_id: Optional[str], session_id: Optional[str],
                 ec.ECDSA(hashes.SHA256()),
             )
         except (InvalidSignature, TypeError, ValueError):
-            return SignatureResult(ok=False, reason="signature mismatch")
+            return _fail("signature mismatch", ERROR_SIGNATURE_MISMATCH)
 
         state.spent_nonces[nonce] = (
             timestamp_ms / 1000.0 + MAX_CLOCK_SKEW_SECONDS
@@ -259,7 +303,7 @@ def verify_signature(project_id: Optional[str], session_id: Optional[str],
 
 
 def record_predict_outcome(result: SignatureResult) -> None:
-    """Update soft-rollout counters after a /api/predict signature check."""
+    """Update counters after a /api/predict signature check."""
     with _lock:
         if not result.ok:
             _stats["predict_rejected"] += 1
@@ -289,14 +333,34 @@ def get_signing_stats() -> dict:
         unsigned = _stats["predict_unsigned"]
         rejected = _stats["predict_rejected"]
         decided = signed + unsigned
+        unsigned_share = round(unsigned / decided, 4) if decided else None
+        # Ops readiness: enough samples and unsigned share under threshold.
+        strict_ready = (
+            decided >= MIN_SAMPLES_STRICT_READY
+            and unsigned_share is not None
+            and unsigned_share <= UNSIGNED_SHARE_STRICT_READY
+        )
+        if REQUEST_SIGNING_DISABLED:
+            recommendation = "disabled_kill_switch"
+        elif REQUEST_SIGNING_MODE == "strict":
+            recommendation = "keep_strict"
+        elif strict_ready:
+            recommendation = "flip_to_strict"
+        elif decided < MIN_SAMPLES_STRICT_READY:
+            recommendation = "collect_more_samples"
+        else:
+            recommendation = "reduce_unsigned_share"
+
         return {
             "mode": "disabled" if REQUEST_SIGNING_DISABLED else REQUEST_SIGNING_MODE,
             "predict_signed": signed,
             "predict_unsigned": unsigned,
             "predict_rejected": rejected,
-            "unsigned_share": (
-                round(unsigned / decided, 4) if decided else None
-            ),
+            "unsigned_share": unsigned_share,
+            "strict_ready": strict_ready,
+            "recommendation": recommendation,
+            "unsigned_ready_threshold": UNSIGNED_SHARE_STRICT_READY,
+            "min_samples_ready": MIN_SAMPLES_STRICT_READY,
             "reject_reasons": dict(_reject_reasons),
             "register_ok": _stats["register_ok"],
             "register_conflict": _stats["register_conflict"],

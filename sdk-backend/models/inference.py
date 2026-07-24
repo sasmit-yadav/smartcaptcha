@@ -297,6 +297,7 @@ class BotDetector:
             network_score=network_score,
             duplicate_score=replay_result.duplicate_score,
             automation_score=float(fingerprint_data.get('automation_score', 0) or 0),
+            automation_signals=fingerprint_data.get('automation_signals') or [],
         )
 
         overall_risk = risk_result['overall_risk']

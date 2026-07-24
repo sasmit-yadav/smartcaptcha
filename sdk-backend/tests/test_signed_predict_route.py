@@ -139,10 +139,47 @@ def test_signed_predict_requires_session_id_in_body(monkeypatch):
         content=raw_body,
     )
     assert response.status_code == 401
-    assert "missing session id" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert detail["error_code"] == "missing_session_id" or "missing session id" in detail["message"]
+
+
+def test_unsigned_predict_rejected_in_strict_mode(monkeypatch):
+    """P0: strict default must reject unsigned API forges."""
+    monkeypatch.setattr(request_signing, "REQUEST_SIGNING_MODE", "strict")
+    client = _client(monkeypatch)
+    unsigned = client.post(
+        "/api/predict",
+        headers={"X-API-Key": "vp_site_test", "Content-Type": "application/json"},
+        content=b'{"sdkVersion":"1.1.4","sessionId":"forge","event_count":1,"automation_score":0}',
+    )
+    assert unsigned.status_code == 401
+    detail = unsigned.json()["detail"]
+    assert detail["error_code"] == "signing_required"
+    stats = request_signing.get_signing_stats()
+    assert stats["mode"] == "strict"
+    assert stats["predict_rejected"] >= 1
+    assert stats["recommendation"] == "keep_strict"
+
+
+def test_partial_signing_headers_always_rejected(monkeypatch):
+    """Incomplete headers are a tamper signal even in soft mode."""
+    monkeypatch.setattr(request_signing, "REQUEST_SIGNING_MODE", "soft")
+    client = _client(monkeypatch)
+    response = client.post(
+        "/api/predict",
+        headers={
+            "X-API-Key": "vp_site_test",
+            "Content-Type": "application/json",
+            "X-VeilProof-Nonce": "only-nonce-present",
+        },
+        content=b'{"sdkVersion":"1.1.4","sessionId":"partial","event_count":1}',
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"]["error_code"] == "signing_incomplete"
 
 
 def test_signing_rollout_counters_track_signed_and_unsigned(monkeypatch):
+    monkeypatch.setattr(request_signing, "REQUEST_SIGNING_MODE", "soft")
     client = _client(monkeypatch)
     private_key, public_jwk = _key_material()
     session_id = "13c9cf53-0880-459b-a47a-e36d705621c5"
@@ -190,3 +227,4 @@ def test_signing_rollout_counters_track_signed_and_unsigned(monkeypatch):
     assert stats["predict_signed"] == 1
     assert stats["unsigned_share"] == 0.5
     assert stats["mode"] == "soft"
+    assert stats["recommendation"] == "collect_more_samples"

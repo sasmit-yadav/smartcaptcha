@@ -191,10 +191,8 @@ async def predict(
     body_session_id = body.get("sessionId")
     session_id = body_session_id or str(uuid.uuid4())
 
-    # Request signing (strategy step 3): session-bound ECDSA + nonce +
-    # timestamp. Soft-enforced by default — see core/request_signing.py for
-    # the full threat model and why a legacy/unsigned request is currently
-    # allowed through rather than rejected outright.
+    # Request signing: session-bound ECDSA + nonce + timestamp.
+    # Default mode is strict — see core/request_signing.py.
     sig_result = request_signing.verify_signature(
         project_id=key_info["project_id"],
         session_id=body_session_id,
@@ -206,12 +204,21 @@ async def predict(
     request_signing.record_predict_outcome(sig_result)
     if not sig_result.ok:
         logger.info(
-            "signing_reject project=%s sdk=%s reason=%s",
+            "signing_reject project=%s sdk=%s code=%s reason=%s",
             key_info["project_id"],
             body.get("sdkVersion"),
+            sig_result.error_code,
             sig_result.reason,
         )
-        raise HTTPException(status_code=401, detail=f"Request signature verification failed: {sig_result.reason}")
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "error": "request_signature_failed",
+                "error_code": sig_result.error_code or "signature_invalid",
+                "message": sig_result.reason or "Request signature verification failed",
+            },
+            headers={"WWW-Authenticate": 'VeilProof-Signature realm="predict"'},
+        )
     if sig_result.unsigned:
         logger.debug(
             "signing_unsigned project=%s sdk=%s mode=%s",

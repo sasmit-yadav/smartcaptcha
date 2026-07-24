@@ -1,0 +1,111 @@
+name: Red-team CI (P0)
+
+# Industry regression gate for bot-detection P0:
+# 1) Strict request signing + CDP inconclusive policy (unit)
+# 2) Optional live unsigned forge / JS stealth against a demo URL
+
+on:
+  push:
+    paths:
+      - "sdk-backend/core/request_signing.py"
+      - "sdk-backend/models/risk_engine.py"
+      - "sdk-backend/models/inference.py"
+      - "sdk-backend/api/routes/predict.py"
+      - "sdk/src/core/automation.ts"
+      - "tools/redteam/**"
+      - ".github/workflows/redteam-ci.yml"
+  pull_request:
+    paths:
+      - "sdk-backend/core/request_signing.py"
+      - "sdk-backend/models/risk_engine.py"
+      - "sdk-backend/models/inference.py"
+      - "sdk-backend/api/routes/predict.py"
+      - "sdk/src/core/automation.ts"
+      - "tools/redteam/**"
+      - ".github/workflows/redteam-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  policy-unit:
+    name: Signing + CDP policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend test deps
+        run: |
+          pip install pytest cryptography fastapi httpx pydantic "uvicorn[standard]"
+          # Route tests import database helpers; pull declared deps when present.
+          if [ -f sdk-backend/requirements.txt ]; then pip install -r sdk-backend/requirements.txt; fi
+      - name: Run P0 policy tests
+        working-directory: sdk-backend
+        env:
+          DATABASE_URL: postgresql://unused:unused@localhost/unused
+          SECRET_KEY: test-only-secret-key-that-is-at-least-32-bytes-long
+        run: |
+          python -m pytest \
+            tests/test_request_signing.py \
+            tests/test_stealth_fingerprint.py \
+            tests/test_signed_predict_route.py \
+            -q --tb=short
+
+  sdk-automation-build:
+    name: SDK automation build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Build SDK (includes automation.ts)
+        working-directory: sdk
+        run: |
+          npm ci || npm install
+          npm run build
+
+  live-probes:
+    name: Live forge + JS stealth (optional secrets)
+    runs-on: ubuntu-latest
+    needs: [policy-unit]
+    # Runs on dispatch always; on PR/push only when secrets exist (still skips cleanly).
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Unsigned forge (strict signing)
+        env:
+          VEILPROOF_API: ${{ vars.VEILPROOF_API || 'https://api.veilproof.tech' }}
+          VEILPROOF_SITE_KEY: ${{ secrets.VEILPROOF_SITE_KEY }}
+        run: python tools/redteam/unsigned_forge.py
+      - name: Install Playwright Chromium
+        run: |
+          npm install playwright
+          npx playwright install chromium --with-deps
+      - name: JS stealth probe
+        env:
+          REDTEAM_BASE: ${{ vars.REDTEAM_BASE || '' }}
+        run: |
+          if [ -z "$REDTEAM_BASE" ]; then
+            echo "SKIP: set repository variable REDTEAM_BASE to a reachable demo site"
+            exit 0
+          fi
+          node tools/redteam/playwright_js_stealth.mjs
+      - name: Optional rebrowser / Camoufox probes
+        env:
+          REDTEAM_BASE: ${{ vars.REDTEAM_BASE || '' }}
+          REDTEAM_REQUIRE_ADVANCED_BLOCK: "0"
+        run: |
+          if [ -z "$REDTEAM_BASE" ]; then
+            echo "SKIP advanced probes (no REDTEAM_BASE)"
+            exit 0
+          fi
+          npm install rebrowser-playwright || true
+          node tools/redteam/rebrowser_probe.mjs || true
+          pip install camoufox || true
+          python tools/redteam/camoufox_probe.py || true

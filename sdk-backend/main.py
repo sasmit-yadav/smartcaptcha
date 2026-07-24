@@ -110,7 +110,7 @@ async def root():
 
 @app.get("/api/stats")
 async def stats():
-    """Quick session/event counts + signing soft-rollout counters."""
+    """Quick session/event counts + request-signing ops counters."""
     from core.database import get_session_stats
     from core import request_signing
     payload = get_session_stats()

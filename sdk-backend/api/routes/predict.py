@@ -5,16 +5,19 @@ returns a bot-detection decision. Requires a valid customer API key.
 """
 
 import os
+import json
 import uuid
 import logging
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Request, HTTPException, Header, BackgroundTasks, Depends
+from pydantic import BaseModel, Field
 
 from models.inference import BotDetector
 from api_key_manager import APIKeyManager
 from core.verification_token import issue_token
 from core.rate_limit import rate_limit, enforce
+from core import request_signing
 
 router = APIRouter()
 logger = logging.getLogger("uvicorn.error")
@@ -68,13 +71,72 @@ def verify_key_or_demo(api_key: str):
     return APIKeyManager.verify_api_key(api_key)
 
 
+class SigningKeyRegistration(BaseModel):
+    sessionId: str = Field(..., min_length=1, max_length=100)
+    publicKey: dict
+
+
+@router.post(
+    "/api/signing/register",
+    dependencies=[Depends(rate_limit("signing_register_ip", limit=60, window_seconds=60))],
+)
+async def register_signing_key(
+    payload: SigningKeyRegistration,
+    authorization: str = Header(None),
+    x_api_key: str = Header(None, alias="X-API-Key"),
+    origin: str = Header(None, alias="Origin"),
+):
+    """Register the browser-generated public key for one SDK session."""
+    api_key = x_api_key
+    if not api_key and authorization and authorization.startswith("Bearer "):
+        api_key = authorization[7:]
+    if not api_key:
+        raise HTTPException(status_code=401, detail="Missing API key")
+
+    key_info = verify_key_or_demo(api_key)
+    if not key_info:
+        raise HTTPException(status_code=403, detail="Invalid or inactive API key")
+    if key_info.get("key_type") == "secret":
+        raise HTTPException(status_code=403, detail="Secret keys cannot register browser signing keys")
+    if not _check_allowed_domain(origin, key_info.get("allowed_domains")):
+        raise HTTPException(status_code=403, detail="Origin not allowed for this API key")
+
+    enforce("signing_register_key", key_info["key_id"], limit=30, window_seconds=60)
+    if request_signing.REQUEST_SIGNING_DISABLED:
+        return {"registered": False, "enabled": False}
+
+    try:
+        expires_at = request_signing.register_session_key(
+            key_info["project_id"],
+            payload.sessionId,
+            payload.publicKey,
+        )
+    except request_signing.RegistrationError as exc:
+        request_signing.record_register_outcome(ok=False, conflict=True)
+        logger.info(
+            "signing_register conflict project=%s reason=%s",
+            key_info["project_id"],
+            str(exc),
+        )
+        raise HTTPException(status_code=409, detail=str(exc))
+    request_signing.record_register_outcome(ok=True)
+    return {
+        "registered": True,
+        "enabled": True,
+        "expiresAt": expires_at,
+    }
+
+
 @router.post("/api/predict", dependencies=[Depends(rate_limit("predict_ip", limit=300, window_seconds=60))])
 async def predict(
     request: Request,
     background_tasks: BackgroundTasks,
     authorization: str = Header(None),
     x_api_key: str = Header(None, alias="X-API-Key"),
-    origin: str = Header(None, alias="Origin")
+    origin: str = Header(None, alias="Origin"),
+    x_signature: str = Header(None, alias="X-VeilProof-Signature"),
+    x_nonce: str = Header(None, alias="X-VeilProof-Nonce"),
+    x_timestamp: str = Header(None, alias="X-VeilProof-Timestamp"),
 ):
     """
     Prediction API for SDK customers
@@ -114,10 +176,51 @@ async def predict(
         logger.debug("Origin '%s' not in allowed_domains for project %s", origin, key_info['project_name'])
         raise HTTPException(status_code=403, detail="Origin not allowed for this API key")
 
+    # Raw bytes, not a re-parsed/re-serialized body — the signature (below)
+    # is computed over exactly what was sent on the wire, same as webhook
+    # signature schemes (Stripe/GitHub/Slack), to avoid any cross-language
+    # JSON re-serialization mismatch (e.g. `50` vs `50.0`).
+    raw_body = await request.body()
     try:
-        # Parse request body
-        body = await request.json()
+        body = json.loads(raw_body)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Malformed JSON body")
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="JSON body must be an object")
 
+    body_session_id = body.get("sessionId")
+    session_id = body_session_id or str(uuid.uuid4())
+
+    # Request signing (strategy step 3): session-bound ECDSA + nonce +
+    # timestamp. Soft-enforced by default — see core/request_signing.py for
+    # the full threat model and why a legacy/unsigned request is currently
+    # allowed through rather than rejected outright.
+    sig_result = request_signing.verify_signature(
+        project_id=key_info["project_id"],
+        session_id=body_session_id,
+        timestamp_header=x_timestamp,
+        nonce=x_nonce,
+        raw_body=raw_body,
+        signature_hex=x_signature,
+    )
+    request_signing.record_predict_outcome(sig_result)
+    if not sig_result.ok:
+        logger.info(
+            "signing_reject project=%s sdk=%s reason=%s",
+            key_info["project_id"],
+            body.get("sdkVersion"),
+            sig_result.reason,
+        )
+        raise HTTPException(status_code=401, detail=f"Request signature verification failed: {sig_result.reason}")
+    if sig_result.unsigned:
+        logger.debug(
+            "signing_unsigned project=%s sdk=%s mode=%s",
+            key_info["project_id"],
+            body.get("sdkVersion"),
+            request_signing.REQUEST_SIGNING_MODE,
+        )
+
+    try:
         logger.debug("Received body keys: %s", list(body.keys()))
 
         # Honeypot (strategy step 7): a hidden field the customer's form marks
@@ -164,11 +267,6 @@ async def predict(
         # fingerprint look.
         if honeypot_triggered:
             network_score = 100.0
-
-        # Log session telemetry asynchronously
-        session_id = body.get('sessionId')
-        if not session_id:
-            session_id = str(uuid.uuid4())
 
         # Get prediction from model
         result = get_detector().predict_session(

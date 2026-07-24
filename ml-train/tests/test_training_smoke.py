@@ -6,6 +6,7 @@ imports, missing sklearn symbols), this fails in CI instead of being
 discovered months later when someone tries to retrain.
 """
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -20,7 +21,7 @@ from ml.models.train_model import run_training  # noqa: E402
 from features.feature_columns import FEATURE_COLUMNS  # noqa: E402
 
 
-def synthetic_sessions(n_humans=30, n_bots=45, seed=0):
+def synthetic_sessions(n_humans=30, n_bots=45, seed=0, with_timestamps=False):
     rng = np.random.default_rng(seed)
     rows = []
     for _ in range(n_humans):
@@ -46,6 +47,15 @@ def synthetic_sessions(n_humans=30, n_bots=45, seed=0):
     df = pd.DataFrame(rows)
     df["session_id"] = [f"s{i}" for i in range(len(df))]
     df["device_type"] = "desktop"
+    if with_timestamps:
+        # Spread chronologically, interleaving labels, so both time-halves
+        # of an out-of-time split contain both classes.
+        base = datetime(2026, 1, 1)
+        order = rng.permutation(len(df))
+        timestamps = np.empty(len(df), dtype=object)
+        for rank, idx in enumerate(order):
+            timestamps[idx] = base + timedelta(hours=rank)
+        df["created_at"] = pd.to_datetime(timestamps)
     return df
 
 
@@ -66,6 +76,13 @@ def test_run_training_end_to_end(tmp_path):
             "threshold should produce near-zero human FP on the OOF set"
         )
         assert metrics["stealth_eval"] is not None
+        assert 0.0 <= metrics["oof_pr_auc"] <= 1.0
+        fpr99 = metrics["fpr_at_99pct_recall"]
+        assert 0.0 <= fpr99["fpr"] <= 1.0
+        assert 0.0 <= fpr99["achieved_recall"] <= 1.0
+        # No `created_at` in this fixture -> out-of-time eval must skip with
+        # a reason, not crash or fabricate a result.
+        assert metrics["out_of_time_eval"]["skipped"] is True
         for key in ("model_path", "scaler_path", "metadata_path"):
             assert Path(entry["artifacts"][key]).exists()
 
@@ -87,3 +104,19 @@ def test_training_rejects_single_class():
     df = df[df["label"] == "human"]
     with pytest.raises(ValueError):
         run_training(df, quick=True)
+
+
+def test_out_of_time_eval_runs_when_created_at_present(tmp_path):
+    """Strategy §1.1: an out-of-time split must actually execute (not just
+    skip) once timestamps are available, and produce sane metrics."""
+    df = synthetic_sessions(with_timestamps=True)
+    comparison = run_training(df, artifacts_dir=tmp_path, quick=True)
+
+    for entry in comparison["models"].values():
+        oot = entry["metrics"]["out_of_time_eval"]
+        assert oot["skipped"] is False
+        assert 0.0 <= oot["bot_recall"] <= 1.0
+        assert 0.0 <= oot["human_fpr"] <= 1.0
+        assert oot["train_period"][0] <= oot["train_period"][1]
+        assert oot["test_period"][0] <= oot["test_period"][1]
+        assert oot["threshold_source"] == "older-half grouped OOF only"

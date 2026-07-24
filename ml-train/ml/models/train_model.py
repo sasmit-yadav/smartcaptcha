@@ -16,11 +16,25 @@ What this produces (artifacts/v4/):
   out-of-fold probabilities** — serving must consume this instead of a
   hard-coded 0.50 (Finding 2).
 
-Evaluation methodology (strategy §B.6):
+Evaluation methodology (strategy §1.1/§B.6 — the "your headline metric is
+probably lying to you" fixes):
 - Out-of-fold predictions via StratifiedGroupKFold where bot sessions are
   grouped by (heuristic) bot family, so no family straddles train/eval.
-- Metrics reported at fixed human FPR (zero false positives on the OOF set),
-  not at whatever operating point maximises F1.
+- **Out-of-time split** (`out_of_time_eval`): trained on the chronologically
+  older half of sessions, tested on the newer half, by `created_at` — catches
+  a model that just memorised one collection window, which grouped CV alone
+  cannot detect. Its threshold is selected only from older-half grouped OOF
+  predictions, never future test labels. Skips with a stated reason (not a
+  fabricated number) when a time-half is single-class.
+- ROC-AUC is reported alongside **PR-AUC (average precision)** and
+  **FPR at a fixed 99%-bot-recall operating point** (`fpr_at_recall`) — the
+  number that matters for a silent blocker, per strategy §1.1's critique
+  that ROC-AUC alone is insensitive to class imbalance and operating point.
+- **Bootstrap confidence intervals** (`bootstrap_metric_ci`, class-stratified
+  whole-group 1000 resamples) on ROC-AUC and PR-AUC — with ~75 humans every
+  point estimate needs an interval, not just a single number.
+- Metrics also reported at fixed human FPR (zero false positives on the OOF
+  set), not at whatever operating point maximises F1.
 - A "stealth" re-evaluation with webdriver_flag zeroed for all bots, to
   measure how much recall survives when the single easiest tell is hidden.
 - **No hyperparameter search.** On ~100 rows a RandomizedSearchCV fits noise;
@@ -46,7 +60,13 @@ sys.path.insert(0, str(ROOT / "ml"))
 from sklearn.base import clone
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import IsolationForest, RandomForestClassifier, VotingClassifier
-from sklearn.metrics import brier_score_loss, confusion_matrix, roc_auc_score
+from sklearn.metrics import (
+    average_precision_score,
+    brier_score_loss,
+    confusion_matrix,
+    roc_auc_score,
+    roc_curve,
+)
 from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 import xgboost as xgb
@@ -69,7 +89,7 @@ def load_data():
     conn = get_connection()
     try:
         cursor = conn.cursor()
-        selected_columns = ["session_id", *FEATURE_COLUMNS, "device_type", "label"]
+        selected_columns = ["session_id", *FEATURE_COLUMNS, "device_type", "label", "created_at"]
         cursor.execute(
             f"""
             SELECT {", ".join(selected_columns)}
@@ -255,6 +275,12 @@ def out_of_fold_probabilities(base_model, df, groups, n_splits):
     return oof_cal, oof_raw
 
 
+def _fmt_ci(ci):
+    if not ci:
+        return "n/a"
+    return f"{ci['ci_low']:.3f}-{ci['ci_high']:.3f}"
+
+
 def pick_threshold(y, proba):
     """Max-margin threshold with zero human false positives on the OOF set.
 
@@ -308,6 +334,153 @@ def per_family_recall(df, groups, proba, threshold):
             "median_p": float(np.median(scores)),
         }
     return out
+
+
+def fpr_at_recall(y, proba, target_recall=0.99):
+    """Human FPR at a fixed high bot-recall operating point (strategy §1.1).
+
+    ROC-AUC is insensitive to the class imbalance and operating point that
+    actually matter for a silent blocker; "at 99% bot recall, what fraction
+    of humans do we wrongly block?" is the number a product decision needs.
+    Walks the ROC curve (tpr non-decreasing as threshold falls) and reports
+    the first point reaching target_recall. At this data volume the exact
+    target may be unreachable — in that case we report the best achievable
+    recall's FPR rather than fabricating a threshold that doesn't exist.
+    """
+    fpr, tpr, thresholds = roc_curve(y, proba)
+    idx = int(np.searchsorted(tpr, target_recall, side="left"))
+    idx = min(idx, len(tpr) - 1)
+    thr = thresholds[idx]
+    return {
+        "target_recall": float(target_recall),
+        "achieved_recall": float(tpr[idx]),
+        "fpr": float(fpr[idx]),
+        "threshold": float(thr) if np.isfinite(thr) else None,
+        "note": None if tpr[idx] >= target_recall else
+                f"target recall unreachable at this sample size; reporting best achievable ({tpr[idx]:.2f})",
+    }
+
+
+def bootstrap_metric_ci(y, proba, metric_fn, groups=None,
+                        n_boot=1000, alpha=0.05, seed=42):
+    """Class-stratified grouped bootstrap CI for metric_fn(y, proba) -> float.
+
+    Strategy §1.1, "No confidence intervals": with ~75 humans every metric
+    has a wide error bar that a point estimate hides. Resampling whole CV
+    groups preserves the within-family correlation that grouped CV exists to
+    protect against; resampling individual OOF rows would produce falsely
+    narrow intervals. Class stratification keeps every draw two-class.
+    """
+    rng = np.random.default_rng(seed)
+    y = np.asarray(y)
+    proba = np.asarray(proba)
+    groups = np.arange(len(y)) if groups is None else np.asarray(groups)
+    if len(groups) != len(y):
+        raise ValueError("groups must align with y/proba")
+
+    class_groups = {}
+    for label in (0, 1):
+        label_groups = np.unique(groups[y == label])
+        if len(label_groups) == 0:
+            return None
+        class_groups[label] = label_groups
+
+    def sample_class(label):
+        available = class_groups[label]
+        chosen = rng.choice(available, size=len(available), replace=True)
+        return np.concatenate([np.flatnonzero(groups == group) for group in chosen])
+
+    if len(class_groups[0]) == 0 or len(class_groups[1]) == 0:
+        return None
+    draws = []
+    for _ in range(n_boot):
+        h = sample_class(0)
+        b = sample_class(1)
+        idx = np.concatenate([h, b])
+        yy, pp = y[idx], proba[idx]
+        if len(np.unique(yy)) < 2:
+            continue
+        try:
+            draws.append(metric_fn(yy, pp))
+        except ValueError:
+            continue
+    if not draws:
+        return None
+    draws = np.array(draws)
+    return {
+        "point": float(metric_fn(y, proba)),
+        "ci_low": float(np.percentile(draws, 100 * alpha / 2)),
+        "ci_high": float(np.percentile(draws, 100 * (1 - alpha / 2))),
+        "n_boot": int(len(draws)),
+    }
+
+
+def out_of_time_eval(base_model, df):
+    """Train on the older half of sessions, test on the newer half.
+
+    Strategy §1.1: grouped CV alone still lets sessions from the same
+    collection period land on both sides of the split (e.g. every bot
+    scraped in one afternoon shares infra/timing quirks). An out-of-time
+    split additionally checks the model isn't just memorising a single
+    collection window. Requires `created_at` and at least one bot + one
+    human on each side of the split; otherwise reports why it was skipped
+    rather than fabricating a number from a single-class half.
+    """
+    if "created_at" not in df.columns or df["created_at"].isna().all():
+        return {"skipped": True, "reason": "created_at not available"}
+
+    df_sorted = df.sort_values("created_at").reset_index(drop=True)
+    split = len(df_sorted) // 2
+    train_df, test_df = df_sorted.iloc[:split], df_sorted.iloc[split:]
+    if train_df["label_encoded"].nunique() < 2 or test_df["label_encoded"].nunique() < 2:
+        return {"skipped": True, "reason": "one time-half is single-class at this data volume"}
+
+    X_train = train_df[FEATURE_COLUMNS].to_numpy(dtype=float)
+    X_test = test_df[FEATURE_COLUMNS].to_numpy(dtype=float)
+    y_train = train_df["label_encoded"].to_numpy()
+    y_test = test_df["label_encoded"].to_numpy()
+
+    # Select the operating threshold using only the older training half.
+    # Passing the full-dataset OOF threshold here would leak future labels
+    # into the reported out-of-time recall/FPR.
+    train_groups = assign_groups(train_df)
+    n_bot_families = train_groups[train_df["label_encoded"] == 1].nunique()
+    n_splits = int(np.clip(
+        min(n_bot_families, train_df["label_encoded"].value_counts().min()),
+        2,
+        4,
+    ))
+    train_oof, _ = out_of_fold_probabilities(
+        base_model,
+        train_df,
+        train_groups,
+        n_splits,
+    )
+    threshold_valid = ~np.isnan(train_oof)
+    if (
+        not threshold_valid.any()
+        or len(np.unique(y_train[threshold_valid])) < 2
+    ):
+        return {
+            "skipped": True,
+            "reason": "older half produced no two-class OOF threshold scores",
+        }
+    threshold, _ = pick_threshold(y_train[threshold_valid], train_oof[threshold_valid])
+
+    scaler = StandardScaler().fit(X_train)
+    model = fit_calibrated(base_model, scaler.transform(X_train), y_train)
+    proba = model.predict_proba(scaler.transform(X_test))[:, 1]
+
+    result = evaluate_at_threshold(y_test, proba, threshold)
+    result["skipped"] = False
+    result["oof_roc_auc"] = (
+        float(roc_auc_score(y_test, proba)) if len(np.unique(y_test)) > 1 else None
+    )
+    result["train_period"] = [str(train_df["created_at"].min()), str(train_df["created_at"].max())]
+    result["test_period"] = [str(test_df["created_at"].min()), str(test_df["created_at"].max())]
+    result["note"] = "trained on the chronologically older half, tested on the newer half"
+    result["threshold_source"] = "older-half grouped OOF only"
+    return result
 
 
 def stealth_evaluation(base_model, df, groups, n_splits, threshold):
@@ -416,8 +589,11 @@ def save_artifacts(artifacts_dir, timestamp, model_name, calibrated_model, scale
         "decision_threshold": threshold_info["threshold"],
         "threshold_metrics": threshold_info,
         "anomaly": anomaly_meta,
-        "training_methodology": "StratifiedGroupKFold OOF by heuristic bot family; "
+        "training_methodology": "StratifiedGroupKFold OOF by heuristic bot family + "
+                                "out-of-time split with older-half OOF threshold; "
                                 "threshold at zero human FP on calibrated OOF probs; "
+                                "PR-AUC and FPR@99%-recall reported alongside ROC-AUC "
+                                "with grouped-bootstrap CIs; "
                                 "no hyperparameter search (98-row regime)",
         "optimization_target": "zero_human_fp_max_margin",
     }
@@ -501,6 +677,7 @@ def run_training(df, artifacts_dir=None, quick=False):
         oof_cal, oof_raw = out_of_fold_probabilities(base_model, df, groups, n_splits)
         valid = ~np.isnan(oof_cal)
         y_v, p_cal, p_raw = y[valid], oof_cal[valid], oof_raw[valid]
+        groups_v = groups.iloc[np.flatnonzero(valid)].to_numpy()
 
         threshold, max_human_p = pick_threshold(y_v, p_cal)
         thr_metrics = evaluate_at_threshold(y_v, p_cal, threshold)
@@ -508,23 +685,48 @@ def run_training(df, artifacts_dir=None, quick=False):
 
         metrics = {
             "oof_roc_auc": float(roc_auc_score(y_v, p_cal)),
+            "oof_roc_auc_ci": bootstrap_metric_ci(
+                y_v, p_cal, roc_auc_score, groups=groups_v
+            ),
+            "oof_pr_auc": float(average_precision_score(y_v, p_cal)),
+            "oof_pr_auc_ci": bootstrap_metric_ci(
+                y_v, p_cal, average_precision_score, groups=groups_v
+            ),
             "oof_brier_calibrated": float(brier_score_loss(y_v, p_cal)),
             "oof_brier_uncalibrated": float(brier_score_loss(y_v, p_raw))
             if not np.isnan(p_raw).any() else None,
+            "fpr_at_99pct_recall": fpr_at_recall(y_v, p_cal, target_recall=0.99),
             "at_threshold": thr_metrics,
             "per_family_recall": per_family_recall(df, groups, oof_cal, threshold),
             "stealth_eval": stealth_evaluation(base_model, df, groups, n_splits, threshold),
+            "out_of_time_eval": out_of_time_eval(base_model, df),
             "caveat": f"OOF over {int(valid.sum())} sessions "
-                      f"({int((y_v == 0).sum())} humans) — coarse estimates",
+                      f"({int((y_v == 0).sum())} humans) — coarse estimates; "
+                      f"treat all CIs as wide at this sample size",
         }
 
-        print(f"OOF ROC-AUC: {metrics['oof_roc_auc']:.4f}")
+        print(f"OOF ROC-AUC: {metrics['oof_roc_auc']:.4f} "
+              f"(95% CI {_fmt_ci(metrics['oof_roc_auc_ci'])})")
+        print(f"OOF PR-AUC: {metrics['oof_pr_auc']:.4f} "
+              f"(95% CI {_fmt_ci(metrics['oof_pr_auc_ci'])})")
         print(f"Brier (calibrated): {metrics['oof_brier_calibrated']:.4f}")
+        fpr99 = metrics["fpr_at_99pct_recall"]
+        print(f"FPR @ {fpr99['achieved_recall']:.0%} bot recall "
+              f"(target 99%): {fpr99['fpr']:.3f}"
+              + (f" — {fpr99['note']}" if fpr99["note"] else ""))
         print(f"Threshold {threshold:.3f}: recall {thr_metrics['bot_recall']:.3f} "
               f"@ human FPR {thr_metrics['human_fpr']:.3f}")
         if metrics["stealth_eval"]:
             print(f"Stealth recall (webdriver hidden): "
                   f"{metrics['stealth_eval']['bot_recall']:.3f}")
+        oot = metrics["out_of_time_eval"]
+        if oot.get("skipped"):
+            print(f"Out-of-time eval skipped: {oot['reason']}")
+        else:
+            print(f"Out-of-time recall: {oot['bot_recall']:.3f} "
+                  f"@ human FPR {oot['human_fpr']:.3f} "
+                  f"(train {oot['train_period'][0][:10]}..{oot['train_period'][1][:10]}, "
+                  f"test {oot['test_period'][0][:10]}..{oot['test_period'][1][:10]})")
 
         final_model = fit_calibrated(base_model, X_all, y)
         importance = get_feature_importance(final_model, FEATURE_COLUMNS)

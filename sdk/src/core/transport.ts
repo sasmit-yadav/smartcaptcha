@@ -13,10 +13,58 @@ let debug = false;
 let retryCount = 0;
 const MAX_RETRIES = 3;
 
+let signingExpiresAt = 0;
+let signingRegistration: Promise<boolean> | null = null;
+
 export function initTransport(config: { endpoint: string; apiKey: string; debug?: boolean }): void {
   endpoint = config.endpoint;
   apiKey = config.apiKey;
   debug = config.debug || false;
+  signingExpiresAt = 0;
+  signingRegistration = null;
+}
+
+/** Register the SDK's browser-generated public key and keep the registration
+ * fresh. Concurrent callers share one request, so getDecision() can safely
+ * await this even when init() has already started registration. */
+export async function registerSigningKey(
+  sessionId: string,
+  publicKey: JsonWebKey,
+  force = false
+): Promise<boolean> {
+  const now = Date.now();
+  if (!force && signingExpiresAt > now + 30_000) return true;
+  if (!force && signingRegistration) return signingRegistration;
+
+  signingRegistration = (async () => {
+    try {
+      const res = await fetch(`${endpoint}/api/signing/register`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': apiKey,
+        },
+        body: JSON.stringify({ sessionId, publicKey }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok || !body?.registered || typeof body.expiresAt !== 'number') {
+        if (debug && body?.enabled !== false) {
+          console.warn('[VeilProof] Signing-key registration failed:', body?.detail || res.status);
+        }
+        signingExpiresAt = 0;
+        return false;
+      }
+      signingExpiresAt = body.expiresAt;
+      return true;
+    } catch (err) {
+      signingExpiresAt = 0;
+      if (debug) console.warn('[VeilProof] Signing-key registration failed:', (err as Error).message);
+      return false;
+    } finally {
+      signingRegistration = null;
+    }
+  })();
+  return signingRegistration;
 }
 
 /**

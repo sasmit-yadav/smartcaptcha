@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-07-24
+
+### Security
+- Added session-bound request integrity and exact-request replay protection.
+  The browser creates a non-exportable ECDSA P-256 private key, registers only
+  its public key, and signs each `/api/predict` body with a fresh timestamp and
+  nonce. The SDK waits for registration, refreshes expired/lost registration,
+  and retries once after a backend restart. Client-computed feature values
+  remain untrusted by design; duplicate feature-vector detection is a separate
+  server-side layer.
+
 ## [1.1.2] - 2026-07-20
 
 ### Changed

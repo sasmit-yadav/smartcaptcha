@@ -13,7 +13,8 @@
 
 import { initSession, getSessionId, getSessionMeta } from './core/session.js';
 import { initBuffer, push, stopBuffer, getEvents } from './core/buffer.js';
-import { initTransport, sendSessionStart, sendSessionEnd } from './core/transport.js';
+import { initTransport, sendSessionStart, sendSessionEnd, registerSigningKey } from './core/transport.js';
+import { getSigningPublicKey, signRequest } from './core/signing.js';
 import { startMouseTracking, stopMouseTracking } from './collectors/mouse.js';
 import { startClickTracking, stopClickTracking } from './collectors/click.js';
 import { startKeyboardTracking, stopKeyboardTracking } from './collectors/keyboard.js';
@@ -79,7 +80,7 @@ function validateConfig(config: VeilProofConfig): { valid: boolean; error?: stri
 // Check for browser environment (SSR safety)
 const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined';
 
-const SDK_VERSION = '1.1.2';
+const SDK_VERSION = '1.1.3';
 const DEFAULT_ENDPOINT = 'https://api.veilproof.tech';
 
 /** Run a collector lifecycle call without letting an internal bug crash the host page (S2.1). */
@@ -93,6 +94,13 @@ function safeCall(name: string, fn: () => void): void {
 let initialized = false;
 let debug = false;
 let initConfig: VeilProofConfig | null = null;
+
+async function ensureSigningReady(force = false): Promise<boolean> {
+  const sessionId = getSessionId();
+  const publicKey = await getSigningPublicKey(sessionId);
+  if (!publicKey) return false;
+  return registerSigningKey(sessionId, publicKey, force);
+}
 
 interface VeilProofAPI {
   init(config: VeilProofConfig): void;
@@ -163,6 +171,9 @@ const VeilProof: VeilProofAPI = {
       apiKey: config.apiKey,
       debug,
     });
+    // Start registration immediately; getDecision() also awaits the same
+    // in-flight request, so an immediate call cannot race session readiness.
+    void ensureSigningReady();
 
     // 3. Initialize buffer (disable telemetry if configured)
     initBuffer({ debug, disableTelemetry: config.disableTelemetry });
@@ -269,6 +280,8 @@ const VeilProof: VeilProofAPI = {
 
       const requestBody = {
         sdkVersion: SDK_VERSION,
+        // Required for session-bound request-signature verification.
+        sessionId: getSessionId(),
         ...features,
         ...fingerprint,
         // Honeypot (strategy step 7): true if a bot filled the hidden trap
@@ -291,23 +304,51 @@ const VeilProof: VeilProofAPI = {
         callback({ error: 'API key not provided', action: 'block', risk_score: 100, behavior_score: 100, fingerprint_score: 100, confidence: 0 });
         return;
       }
-      
-      fetch(`${endpoint}/api/predict`, {
-        method: 'POST',
-        headers: {
+
+      const bodyString = JSON.stringify(requestBody);
+
+      // Request signing (strategy step 3): await public-key registration,
+      // then sign the exact outgoing body with the non-exportable private key.
+      // If the backend restarted or the registration expired, a signature
+      // failure triggers one forced re-registration + retry.
+      const sendPrediction = async (attempt = 0): Promise<void> => {
+        const signingReady = await ensureSigningReady(attempt > 0);
+        const envelope = signingReady
+          ? await signRequest(getSessionId(), bodyString)
+          : null;
+        const headers: Record<string, string> = {
           'Content-Type': 'application/json',
-          'X-API-Key': apiKey
-        },
-        body: JSON.stringify(requestBody)
-      })
-      .then(async response => {
+          'X-API-Key': apiKey,
+        };
+        if (envelope) {
+          headers['X-VeilProof-Nonce'] = envelope.nonce;
+          headers['X-VeilProof-Timestamp'] = String(envelope.timestamp);
+          headers['X-VeilProof-Signature'] = envelope.signature;
+        } else if (debug) {
+          console.warn('[VeilProof] Sending unsigned predict request (signing registration / Web Crypto unavailable)');
+        }
+
+        const response = await fetch(`${endpoint}/api/predict`, {
+          method: 'POST',
+          headers,
+          body: bodyString,
+        });
         const body = await response.json().catch(() => ({}));
 
         if (!response.ok) {
+          const message = body?.detail || body?.error || `Request failed with status ${response.status}`;
+          if (
+            response.status === 401 &&
+            envelope &&
+            attempt === 0 &&
+            String(message).includes('signature verification failed')
+          ) {
+            await sendPrediction(1);
+            return;
+          }
           // Non-2xx: body is an error shape (e.g. FastAPI's {detail: "..."}),
           // not a DecisionResult — never pass it through as-is (previously
           // caused a downstream crash when callers read result.action).
-          const message = body?.detail || body?.error || `Request failed with status ${response.status}`;
           if (debug) console.warn('[VeilProof] Prediction request failed:', message);
           callback({ error: message, action: 'block', risk_score: 100, behavior_score: 100, fingerprint_score: 100, confidence: 0 });
           return;
@@ -317,8 +358,9 @@ const VeilProof: VeilProofAPI = {
           console.log('[VeilProof] Decision received:', body);
         }
         callback(body as DecisionResult);
-      })
-      .catch(error => {
+      };
+
+      void sendPrediction().catch(error => {
         console.error('[VeilProof] Prediction error:', error);
         callback({ error: (error as Error).message, action: 'block', risk_score: 100, behavior_score: 100, fingerprint_score: 100, confidence: 0 });
       });

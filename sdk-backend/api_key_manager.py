@@ -456,6 +456,7 @@ class UserManager:
         Returns:
             Dict with project info
         """
+        domains = UserManager.normalize_allowed_domains(allowed_domains)
         conn = psycopg2.connect(DATABASE_URL)
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
@@ -463,7 +464,7 @@ class UserManager:
                     INSERT INTO projects (owner_id, name, allowed_domains)
                     VALUES (%s, %s, %s)
                     RETURNING id, name, owner_id, allowed_domains, created_at
-                """, (user_id, name, allowed_domains))
+                """, (user_id, name, domains))
                 
                 result = cursor.fetchone()
                 conn.commit()
@@ -473,6 +474,61 @@ class UserManager:
         except Exception as e:
             conn.rollback()
             raise Exception(f"Failed to create project: {e}")
+        finally:
+            conn.close()
+
+    @staticmethod
+    def normalize_allowed_domains(raw) -> Optional[List[str]]:
+        """Turn user input into clean hostnames for Origin checks.
+
+        Accepts None, [], or a list of strings that may include URLs.
+        Empty / missing → None (treated as open allowlist by predict).
+        '*' alone → ['*'].
+        """
+        if not raw:
+            return None
+        cleaned = []
+        for item in raw:
+            if item is None:
+                continue
+            d = str(item).strip().lower()
+            if not d:
+                continue
+            if d == "*":
+                return ["*"]
+            # Users often paste https://example.com/path — keep hostname only.
+            if "://" in d:
+                d = d.split("://", 1)[1]
+            d = d.split("/")[0]
+            d = d.split("?")[0]
+            if d.startswith("*."):
+                d = d[2:]
+            # Drop port: Origin hostname matching ignores it.
+            if ":" in d and not d.startswith("["):
+                d = d.rsplit(":", 1)[0]
+            if d and d not in cleaned:
+                cleaned.append(d)
+        return cleaned or None
+
+    @staticmethod
+    def update_project_domains(project_id: str, allowed_domains: List[str] = None) -> Optional[Dict]:
+        """Update allowed_domains for an existing project."""
+        domains = UserManager.normalize_allowed_domains(allowed_domains)
+        conn = psycopg2.connect(DATABASE_URL)
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute("""
+                    UPDATE projects
+                    SET allowed_domains = %s
+                    WHERE id = %s
+                    RETURNING id, name, owner_id, allowed_domains, created_at
+                """, (domains, project_id))
+                result = cursor.fetchone()
+                conn.commit()
+                return dict(result) if result else None
+        except Exception as e:
+            conn.rollback()
+            raise Exception(f"Failed to update project domains: {e}")
         finally:
             conn.close()
     

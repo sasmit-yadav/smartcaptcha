@@ -511,8 +511,10 @@ export default function DocsPage() {
         </Callout>
         <H3>Allowlist domains</H3>
         <P>
-          In the dashboard, restrict which origins may use your site key. A leaked site key then
-          only works on domains you approved.
+          In the dashboard, open your project and use the <strong className="text-ink">Allowed domains</strong> box.
+          Enter hostnames separated by commas, for example{' '}
+          <code className="text-primary">example.com, www.example.com, localhost</code>.
+          Leave empty to allow any domain while testing. Subdomains of a listed host are included automatically.
         </P>
         <H3>Tokens</H3>
         <P>Single-use, 120s TTL. Do not store beyond the verify call.</P>

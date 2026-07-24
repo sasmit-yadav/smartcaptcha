@@ -44,6 +44,10 @@ class ProjectCreate(BaseModel):
     allowed_domains: Optional[List[str]] = None
 
 
+class ProjectDomainsUpdate(BaseModel):
+    allowed_domains: Optional[List[str]] = None
+
+
 class APIKeyCreate(BaseModel):
     project_id: str
     key_type: str = 'live'  # 'live', 'test', 'admin'
@@ -151,6 +155,25 @@ async def list_projects(user: CurrentUser = Depends(get_current_user)):
     """List all projects owned by the authenticated user."""
     projects = UserManager.list_user_projects(user.user_id)
     return {"success": True, "projects": projects}
+
+
+@router.patch("/admin/projects/{project_id}")
+async def update_project_domains(
+    project_id: str,
+    body: ProjectDomainsUpdate,
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Update allowed domains for a project the authenticated user owns."""
+    _require_project_owner(project_id, user)
+    try:
+        project = UserManager.update_project_domains(project_id, body.allowed_domains)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        return {"success": True, "project": project}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/admin/api-keys")

@@ -16,6 +16,29 @@ import { scriptTagSnippet, siteverifyCurlSnippet } from '../../components/docs/d
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.veilproof.tech';
 
+/** Turn free-text into hostname list (comma or newline separated). */
+function parseDomainsInput(raw) {
+  return String(raw || '')
+    .split(/[,\n]+/)
+    .map((part) => {
+      let d = part.trim().toLowerCase();
+      if (!d) return '';
+      if (d === '*') return '*';
+      d = d.replace(/^https?:\/\//, '');
+      d = d.split('/')[0].split('?')[0];
+      if (d.startsWith('*.')) d = d.slice(2);
+      if (d.includes(':') && !d.startsWith('[')) d = d.replace(/:\d+$/, '');
+      return d;
+    })
+    .filter(Boolean)
+    .filter((d, i, arr) => arr.indexOf(d) === i);
+}
+
+function domainsToInput(domains) {
+  if (!domains || domains.length === 0) return '';
+  return domains.join(', ');
+}
+
 export default function Dashboard() {
   const [user, setUser] = useState(null);
   const [projects, setProjects] = useState([]);
@@ -25,6 +48,7 @@ export default function Dashboard() {
   const [selectedProject, setSelectedProject] = useState(null);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectDomains, setNewProjectDomains] = useState('');
+  const [editDomains, setEditDomains] = useState('');
   const [generatedPair, setGeneratedPair] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -107,6 +131,7 @@ export default function Dashboard() {
         setProjects(data.projects);
         const defaultProj = data.projects[0];
         setSelectedProject(defaultProj.id);
+        setEditDomains(domainsToInput(defaultProj.allowed_domains));
         loadApiKeys(defaultProj.id);
       }
     } catch (err) {
@@ -135,7 +160,7 @@ export default function Dashboard() {
     setError('');
     try {
       const token = localStorage.getItem('veilproof_token');
-      const domains = newProjectDomains.split(',').map(d => d.trim()).filter(d => d);
+      const domains = parseDomainsInput(newProjectDomains);
       const response = await fetch(`${API_BASE_URL}/admin/projects`, {
         method: 'POST',
         headers: {
@@ -159,6 +184,38 @@ export default function Dashboard() {
       }
     } catch (err) {
       setError('Failed to create project');
+    }
+    setLoading(false);
+  };
+
+  const handleSaveDomains = async () => {
+    if (!selectedProject) return;
+    setLoading(true);
+    setError('');
+    setSuccess('');
+    try {
+      const token = localStorage.getItem('veilproof_token');
+      const domains = parseDomainsInput(editDomains);
+      const response = await fetch(`${API_BASE_URL}/admin/projects/${selectedProject}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ allowed_domains: domains })
+      });
+      const data = await response.json();
+      if (data.success) {
+        setSuccess('Allowed domains updated');
+        setProjects((prev) =>
+          prev.map((p) => (p.id === selectedProject ? { ...p, ...data.project } : p))
+        );
+        setEditDomains(domainsToInput(data.project.allowed_domains));
+      } else {
+        setError(data.detail || 'Failed to update domains');
+      }
+    } catch (err) {
+      setError('Failed to update domains');
     }
     setLoading(false);
   };
@@ -229,6 +286,8 @@ export default function Dashboard() {
 
   const selectProject = (projectId) => {
     setSelectedProject(projectId);
+    const project = projects.find((p) => p.id === projectId);
+    setEditDomains(domainsToInput(project?.allowed_domains));
     if (!apiKeys[projectId]) loadApiKeys(projectId);
   };
 
@@ -317,24 +376,36 @@ export default function Dashboard() {
 
         {showCreateProject && (
           <div className="mb-6 card p-6">
-            <h3 className="font-bold text-base mb-4">Create Project</h3>
-            <div className="grid md:grid-cols-2 gap-4">
-              <label className="text-xs font-bold text-mute uppercase tracking-wider">
+            <h3 className="font-bold text-base mb-2">Create Project</h3>
+            <p className="text-mute text-sm mb-4">
+              A project holds your site/secret keys and which websites may use them.
+            </p>
+            <div className="space-y-4">
+              <label className="block text-xs font-bold text-mute uppercase tracking-wider">
                 Project name
                 <input
                   value={newProjectName}
                   onChange={(event) => setNewProjectName(event.target.value)}
+                  placeholder="e.g. Production website"
                   className="mt-2 w-full h-11 px-4 bg-canvas border border-hairline rounded-md text-ink normal-case tracking-normal font-normal outline-none focus:border-primary/60"
                 />
               </label>
-              <label className="text-xs font-bold text-mute uppercase tracking-wider">
+              <label className="block text-xs font-bold text-mute uppercase tracking-wider">
                 Allowed domains
-                <input
+                <textarea
                   value={newProjectDomains}
                   onChange={(event) => setNewProjectDomains(event.target.value)}
-                  className="mt-2 w-full h-11 px-4 bg-canvas border border-hairline rounded-md text-ink normal-case tracking-normal font-normal outline-none focus:border-primary/60"
+                  rows={3}
+                  placeholder="example.com, www.example.com, localhost"
+                  className="mt-2 w-full px-4 py-3 bg-canvas border border-hairline rounded-md text-ink normal-case tracking-normal font-normal outline-none focus:border-primary/60 resize-y"
                 />
               </label>
+              <div className="text-mute text-xs leading-relaxed space-y-1 bg-canvas border border-hairline rounded-md p-3">
+                <p><strong className="text-ink">How to fill this:</strong> list the hostnames where your site key will run, separated by commas.</p>
+                <p>✅ Good: <code className="text-primary">myshop.com, www.myshop.com, localhost</code></p>
+                <p>❌ Avoid: <code className="text-primary">https://myshop.com/signup</code> (we strip this automatically, but hostnames are clearer)</p>
+                <p>Leave empty to allow <strong className="text-ink">any</strong> domain (fine for local testing; lock it down before launch).</p>
+              </div>
             </div>
             <div className="mt-4 flex gap-3">
               <button
@@ -350,6 +421,35 @@ export default function Dashboard() {
               >
                 Cancel
               </button>
+            </div>
+          </div>
+        )}
+
+        {selectedProject && (
+          <div className="mb-6 card p-6">
+            <h3 className="font-bold text-base mb-1">Allowed domains</h3>
+            <p className="text-mute text-sm mb-4">
+              Only these websites can use this project&apos;s <strong className="text-ink">site key</strong> in the browser.
+              Subdomains of a listed domain are included automatically (e.g. <code className="text-primary">shop.example.com</code> if you add <code className="text-primary">example.com</code>).
+            </p>
+            <textarea
+              value={editDomains}
+              onChange={(event) => setEditDomains(event.target.value)}
+              rows={3}
+              placeholder="example.com, www.example.com, localhost"
+              className="w-full px-4 py-3 bg-canvas border border-hairline rounded-md text-ink text-sm outline-none focus:border-primary/60 resize-y"
+            />
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button
+                onClick={handleSaveDomains}
+                disabled={loading}
+                className="bg-primary hover:bg-primaryDark disabled:opacity-50 text-white px-5 h-10 rounded-md font-bold transition-colors text-sm"
+              >
+                {loading ? 'Saving...' : 'Save domains'}
+              </button>
+              <span className="text-mute text-xs">
+                Empty = all domains allowed. Use commas or new lines between hosts.
+              </span>
             </div>
           </div>
         )}

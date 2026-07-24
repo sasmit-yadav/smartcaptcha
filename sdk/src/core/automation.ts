@@ -125,16 +125,25 @@ function probeCdpRuntimeLeak(): string | null {
 }
 
 /**
- * UA / engine / WebGL / platform coherence.
+ * UA / engine / WebGL / platform / headless coherence.
  * Camoufox and similar C++-patched browsers often keep webdriver clean but
  * still leave cross-signal inconsistencies.
+ *
+ * Scoring: strong mismatches can reach block alone. Mild mismatches *stack*
+ * so several soft tells can cross the server block threshold together
+ * (industry practice — one weak signal is not enough; a bundle is).
  */
 function probeEnvironmentCoherence(): { signals: string[]; score: number } {
   const signals: string[] = [];
-  let score = 0;
-  const bump = (sig: string, pts: number) => {
+  let strong = 0;
+  let softStack = 0;
+  const bumpStrong = (sig: string, pts: number) => {
     signals.push(sig);
-    score = Math.max(score, pts);
+    strong = Math.max(strong, pts);
+  };
+  const bumpSoft = (sig: string, pts: number) => {
+    signals.push(sig);
+    softStack = Math.min(100, softStack + pts);
   };
 
   const ua = navigator.userAgent || '';
@@ -148,14 +157,23 @@ function probeEnvironmentCoherence(): { signals: string[]; score: number } {
 
   // Chrome UA claiming to be Chromium but exposing Firefox-only APIs.
   if (uaChrome && hasInstallTrigger) {
-    bump('coherence_chrome_ua_firefox_api', COHERENCE_STRONG);
+    bumpStrong('coherence_chrome_ua_firefox_api', COHERENCE_STRONG);
+  }
+  // Firefox buildID present under Chrome UA (Gecko leak).
+  try {
+    const buildId = (navigator as Navigator & { buildID?: string }).buildID;
+    if (uaChrome && buildId) {
+      bumpStrong('coherence_chrome_ua_gecko_buildid', COHERENCE_STRONG);
+    }
+  } catch {
+    /* ignore */
   }
   // Firefox UA with a synthetic chrome.runtime (common anti-detect leak).
   if (uaFirefox && hasChromeObj) {
     try {
       const chromeObj = w.chrome as { runtime?: unknown } | undefined;
       if (chromeObj && 'runtime' in chromeObj) {
-        bump('coherence_firefox_ua_chrome_runtime', COHERENCE_STRONG);
+        bumpStrong('coherence_firefox_ua_chrome_runtime', COHERENCE_STRONG);
       }
     } catch {
       /* ignore */
@@ -163,32 +181,32 @@ function probeEnvironmentCoherence(): { signals: string[]; score: number } {
   }
   // Desktop Chrome UA without window.chrome (often stripped by spoof layers).
   if (uaChrome && !hasChromeObj && !/Android|iPhone|iPad/i.test(ua)) {
-    bump('coherence_chrome_ua_no_chrome_obj', COHERENCE_SOFT);
+    bumpSoft('coherence_chrome_ua_no_chrome_obj', 25);
   }
   // Vendor string fights the UA family.
   if (uaChrome && vendor && !/Google/i.test(vendor)) {
-    bump('coherence_chrome_vendor_mismatch', COHERENCE_SOFT);
+    bumpSoft('coherence_chrome_vendor_mismatch', 20);
   }
   if (uaFirefox && /Google/i.test(vendor)) {
-    bump('coherence_firefox_google_vendor', 55);
+    bumpStrong('coherence_firefox_google_vendor', 55);
   }
 
   // Platform vs UA OS.
   if (/Win/i.test(platform) && /Mac OS X|Macintosh/i.test(ua)) {
-    bump('coherence_platform_ua_os', 60);
+    bumpStrong('coherence_platform_ua_os', 60);
   }
   if (/Mac/i.test(platform) && /Windows NT/i.test(ua)) {
-    bump('coherence_platform_ua_os', 60);
+    bumpStrong('coherence_platform_ua_os', 60);
   }
   if (/Linux/i.test(platform) && /Windows NT|Mac OS X/i.test(ua) && !/Android/i.test(ua)) {
-    bump('coherence_platform_ua_os', 55);
+    bumpStrong('coherence_platform_ua_os', 55);
   }
 
   // Firefox should not expose userAgentData (Chromium Client Hints API).
   try {
     const uad = (navigator as Navigator & { userAgentData?: unknown }).userAgentData;
     if (uaFirefox && uad) {
-      bump('coherence_firefox_has_uad', 55);
+      bumpStrong('coherence_firefox_has_uad', 55);
     }
   } catch {
     /* ignore */
@@ -201,15 +219,15 @@ function probeEnvironmentCoherence(): { signals: string[]; score: number } {
       canvas.getContext('webgl') ||
       (canvas.getContext('experimental-webgl') as WebGLRenderingContext | null);
     if (!gl) {
-      if (uaChrome || uaFirefox) bump('coherence_webgl_missing', 25);
+      if (uaChrome || uaFirefox) bumpSoft('coherence_webgl_missing', 15);
     } else {
       const dbg = gl.getExtension('WEBGL_debug_renderer_info') as {
         UNMASKED_RENDERER_WEBGL: number;
       } | null;
       if (dbg) {
         const renderer = String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || '');
-        if (/swiftshader|llvmpipe|virtualbox|microsoft basic render|mali-400/i.test(renderer)) {
-          bump('coherence_webgl_software', 55);
+        if (/swiftshader|llvmpipe|virtualbox|microsoft basic render/i.test(renderer)) {
+          bumpStrong('coherence_webgl_software', 55);
         }
       }
     }
@@ -221,12 +239,53 @@ function probeEnvironmentCoherence(): { signals: string[]; score: number } {
   try {
     const hc = navigator.hardwareConcurrency;
     if (typeof hc === 'number' && (hc === 0 || hc > 128)) {
-      bump('coherence_hardware_concurrency', COHERENCE_SOFT);
+      bumpSoft('coherence_hardware_concurrency', 20);
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+    if (typeof mem === 'number' && (mem === 0 || mem > 128)) {
+      bumpSoft('coherence_device_memory', 15);
     }
   } catch {
     /* ignore */
   }
 
+  // Mobile UA without touch / desktop UA with mobile-only touch profile.
+  try {
+    const maxTouch = navigator.maxTouchPoints || 0;
+    if (/Mobile|Android|iPhone/i.test(ua) && maxTouch === 0) {
+      bumpSoft('coherence_mobile_ua_no_touch', 25);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // Headless / automation viewport tells (outer dimensions zero).
+  try {
+    if (
+      (window.outerWidth === 0 && window.outerHeight === 0) ||
+      (screen.width === 0 && screen.height === 0)
+    ) {
+      bumpSoft('coherence_zero_outer_viewport', 30);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // Plugins empty on desktop Chromium is increasingly common — only soft bump
+  // when combined with other chrome-strip signals (already in softStack).
+  try {
+    if (uaChrome && navigator.plugins && navigator.plugins.length === 0 && !hasChromeObj) {
+      bumpSoft('coherence_chrome_no_plugins', 10);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  const score = Math.max(strong, softStack >= 55 ? Math.min(100, softStack) : Math.min(softStack, COHERENCE_SOFT));
   return { signals, score };
 }
 

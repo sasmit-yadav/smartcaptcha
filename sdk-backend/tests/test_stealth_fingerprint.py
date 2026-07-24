@@ -119,3 +119,24 @@ def test_mild_coherence_alone_does_not_block():
     )
     assert result["fingerprint_score"] == 40.0
     assert result["decision"] == "allow"
+
+
+def test_stacked_soft_coherence_can_block():
+    """Several mild coherence tells (client score ≥55) should block."""
+    engine = RiskEngine()
+    result = engine.evaluate_session(
+        ml_probability=0.04,
+        webdriver_flag=False,
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128.0.0.0",
+        has_touch=False,
+        platform="Win32",
+        decision_threshold=0.6,
+        automation_score=60.0,
+        automation_signals=[
+            "coherence_chrome_ua_no_chrome_obj",
+            "coherence_chrome_vendor_mismatch",
+            "coherence_zero_outer_viewport",
+        ],
+    )
+    assert result["fingerprint_score"] >= 50
+    assert result["decision"] == "block"

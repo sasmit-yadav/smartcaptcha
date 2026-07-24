@@ -233,7 +233,28 @@ class BotDetector:
         if 0 < curvature_std < 0.15 and event_count >= 60 and path_efficiency > 0.7:
             boost += 0.10
 
-        return min(boost, 0.55)
+        # --- Computer-use / vision-agent kinematics (V6 client features) ---
+        # Screenshot agents teleport to click coords; humans approach.
+        teleport = float(features.get("click_teleport_ratio", 0) or 0)
+        pre_moves = float(features.get("avg_pre_click_moves", -1) or -1)
+        gap_cv = float(features.get("inter_click_gap_cv", -1) or -1)
+        long_gap = float(features.get("long_gap_ratio", 0) or 0)
+        min_path = float(features.get("min_pre_click_path", -1) or -1)
+
+        if click_count >= 2 and teleport >= 0.6:
+            boost += 0.22
+        if click_count >= 2 and 0 <= pre_moves < 2.5:
+            boost += 0.18
+        if click_count >= 2 and 0 <= min_path < 25:
+            boost += 0.12
+        # Regular mid-length gaps (~model inference) with low CV.
+        if click_count >= 3 and long_gap >= 0.5 and 0 <= gap_cv < 0.35:
+            boost += 0.20
+        # Teleport + sparse mouse overall is especially diagnostic.
+        if click_count >= 2 and teleport >= 0.5 and mouse_ratio < 0.25:
+            boost += 0.15
+
+        return min(boost, 0.65)
 
     def predict_session(self, features: Dict[str, Any],
                        fingerprint_data: Optional[Dict[str, Any]] = None,

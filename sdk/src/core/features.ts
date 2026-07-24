@@ -78,6 +78,13 @@ interface FeatureVector {
   // V5b features
   mouse_tremor_band_ratio: number;
   mouse_tremor_peak_freq: number;
+
+  // V6 — computer-use / vision-agent kinematics (rules-scored; not in RF yet)
+  click_teleport_ratio: number;
+  avg_pre_click_moves: number;
+  inter_click_gap_cv: number;
+  long_gap_ratio: number;
+  min_pre_click_path: number;
 }
 
 export function computeFeatures(events: TelemetryEvent[], sessionMeta: any): FeatureVector {
@@ -231,6 +238,9 @@ export function computeFeatures(events: TelemetryEvent[], sessionMeta: any): Fea
   const rawSamples = getRawSamples();
   const [tremorRatio, tremorPeak] = computeSpectralSignal(rawSamples);
 
+  // V6 computer-use / vision-agent kinematics
+  const cu = computeComputerUseSignals(mouseEvents, clickEvents);
+
   return {
     // Basic
     avg_mouse_vel: avgMouseVel,
@@ -302,6 +312,13 @@ export function computeFeatures(events: TelemetryEvent[], sessionMeta: any): Fea
     // V5b
     mouse_tremor_band_ratio: tremorRatio,
     mouse_tremor_peak_freq: tremorPeak,
+
+    // V6 — computer-use / vision-agent
+    click_teleport_ratio: cu.teleportRatio,
+    avg_pre_click_moves: cu.avgPreClickMoves,
+    inter_click_gap_cv: cu.interClickGapCv,
+    long_gap_ratio: cu.longGapRatio,
+    min_pre_click_path: cu.minPreClickPath,
   };
 }
 
@@ -608,4 +625,86 @@ function computeOvershootRatios(mouseEvents: any[], clickEvents: any[]): number[
   }
   
   return ratios;
+}
+
+/**
+ * Vision-agent / computer-use kinematics.
+ * Screenshot-driven agents often teleport the cursor (few approach moves,
+ * large jump to click) and show oddly regular 0.8–5s gaps between actions
+ * (model inference). Real hands leave dense pre-click trajectories.
+ */
+function computeComputerUseSignals(
+  mouseEvents: TelemetryEvent[],
+  clickEvents: TelemetryEvent[]
+): {
+  teleportRatio: number;
+  avgPreClickMoves: number;
+  interClickGapCv: number;
+  longGapRatio: number;
+  minPreClickPath: number;
+} {
+  const empty = {
+    teleportRatio: 0,
+    avgPreClickMoves: 0,
+    interClickGapCv: 0,
+    longGapRatio: 0,
+    minPreClickPath: 0,
+  };
+  if (clickEvents.length < 1) return empty;
+
+  const PRE_MS = 350;
+  const TELEPORT_PX = 120;
+  let teleportHits = 0;
+  let preMoveSum = 0;
+  let scoredClicks = 0;
+  let minPath = Number.POSITIVE_INFINITY;
+
+  for (const click of clickEvents) {
+    if (click.x == null || click.y == null || click.t == null) continue;
+    const t0 = click.t - PRE_MS;
+    const approach = mouseEvents.filter(
+      (m) => m.t != null && m.t >= t0 && m.t < click.t && m.x != null && m.y != null
+    );
+    preMoveSum += approach.length;
+    scoredClicks += 1;
+
+    let pathLen = 0;
+    for (let i = 1; i < approach.length; i++) {
+      const a = approach[i - 1];
+      const b = approach[i];
+      pathLen += Math.hypot((b.x || 0) - (a.x || 0), (b.y || 0) - (a.y || 0));
+    }
+    minPath = Math.min(minPath, pathLen);
+
+    const last = approach.length > 0 ? approach[approach.length - 1] : null;
+    const jump = last
+      ? Math.hypot((click.x || 0) - (last.x || 0), (click.y || 0) - (last.y || 0))
+      : Number.POSITIVE_INFINITY;
+    // Teleport: almost no approach samples, or last sample far from click.
+    if (approach.length <= 2 || jump >= TELEPORT_PX) {
+      teleportHits += 1;
+    }
+  }
+
+  if (scoredClicks === 0) return empty;
+
+  const gaps: number[] = [];
+  for (let i = 1; i < clickEvents.length; i++) {
+    const a = clickEvents[i - 1].t;
+    const b = clickEvents[i].t;
+    if (a != null && b != null && b > a) gaps.push(b - a);
+  }
+  const meanGap = gaps.length ? gaps.reduce((s, g) => s + g, 0) / gaps.length : 0;
+  const stdGap = gaps.length > 1 ? computeStd(gaps) : 0;
+  const interClickGapCv = meanGap > 0 ? stdGap / meanGap : 0;
+  const longGaps = gaps.filter((g) => g >= 800 && g <= 5000).length;
+  const longGapRatio = gaps.length ? longGaps / gaps.length : 0;
+
+  return {
+    teleportRatio: teleportHits / scoredClicks,
+    avgPreClickMoves: preMoveSum / scoredClicks,
+    interClickGapCv,
+    longGapRatio,
+    minPreClickPath: Number.isFinite(minPath) ? minPath : 0,
+  };
 }

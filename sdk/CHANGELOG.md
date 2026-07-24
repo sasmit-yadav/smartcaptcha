@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.10] - 2026-07-24
+
+### Security
+- V6 computer-use / vision-agent kinematics: `click_teleport_ratio`,
+  `avg_pre_click_moves`, `inter_click_gap_cv`, `long_gap_ratio`,
+  `min_pre_click_path`. Server `_rule_risk_boost` scores teleport clicks and
+  regular LLM-length action gaps — no challenge step required.
+
 ## [1.1.9] - 2026-07-24
 
 ### Security

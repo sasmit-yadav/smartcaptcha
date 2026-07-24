@@ -2,17 +2,16 @@
 
 Behavioral telemetry SDK for invisible bot detection and fraud prevention.
 
-**Current package / CDN: `1.1.9`** (after publish). Pin script tags to the
-latest readable version. Production API: `https://api.veilproof.tech` —
-**strict** signing; stealth + **stacked environment coherence**; Cloudflare
-Free Worker ASN for `network_score`. **No challenge tier** (product choice).
+**Current package / CDN target: `1.1.10`.** Binary allow/block only (no
+challenge). Production API: `https://api.veilproof.tech` — strict signing,
+stealth + stacked coherence + **computer-use kinematics**, CF Worker ASN.
 
 ## Installation
 
 ### Script tag — zero JS (any HTML site: WordPress, Django templates, Rails views, ...)
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/veilproof@1.1.9/dist/veilproof.min.js"
+<script src="https://cdn.jsdelivr.net/npm/veilproof@1.1.10/dist/veilproof.min.js"
         data-site-key="vp_site_..."
         async defer></script>
 ```

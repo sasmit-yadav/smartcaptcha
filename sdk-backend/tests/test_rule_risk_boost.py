@@ -50,6 +50,34 @@ def test_humanish_features_get_little_or_no_boost(detector):
     assert boost < 0.15
 
 
+def test_short_human_form_fill_not_boosted(detector):
+    """Click → type → click nearby fields looks 'teleport-ish' but is human."""
+    boost = detector._rule_risk_boost(
+        {
+            "event_count": 35,
+            "session_duration": 12,
+            "key_count": 18,
+            "std_iki": 55,
+            "click_count": 4,
+            "click_interval_std": 400,
+            "mouse_event_ratio": 0.35,
+            "mouse_path_efficiency": 0.8,
+            "mouse_tremor_band_ratio": 0.08,
+            "mouse_powerlaw_r2": 0.3,
+            "movement_entropy": 1.2,
+            "mouse_jerk_std": 8000,
+            "mouse_curvature_std": 0.6,
+            # Sparse approaches are common when pausing then clicking a field.
+            "click_teleport_ratio": 0.5,
+            "avg_pre_click_moves": 2.0,
+            "inter_click_gap_cv": 0.7,
+            "long_gap_ratio": 0.2,
+            "min_pre_click_path": 30,
+        }
+    )
+    assert boost < 0.20
+
+
 def test_vision_agent_teleport_boosts(detector):
     boost = detector._rule_risk_boost(
         {
@@ -73,7 +101,7 @@ def test_vision_agent_teleport_boosts(detector):
             "key_count": 0,
         }
     )
-    assert boost >= 0.4
+    assert boost >= 0.28
     assert boost <= 0.65
 
 

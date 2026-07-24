@@ -187,7 +187,13 @@ class BotDetector:
         return pd.DataFrame([prepared], columns=self.feature_columns).fillna(0)
 
     def _rule_risk_boost(self, features: Dict[str, Any]) -> float:
-        """Deterministic guardrail for obvious / stealth automation signatures."""
+        """Deterministic guardrail for obvious / stealth automation signatures.
+
+        Keep human short-form fills (type a few fields, submit) under the
+        block line. Computer-use / teleport rules must fire on *stacked*
+        evidence — sparse pre-click samples alone are common when a real
+        user pauses, then clicks a nearby field.
+        """
         boost = 0.0
         event_count = float(features.get("event_count", 0) or 0)
         duration = float(features.get("session_duration", 0) or 0)
@@ -205,13 +211,17 @@ class BotDetector:
 
         if duration and event_count / duration > 35:
             boost += 0.10
-        if event_count < 8 and click_count > 0:
-            boost += 0.15
+        # Ghost click-only sessions (no typing). Real short forms almost
+        # always have key events — do not punish "hello" + submit.
+        if event_count < 5 and click_count >= 2 and key_count == 0:
+            boost += 0.12
         if key_count >= 8 and std_iki < 8:
             boost += 0.12
         if click_count >= 3 and click_std < 15:
             boost += 0.10
-        if click_count > 0 and mouse_ratio < 0.15:
+        # Keyboard-heavy humans have low mouse ratio; only flag when there
+        # is essentially no mouse *and* no typing either.
+        if click_count > 0 and mouse_ratio < 0.08 and key_count == 0:
             boost += 0.10
         if path_efficiency > 0.98 and event_count >= 10:
             boost += 0.08
@@ -234,25 +244,35 @@ class BotDetector:
             boost += 0.10
 
         # --- Computer-use / vision-agent kinematics (V6 client features) ---
-        # Screenshot agents teleport to click coords; humans approach.
+        # Require stacked evidence. Independent additive hits false-positive
+        # on normal form fills (click name → type → click email → submit).
         teleport = float(features.get("click_teleport_ratio", 0) or 0)
         pre_moves = float(features.get("avg_pre_click_moves", -1) or -1)
         gap_cv = float(features.get("inter_click_gap_cv", -1) or -1)
         long_gap = float(features.get("long_gap_ratio", 0) or 0)
         min_path = float(features.get("min_pre_click_path", -1) or -1)
 
-        if click_count >= 2 and teleport >= 0.6:
-            boost += 0.22
-        if click_count >= 2 and 0 <= pre_moves < 2.5:
-            boost += 0.18
-        if click_count >= 2 and 0 <= min_path < 25:
-            boost += 0.12
-        # Regular mid-length gaps (~model inference) with low CV.
-        if click_count >= 3 and long_gap >= 0.5 and 0 <= gap_cv < 0.35:
-            boost += 0.20
-        # Teleport + sparse mouse overall is especially diagnostic.
-        if click_count >= 2 and teleport >= 0.5 and mouse_ratio < 0.25:
-            boost += 0.15
+        if click_count >= 3:
+            teleport_hit = teleport >= 0.75
+            sparse_approach = 0 <= pre_moves < 1.5
+            tiny_path = 0 <= min_path < 12
+            regular_llm_gaps = long_gap >= 0.55 and 0 <= gap_cv < 0.28
+            sparse_mouse = mouse_ratio < 0.20 and teleport >= 0.55
+            evidence = sum(
+                (
+                    teleport_hit,
+                    sparse_approach,
+                    tiny_path,
+                    regular_llm_gaps,
+                    sparse_mouse,
+                )
+            )
+            if evidence >= 3:
+                boost += 0.40
+            elif teleport_hit and regular_llm_gaps:
+                boost += 0.30
+            elif teleport_hit and sparse_mouse and (sparse_approach or tiny_path):
+                boost += 0.28
 
         return min(boost, 0.65)
 

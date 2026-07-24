@@ -298,7 +298,9 @@ def send_email(
         if EMAIL_REPLY_TO:
             payload["reply_to"] = EMAIL_REPLY_TO
         if tags:
-            payload["tags"] = [{"name": "category", "value": t} for t in tags[:3]]
+            payload["tags"] = [{"name": "category", "value": tags[0][:256]}]
+            if len(tags) > 1:
+                payload["tags"].append({"name": "type", "value": tags[1][:256]})
         resend.Emails.send(payload)
         return True
     except Exception:

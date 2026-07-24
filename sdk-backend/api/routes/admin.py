@@ -87,11 +87,22 @@ def _client_meta(request: Request):
 
 def _public_user(user: dict) -> dict:
     """Safe user payload for the dashboard (never include password_hash)."""
-    has_password = bool(user.get("has_password", True))
-    google_linked = bool(user.get("google_linked", False))
+    # Explicit False only → Google-only. Missing/None must default to True so
+    # email accounts and legacy refresh stubs never look like "set password".
+    if "has_password" not in user or user.get("has_password") is None:
+        has_password = True
+    else:
+        has_password = bool(user.get("has_password"))
+
+    if "google_linked" not in user or user.get("google_linked") is None:
+        google_linked = False
+    else:
+        google_linked = bool(user.get("google_linked"))
+
     # Legacy Google-only rows may predate google_linked.
     if not has_password:
         google_linked = True
+
     methods = []
     if has_password:
         methods.append("password")

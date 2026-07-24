@@ -12,6 +12,11 @@ import {
   Shield,
   X,
 } from 'lucide-react';
+import {
+  accountAuthLabel,
+  accountHasPassword,
+  normalizeAccountProfile,
+} from './accountProfile';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.veilproof.tech';
 
@@ -26,22 +31,13 @@ function initialsFromUser(user) {
   return email.slice(0, 2).toUpperCase();
 }
 
-function authLabel(user) {
-  const methods = Array.isArray(user?.auth_methods) ? user.auth_methods : [];
-  const hasPw = methods.includes('password') || user?.has_password === true;
-  const google =
-    methods.includes('google') || user?.google_linked === true || user?.has_password === false;
-  if (google && hasPw) return 'Google · Password';
-  if (google) return 'Google';
-  return 'Email & password';
-}
-
 /**
  * Industry-standard account trigger (Stripe / Twilio / Cloudflare style):
  * circular avatar → panel with identity, sign-in method, copyable email/id,
  * change/set password, docs link, sign out.
  */
 export default function AccountMenu({ user, onLogout, onUserUpdate, apiFetch }) {
+  const profile = normalizeAccountProfile(user);
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState('menu'); // menu | password
   const [copied, setCopied] = useState('');
@@ -54,7 +50,10 @@ export default function AccountMenu({ user, onLogout, onUserUpdate, apiFetch }) 
   const rootRef = useRef(null);
   const menuId = useId();
 
-  const needsCurrent = Boolean(user?.has_password);
+  // Only Google-only accounts (has_password === false) use "Set password".
+  // Missing/undefined has_password must default to Change password.
+  const canChangePassword = accountHasPassword(profile);
+  const authBadge = accountAuthLabel(profile);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -106,6 +105,10 @@ export default function AccountMenu({ user, onLogout, onUserUpdate, apiFetch }) 
       setError('New passwords do not match');
       return;
     }
+    if (canChangePassword && !currentPassword) {
+      setError('Current password is required');
+      return;
+    }
     setBusy(true);
     try {
       const fetcher =
@@ -118,25 +121,33 @@ export default function AccountMenu({ user, onLogout, onUserUpdate, apiFetch }) 
               ...(options?.headers || {}),
             },
           }));
+      const body = { new_password: newPassword };
+      // Always send current_password for password accounts — never null.
+      if (canChangePassword) body.current_password = currentPassword;
       const res = await fetcher('/admin/change-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          current_password: needsCurrent ? currentPassword : null,
-          new_password: newPassword,
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.success) {
-        setError(typeof data.detail === 'string' ? data.detail : 'Could not update password');
+        const detail = data.detail;
+        setError(
+          typeof detail === 'string'
+            ? detail
+            : Array.isArray(detail)
+              ? detail.map((d) => d.msg || d).join(', ')
+              : 'Could not update password'
+        );
         setBusy(false);
         return;
       }
       if (data.access_token) localStorage.setItem('veilproof_token', data.access_token);
       if (data.refresh_token) localStorage.setItem('veilproof_refresh_token', data.refresh_token);
       if (data.user) {
-        localStorage.setItem('veilproof_user', JSON.stringify(data.user));
-        onUserUpdate?.(data.user);
+        const next = normalizeAccountProfile(data.user);
+        localStorage.setItem('veilproof_user', JSON.stringify(next));
+        onUserUpdate?.(next);
       }
       setSuccess(data.message || 'Password updated');
       resetPasswordForm();
@@ -148,10 +159,11 @@ export default function AccountMenu({ user, onLogout, onUserUpdate, apiFetch }) 
     setBusy(false);
   };
 
-  if (!user) return null;
+  if (!profile) return null;
 
-  const displayName = (user.full_name || '').trim() || user.email?.split('@')[0] || 'Account';
-  const initials = initialsFromUser(user);
+  const displayName =
+    (profile.full_name || '').trim() || profile.email?.split('@')[0] || 'Account';
+  const initials = initialsFromUser(profile);
 
   return (
     <div className="vp-account" ref={rootRef}>
@@ -166,7 +178,7 @@ export default function AccountMenu({ user, onLogout, onUserUpdate, apiFetch }) 
           setPanel('menu');
           setError('');
         }}
-        title={user.email}
+        title={profile.email}
       >
         <span className="vp-account-avatar" aria-hidden="true">
           {initials}
@@ -184,10 +196,10 @@ export default function AccountMenu({ user, onLogout, onUserUpdate, apiFetch }) 
                 </span>
                 <div className="vp-account-head-text">
                   <strong>{displayName}</strong>
-                  <span className="vp-account-email">{user.email}</span>
+                  <span className="vp-account-email">{profile.email}</span>
                   <span className="vp-account-badge">
                     <Shield size={11} aria-hidden="true" />
-                    {authLabel(user)}
+                    {authBadge}
                   </span>
                 </div>
               </div>
@@ -199,24 +211,24 @@ export default function AccountMenu({ user, onLogout, onUserUpdate, apiFetch }) 
                 <button
                   type="button"
                   className="vp-account-row"
-                  onClick={() => copyText('email', user.email)}
+                  onClick={() => copyText('email', profile.email)}
                 >
                   <Mail size={14} />
                   <span>
                     <em>Email</em>
-                    <small>{user.email}</small>
+                    <small>{profile.email}</small>
                   </span>
                   {copied === 'email' ? <Check size={14} /> : <Copy size={14} />}
                 </button>
                 <button
                   type="button"
                   className="vp-account-row"
-                  onClick={() => copyText('id', user.id)}
+                  onClick={() => copyText('id', profile.id)}
                 >
                   <KeyRound size={14} />
                   <span>
                     <em>User ID</em>
-                    <small className="mono">{user.id}</small>
+                    <small className="mono">{profile.id}</small>
                   </span>
                   {copied === 'id' ? <Check size={14} /> : <Copy size={14} />}
                 </button>
@@ -234,9 +246,9 @@ export default function AccountMenu({ user, onLogout, onUserUpdate, apiFetch }) 
                 >
                   <KeyRound size={14} />
                   <span>
-                    <em>{needsCurrent ? 'Change password' : 'Set password'}</em>
+                    <em>{canChangePassword ? 'Change password' : 'Set password'}</em>
                     <small>
-                      {needsCurrent
+                      {canChangePassword
                         ? 'Update your email login password'
                         : 'Add a password alongside Google sign-in'}
                     </small>
@@ -269,7 +281,7 @@ export default function AccountMenu({ user, onLogout, onUserUpdate, apiFetch }) 
           ) : (
             <form className="vp-account-password" onSubmit={submitPassword} noValidate>
               <div className="vp-account-password-head">
-                <strong>{needsCurrent ? 'Change password' : 'Set password'}</strong>
+                <strong>{canChangePassword ? 'Change password' : 'Set password'}</strong>
                 <button
                   type="button"
                   className="vp-account-close"
@@ -285,7 +297,7 @@ export default function AccountMenu({ user, onLogout, onUserUpdate, apiFetch }) 
               <p className="vp-account-hint">
                 At least 12 characters. Other signed-in devices will be signed out.
               </p>
-              {needsCurrent ? (
+              {canChangePassword ? (
                 <label>
                   Current password
                   <input
@@ -321,7 +333,7 @@ export default function AccountMenu({ user, onLogout, onUserUpdate, apiFetch }) 
               </label>
               {error ? <p className="vp-account-toast err">{error}</p> : null}
               <button type="submit" className="vp-account-save" disabled={busy}>
-                {busy ? 'Saving…' : needsCurrent ? 'Update password' : 'Set password'}
+                {busy ? 'Saving…' : canChangePassword ? 'Update password' : 'Set password'}
               </button>
             </form>
           )}

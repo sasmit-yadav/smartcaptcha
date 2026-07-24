@@ -391,7 +391,8 @@ class UserManager:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute("""
                     SELECT id, email, password_hash, full_name, company_name, is_admin, is_active,
-                           COALESCE(has_password, TRUE) AS has_password
+                           COALESCE(has_password, TRUE) AS has_password,
+                           COALESCE(google_linked, FALSE) AS google_linked
                     FROM users
                     WHERE email = %s AND is_active = TRUE
                 """, (email,))

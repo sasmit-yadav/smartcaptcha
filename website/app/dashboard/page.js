@@ -13,6 +13,7 @@ import {
 import CodeBlock from '../../components/docs/CodeBlock';
 import SiteNav from '../../components/chrome/SiteNav';
 import AuthPanel from '../../components/dashboard/AuthPanel';
+import { normalizeAccountProfile } from '../../components/dashboard/accountProfile';
 import { scriptTagSnippet, siteverifyCurlSnippet } from '../../components/docs/docSnippets';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://api.veilproof.tech';
@@ -56,8 +57,9 @@ export default function Dashboard() {
   const [success, setSuccess] = useState('');
 
   const persistSession = (data) => {
-    setUser(data.user);
-    localStorage.setItem('veilproof_user', JSON.stringify(data.user));
+    const profile = normalizeAccountProfile(data.user);
+    setUser(profile);
+    localStorage.setItem('veilproof_user', JSON.stringify(profile));
     localStorage.setItem('veilproof_token', data.access_token);
     if (data.refresh_token) {
       localStorage.setItem('veilproof_refresh_token', data.refresh_token);
@@ -65,8 +67,9 @@ export default function Dashboard() {
   };
 
   const updateUserProfile = (nextUser) => {
-    setUser(nextUser);
-    localStorage.setItem('veilproof_user', JSON.stringify(nextUser));
+    const profile = normalizeAccountProfile(nextUser);
+    setUser(profile);
+    localStorage.setItem('veilproof_user', JSON.stringify(profile));
   };
 
   const clearSession = () => {
@@ -112,7 +115,11 @@ export default function Dashboard() {
         localStorage.setItem('veilproof_refresh_token', data.refresh_token);
       }
       if (data.user) {
-        const merged = { ...(JSON.parse(localStorage.getItem('veilproof_user') || '{}')), ...data.user };
+        // Prefer API profile fields over stale localStorage (esp. has_password).
+        const merged = normalizeAccountProfile({
+          ...(JSON.parse(localStorage.getItem('veilproof_user') || '{}')),
+          ...data.user,
+        });
         localStorage.setItem('veilproof_user', JSON.stringify(merged));
         setUser(merged);
       }
@@ -133,7 +140,12 @@ export default function Dashboard() {
     const savedUser = localStorage.getItem('veilproof_user');
     const savedToken = localStorage.getItem('veilproof_token');
     if (savedUser && savedToken) {
-      setUser(JSON.parse(savedUser));
+      try {
+        updateUserProfile(JSON.parse(savedUser));
+      } catch {
+        clearSession();
+        return;
+      }
       loadProjects(savedToken);
       (async () => {
         try {
@@ -153,7 +165,7 @@ export default function Dashboard() {
           const data = await res.json();
           if (res.ok && data.user) updateUserProfile(data.user);
         } catch {
-          // keep cached user if /me fails
+          // keep normalized cached user if /me fails
         }
       })();
     }

@@ -81,3 +81,17 @@ def test_public_user_auth_methods():
     )
     assert both["auth_methods"] == ["password", "google"]
 
+
+def test_public_user_missing_has_password_defaults_true():
+    """Legacy refresh stubs / old rows must never look like Google-only."""
+    stub = admin_routes._public_user({"id": "9", "email": "legacy@b.com", "is_admin": False})
+    assert stub["has_password"] is True
+    assert stub["google_linked"] is False
+    assert stub["auth_methods"] == ["password"]
+
+    none_flag = admin_routes._public_user(
+        {"id": "10", "email": "n@b.com", "has_password": None, "google_linked": None}
+    )
+    assert none_flag["has_password"] is True
+    assert none_flag["google_linked"] is False
+

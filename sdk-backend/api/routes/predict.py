@@ -314,6 +314,8 @@ async def predict(
             hostname=(urlparse(origin).hostname if origin else None),
             site_key_id=key_info['key_id'],
         )
+        # Echo session id so red-team / customers can label & reconcile rows.
+        result['session_id'] = session_id
 
         logger.debug("Prediction result: %s", result)
 

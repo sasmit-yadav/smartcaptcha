@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.8] - 2026-07-24
+
+### Security
+- Environment coherence probes (UA↔engine↔WebGL↔platform) for patched
+  browsers that pass classic webdriver checks (Camoufox-class). Strong
+  mismatches raise `automation_score` / `webdriverFlag`; mild mismatches
+  stay soft (< block threshold).
+
 ## [1.1.7] - 2026-07-24
 
 ### Fixed

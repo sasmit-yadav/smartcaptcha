@@ -90,6 +90,9 @@ class RiskEngine:
         CDP-minimal drivers often never trip the classic Runtime.enable
         leak). A CDP hit alone is capped below the block threshold; silence
         is never treated as proof of humanity.
+
+        `coherence_*` signals (UA↔engine↔WebGL↔platform) are medium-weight
+        anti-detect tells — not capped like CDP.
         """
         risk_score = 0.0
         effective_automation = self._effective_automation_score(
@@ -100,11 +103,11 @@ class RiskEngine:
         if webdriver_flag:
             risk_score += 100.0
 
-        # Client stealth probes — treat high *decisive* scores as block-worthy.
+        # Client stealth / coherence probes — treat high *decisive* scores as block-worthy.
         if effective_automation >= 50:
             risk_score = max(risk_score, min(100.0, float(effective_automation)))
         elif effective_automation > 0:
-            # Soft / inconclusive contribution (e.g. CDP-only).
+            # Soft / inconclusive contribution (e.g. CDP-only or mild coherence).
             risk_score = max(risk_score, float(effective_automation))
 
         # Known automation tools in the user agent.
@@ -121,12 +124,23 @@ class RiskEngine:
         if platform and 'linux' in platform.lower() and 'headless' in ua_lower:
             risk_score += 15.0
 
+        # Server-side UA ↔ platform coherence (forgeable but still useful).
+        plat = (platform or '').lower()
+        if plat:
+            if 'win' in plat and ('mac os x' in ua_lower or 'macintosh' in ua_lower):
+                risk_score = max(risk_score, 55.0)
+            if 'mac' in plat and 'windows nt' in ua_lower:
+                risk_score = max(risk_score, 55.0)
+
         return min(risk_score, 100.0)
 
     @staticmethod
     def _effective_automation_score(automation_score: float,
                                     automation_signals: Optional[list]) -> float:
-        """Cap inconclusive CDP-only evidence below the block threshold."""
+        """Cap inconclusive CDP-only evidence below the block threshold.
+
+        Coherence and classic stealth signals remain uncapped (client score).
+        """
         score = float(automation_score or 0)
         if score <= 0:
             return 0.0
@@ -137,7 +151,7 @@ class RiskEngine:
             s for s in signals
             if not s.startswith('cdp_') and s != 'cdp_runtime_enable'
         ]
-        cdp_only = any(s.startswith('cdp_') for s in signals) and not decisive
+        cdp_only = any(s.startswith('cdp_') or s == 'cdp_runtime_enable' for s in signals) and not decisive
         if cdp_only:
             # Industry: CDP leak alone is soft evidence (≤35 < block@50).
             return min(score, 35.0)

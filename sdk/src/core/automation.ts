@@ -1,16 +1,21 @@
 /**
- * Automation / stealth-driver probes.
+ * Automation / stealth-driver probes + environment coherence.
  *
  * navigator.webdriver alone is not enough: Playwright/Puppeteer stealth
  * kits redefine it to `undefined` via Object.defineProperty. Real Chrome
  * exposes a native boolean (false when not automated). A non-native own
  * getter or Playwright/Selenium globals are decisive.
  *
- * CDP Runtime.enable leaks are kept as *inconclusive* soft evidence only.
+ * CDP Runtime.enable leaks are *inconclusive* soft evidence only.
  * Industry consensus (2025–2026): Chrome serialization changes and
- * CDP-minimal drivers (rebrowser, nodriver, patchright) often never trip
- * the classic console.stack probe — a miss must never be treated as proof
- * of humanity, and a lone hit must not be decisive on its own.
+ * CDP-minimal drivers often never trip the classic console.stack probe —
+ * a miss must never be treated as proof of humanity, and a lone hit must
+ * not be decisive on its own.
+ *
+ * Environment coherence (UA ↔ engine ↔ WebGL ↔ platform) catches patched
+ * browsers (e.g. Camoufox) that pass webdriver probes but still leak
+ * inconsistent fingerprints. Coherence hits are medium-weight: several
+ * strong mismatches can block; a single mild mismatch stays soft.
  */
 
 export interface AutomationProbe {
@@ -25,6 +30,10 @@ export interface AutomationProbe {
 const CDP_INCONCLUSIVE_SCORE = 30;
 /** Decisive automation evidence (spoof / driver globals / webdriver true). */
 const DECISIVE_SCORE = 100;
+/** Strong environment incoherence (enough to push fingerprint toward block). */
+const COHERENCE_STRONG = 70;
+/** Mild environment incoherence (soft contribution). */
+const COHERENCE_SOFT = 40;
 
 function isNativeFunction(fn: unknown): boolean {
   if (typeof fn !== 'function') return false;
@@ -45,9 +54,6 @@ function probeWebdriverSpoof(): string | null {
     if (own && typeof own.get === 'function' && !isNativeFunction(own.get)) {
       return 'webdriver_non_native_getter';
     }
-    // Own data property forced by a script is unusual; native exposure is
-    // typically a prototype getter. Skip pure data-property checks to avoid
-    // rare false positives on older engines.
   } catch {
     return 'webdriver_probe_threw';
   }
@@ -99,8 +105,6 @@ function probeDriverGlobals(): string[] {
 }
 
 function probeCdpRuntimeLeak(): string | null {
-  // Classic Runtime.enable side-effect. Cheap; often silent on modern Chrome
-  // and CDP-minimal drivers. Positive hit = soft signal only.
   try {
     let leaked = false;
     const err = new Error();
@@ -118,6 +122,112 @@ function probeCdpRuntimeLeak(): string | null {
     /* ignore */
   }
   return null;
+}
+
+/**
+ * UA / engine / WebGL / platform coherence.
+ * Camoufox and similar C++-patched browsers often keep webdriver clean but
+ * still leave cross-signal inconsistencies.
+ */
+function probeEnvironmentCoherence(): { signals: string[]; score: number } {
+  const signals: string[] = [];
+  let score = 0;
+  const bump = (sig: string, pts: number) => {
+    signals.push(sig);
+    score = Math.max(score, pts);
+  };
+
+  const ua = navigator.userAgent || '';
+  const uaChrome = /Chrome\//.test(ua) && !/Edg\//.test(ua) && !/OPR\//.test(ua);
+  const uaFirefox = /Firefox\//.test(ua);
+  const w = window as unknown as Record<string, unknown>;
+  const hasChromeObj = !!w.chrome;
+  const hasInstallTrigger = typeof w.InstallTrigger !== 'undefined';
+  const vendor = navigator.vendor || '';
+  const platform = navigator.platform || '';
+
+  // Chrome UA claiming to be Chromium but exposing Firefox-only APIs.
+  if (uaChrome && hasInstallTrigger) {
+    bump('coherence_chrome_ua_firefox_api', COHERENCE_STRONG);
+  }
+  // Firefox UA with a synthetic chrome.runtime (common anti-detect leak).
+  if (uaFirefox && hasChromeObj) {
+    try {
+      const chromeObj = w.chrome as { runtime?: unknown } | undefined;
+      if (chromeObj && 'runtime' in chromeObj) {
+        bump('coherence_firefox_ua_chrome_runtime', COHERENCE_STRONG);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  // Desktop Chrome UA without window.chrome (often stripped by spoof layers).
+  if (uaChrome && !hasChromeObj && !/Android|iPhone|iPad/i.test(ua)) {
+    bump('coherence_chrome_ua_no_chrome_obj', COHERENCE_SOFT);
+  }
+  // Vendor string fights the UA family.
+  if (uaChrome && vendor && !/Google/i.test(vendor)) {
+    bump('coherence_chrome_vendor_mismatch', COHERENCE_SOFT);
+  }
+  if (uaFirefox && /Google/i.test(vendor)) {
+    bump('coherence_firefox_google_vendor', 55);
+  }
+
+  // Platform vs UA OS.
+  if (/Win/i.test(platform) && /Mac OS X|Macintosh/i.test(ua)) {
+    bump('coherence_platform_ua_os', 60);
+  }
+  if (/Mac/i.test(platform) && /Windows NT/i.test(ua)) {
+    bump('coherence_platform_ua_os', 60);
+  }
+  if (/Linux/i.test(platform) && /Windows NT|Mac OS X/i.test(ua) && !/Android/i.test(ua)) {
+    bump('coherence_platform_ua_os', 55);
+  }
+
+  // Firefox should not expose userAgentData (Chromium Client Hints API).
+  try {
+    const uad = (navigator as Navigator & { userAgentData?: unknown }).userAgentData;
+    if (uaFirefox && uad) {
+      bump('coherence_firefox_has_uad', 55);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // WebGL software renderers / missing GL on claimed desktop GPU browsers.
+  try {
+    const canvas = document.createElement('canvas');
+    const gl =
+      canvas.getContext('webgl') ||
+      (canvas.getContext('experimental-webgl') as WebGLRenderingContext | null);
+    if (!gl) {
+      if (uaChrome || uaFirefox) bump('coherence_webgl_missing', 25);
+    } else {
+      const dbg = gl.getExtension('WEBGL_debug_renderer_info') as {
+        UNMASKED_RENDERER_WEBGL: number;
+      } | null;
+      if (dbg) {
+        const renderer = String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || '');
+        if (/swiftshader|llvmpipe|virtualbox|microsoft basic render|mali-400/i.test(renderer)) {
+          bump('coherence_webgl_software', 55);
+        }
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  // Absurd hardware claims (common in poorly configured farms).
+  try {
+    const hc = navigator.hardwareConcurrency;
+    if (typeof hc === 'number' && (hc === 0 || hc > 128)) {
+      bump('coherence_hardware_concurrency', COHERENCE_SOFT);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return { signals, score };
 }
 
 /**
@@ -148,14 +258,21 @@ export function detectAutomation(): AutomationProbe {
   const cdp = probeCdpRuntimeLeak();
   if (cdp) {
     signals.push(cdp);
-    // Inconclusive alone — never reach block threshold without decisive evidence.
     soft = Math.max(soft, CDP_INCONCLUSIVE_SCORE);
+  }
+
+  const coherence = probeEnvironmentCoherence();
+  for (const s of coherence.signals) signals.push(s);
+  if (coherence.score >= COHERENCE_STRONG) {
+    // Strong incoherence is decisive enough to set webdriver-equivalent flag.
+    decisive = Math.max(decisive, coherence.score);
+  } else if (coherence.score > 0) {
+    soft = Math.max(soft, coherence.score);
   }
 
   const automationScore = Math.min(100, Math.max(decisive, soft));
 
   return {
-    // Only decisive evidence flips the webdriver-equivalent flag.
     webdriverFlag: decisive >= 50,
     automationScore,
     signals,

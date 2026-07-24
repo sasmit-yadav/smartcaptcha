@@ -2,10 +2,10 @@
 
 Behavioral telemetry SDK for invisible bot detection and fraud prevention.
 
-**Current public version: `1.1.6`** (npm + jsDelivr). Production API:
-`https://api.veilproof.tech` — **strict** request signing; stealth
-`webdriver→undefined` blocked; Cloudflare Free Worker forwards ASN/org for
-server `network_score` (see repo `tools/cloudflare/`, docs freeze through P1).
+**Current package version: `1.1.8`** (built; publish may need `npm publish --otp=…`).
+Until npm/CDN show 1.1.8, pin customers to **`1.1.6`**. Production API:
+`https://api.veilproof.tech` — **strict** signing; stealth + **environment
+coherence** (1.1.8); Cloudflare Free Worker ASN for `network_score`.
 
 ## Installation
 

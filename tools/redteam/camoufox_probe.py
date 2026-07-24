@@ -61,6 +61,15 @@ def _one_run(attempt: int, run_id: str) -> dict:
             page.click("#submitBtn")
             page.wait_for_selector("#status.success, #status.error", timeout=60000)
             status_text = page.inner_text("#status")
+            try:
+                sid = page.evaluate("() => sessionStorage.getItem('sc_session_id')")
+                if sid:
+                    predict["session_id"] = sid
+            except Exception:
+                pass
+            body_preview = predict.get("body") or {}
+            if body_preview.get("session_id") and not predict.get("session_id"):
+                predict["session_id"] = body_preview.get("session_id")
             time.sleep(0.4)
     except Exception as exc:
         error = str(exc)
@@ -83,6 +92,10 @@ def _one_run(attempt: int, run_id: str) -> dict:
         if body or status_text:
             result = "BLOCKED" if blocked else "ALLOWED"
 
+    session_id = predict.get("session_id") or body.get("session_id")
+    if session_id and isinstance(body, dict):
+        body = {**body, "session_id": session_id}
+
     path = append_label(
         stack="camoufox",
         variant="camoufox_humanize",
@@ -95,6 +108,7 @@ def _one_run(attempt: int, run_id: str) -> dict:
         attempt=attempt,
         error=error,
         notes="P2.1 labeled advanced stealth",
+        extra={"fingerprint_axis_gap": float((body or {}).get("fingerprint_score") or 0) == 0},
     )
     return {
         "attempt": attempt,

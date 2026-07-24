@@ -71,3 +71,51 @@ def test_cdp_plus_decisive_signal_still_blocks():
     )
     assert result["fingerprint_score"] >= 50
     assert result["decision"] == "block"
+
+
+def test_coherence_strong_blocks_clean_behavior():
+    """UA↔engine mismatch (Camoufox-class) must be able to block alone."""
+    engine = RiskEngine()
+    result = engine.evaluate_session(
+        ml_probability=0.04,
+        webdriver_flag=True,
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128.0.0.0",
+        has_touch=False,
+        platform="Win32",
+        decision_threshold=0.6,
+        automation_score=70.0,
+        automation_signals=["coherence_chrome_ua_firefox_api"],
+    )
+    assert result["fingerprint_score"] >= 50
+    assert result["decision"] == "block"
+
+
+def test_server_ua_platform_mismatch_raises_fingerprint():
+    engine = RiskEngine()
+    result = engine.evaluate_session(
+        ml_probability=0.04,
+        webdriver_flag=False,
+        user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/128.0.0.0",
+        has_touch=False,
+        platform="Win32",
+        decision_threshold=0.6,
+        automation_score=0.0,
+    )
+    assert result["fingerprint_score"] >= 55
+    assert result["decision"] == "block"
+
+
+def test_mild_coherence_alone_does_not_block():
+    engine = RiskEngine()
+    result = engine.evaluate_session(
+        ml_probability=0.04,
+        webdriver_flag=False,
+        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/128.0.0.0",
+        has_touch=False,
+        platform="Win32",
+        decision_threshold=0.6,
+        automation_score=40.0,
+        automation_signals=["coherence_chrome_ua_no_chrome_obj"],
+    )
+    assert result["fingerprint_score"] == 40.0
+    assert result["decision"] == "allow"

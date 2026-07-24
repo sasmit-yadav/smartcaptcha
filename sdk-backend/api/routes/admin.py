@@ -20,6 +20,7 @@ from core.auth import (
     CurrentUser,
     get_current_user,
     issue_session_tokens,
+    revoke_all_refresh_tokens,
     revoke_refresh_token,
     rotate_refresh_token,
 )
@@ -85,13 +86,34 @@ def _client_meta(request: Request):
 
 
 def _public_user(user: dict) -> dict:
+    """Safe user payload for the dashboard (never include password_hash)."""
+    has_password = bool(user.get("has_password", True))
+    google_linked = bool(user.get("google_linked", False))
+    # Legacy Google-only rows may predate google_linked.
+    if not has_password:
+        google_linked = True
+    methods = []
+    if has_password:
+        methods.append("password")
+    if google_linked:
+        methods.append("google")
+    if not methods:
+        methods.append("password")
     return {
         "id": str(user["id"]),
         "email": user.get("email"),
         "full_name": user.get("full_name"),
         "company_name": user.get("company_name"),
         "is_admin": bool(user.get("is_admin", False)),
+        "has_password": has_password,
+        "google_linked": google_linked,
+        "auth_methods": methods,
     }
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: Optional[str] = Field(None, max_length=72)
+    new_password: str = Field(..., min_length=12, max_length=72)
 
 
 def _require_project_owner(project_id: str, user: CurrentUser) -> dict:
@@ -153,10 +175,11 @@ async def login_user(login_data: UserLogin, request: Request):
 async def refresh_session(body: RefreshRequest, request: Request):
     """Rotate refresh token and mint a new access token."""
     ua, ip = _client_meta(request)
-    user, access, new_refresh = rotate_refresh_token(body.refresh_token, user_agent=ua, ip=ip)
+    user_stub, access, new_refresh = rotate_refresh_token(body.refresh_token, user_agent=ua, ip=ip)
+    profile = UserManager.get_user_by_id(user_stub["id"]) or user_stub
     return {
         "success": True,
-        "user": {"id": user["id"], "email": user["email"], "is_admin": user["is_admin"]},
+        "user": _public_user(profile),
         "access_token": access,
         "refresh_token": new_refresh,
         "token_type": "bearer",
@@ -169,6 +192,56 @@ async def logout_session(body: LogoutRequest):
     if body.refresh_token:
         revoke_refresh_token(body.refresh_token)
     return {"success": True}
+
+
+@router.get("/admin/me")
+async def get_me(user: CurrentUser = Depends(get_current_user)):
+    """Return the authenticated account profile for the dashboard account menu."""
+    profile = UserManager.get_user_by_id(user.user_id)
+    if not profile:
+        raise HTTPException(status_code=401, detail="Account not found")
+    return {"success": True, "user": _public_user(profile)}
+
+
+@router.post(
+    "/admin/change-password",
+    dependencies=[Depends(rate_limit("admin_change_password", limit=5, window_seconds=60))],
+)
+async def change_password(
+    body: ChangePasswordRequest,
+    request: Request,
+    user: CurrentUser = Depends(get_current_user),
+):
+    """
+    Change password (email accounts) or set a first password (Google-only accounts).
+    Revokes other sessions, then re-issues tokens for this browser.
+    """
+    try:
+        updated = UserManager.change_password(
+            user.user_id,
+            body.new_password,
+            current_password=body.current_password,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Unable to update password")
+
+    revoke_all_refresh_tokens(user.user_id)
+    ua, ip = _client_meta(request)
+    tokens = issue_session_tokens(
+        str(updated["id"]),
+        updated["email"],
+        bool(updated.get("is_admin", False)),
+        user_agent=ua,
+        ip=ip,
+    )
+    return {
+        "success": True,
+        "user": _public_user(updated),
+        "message": "Password updated. Other devices must sign in again.",
+        **tokens,
+    }
 
 
 @router.post("/admin/google-login", dependencies=[Depends(rate_limit("admin_google_login", limit=20, window_seconds=60))])

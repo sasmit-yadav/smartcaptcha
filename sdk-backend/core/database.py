@@ -196,6 +196,17 @@ def init_db():
         cursor.execute(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS has_password BOOLEAN DEFAULT TRUE"
         )
+        cursor.execute(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS google_linked BOOLEAN DEFAULT FALSE"
+        )
+        # Google-only accounts (no password login) are treated as Google-linked.
+        cursor.execute(
+            """
+            UPDATE users
+            SET google_linked = TRUE
+            WHERE COALESCE(has_password, TRUE) = FALSE AND COALESCE(google_linked, FALSE) = FALSE
+            """
+        )
 
         # Auto-upgrade admin accounts
         cursor.execute("""

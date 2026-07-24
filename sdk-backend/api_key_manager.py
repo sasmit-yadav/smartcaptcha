@@ -349,9 +349,10 @@ class UserManager:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute("""
-                    INSERT INTO users (email, password_hash, full_name, company_name, is_admin, has_password)
-                    VALUES (%s, %s, %s, %s, %s, TRUE)
-                    RETURNING id, email, full_name, company_name, is_admin, created_at
+                    INSERT INTO users (email, password_hash, full_name, company_name, is_admin, has_password, google_linked)
+                    VALUES (%s, %s, %s, %s, %s, TRUE, FALSE)
+                    RETURNING id, email, full_name, company_name, is_admin, created_at,
+                              TRUE AS has_password, FALSE AS google_linked
                 """, (email, password_hash, full_name, company_name, is_admin))
                 result = cursor.fetchone()
                 conn.commit()
@@ -408,8 +409,114 @@ class UserManager:
                     return None
                 user_dict = dict(result)
                 del user_dict["password_hash"]
-                user_dict.pop("has_password", None)
                 return user_dict
+        finally:
+            conn.close()
+
+    @staticmethod
+    def get_user_by_id(user_id: str) -> Optional[Dict]:
+        """Load a public user profile by id (no password hash)."""
+        if not user_id:
+            return None
+        conn = psycopg2.connect(DATABASE_URL)
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    SELECT id, email, full_name, company_name, is_admin, is_active,
+                           COALESCE(has_password, TRUE) AS has_password,
+                           COALESCE(google_linked, FALSE) AS google_linked,
+                           created_at
+                    FROM users
+                    WHERE id = %s::uuid AND is_active = TRUE
+                    """,
+                    (str(user_id),),
+                )
+                row = cursor.fetchone()
+                return dict(row) if row else None
+        finally:
+            conn.close()
+
+    @staticmethod
+    def change_password(
+        user_id: str,
+        new_password: str,
+        *,
+        current_password: Optional[str] = None,
+    ) -> Dict:
+        """
+        Change or set account password.
+        - If the account already has a password, current_password is required.
+        - Google-only accounts (has_password=False) may set a first password without current.
+        Revokes other sessions via caller (refresh tokens).
+        """
+        import bcrypt
+        from core.password_policy import validate_password
+
+        conn = psycopg2.connect(DATABASE_URL)
+        try:
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                cursor.execute(
+                    """
+                    SELECT id, email, password_hash, full_name, company_name, is_admin,
+                           COALESCE(has_password, TRUE) AS has_password,
+                           COALESCE(google_linked, FALSE) AS google_linked
+                    FROM users
+                    WHERE id = %s::uuid AND is_active = TRUE
+                    """,
+                    (str(user_id),),
+                )
+                row = cursor.fetchone()
+                if not row:
+                    raise ValueError("Account not found")
+
+                has_password = bool(row.get("has_password", True))
+                email = row["email"]
+
+                pw_ok, pw_err = validate_password(new_password, email=email)
+                if not pw_ok:
+                    raise ValueError(pw_err or "Invalid password")
+
+                if has_password:
+                    if not current_password:
+                        raise ValueError("Current password is required")
+                    try:
+                        ok = bcrypt.checkpw(
+                            current_password.encode("utf-8"),
+                            row["password_hash"].encode("utf-8"),
+                        )
+                    except ValueError:
+                        ok = False
+                    if not ok:
+                        raise ValueError("Current password is incorrect")
+                    if secrets.compare_digest(current_password, new_password):
+                        raise ValueError("New password must be different from your current password")
+                else:
+                    # Setting a first password on a Google-linked account
+                    if current_password:
+                        raise ValueError("This account has no password yet — leave current password blank")
+
+                new_hash = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt(rounds=12)).decode()
+                cursor.execute(
+                    """
+                    UPDATE users
+                    SET password_hash = %s, has_password = TRUE
+                    WHERE id = %s::uuid
+                    RETURNING id, email, full_name, company_name, is_admin,
+                              TRUE AS has_password,
+                              COALESCE(google_linked, FALSE) AS google_linked
+                    """,
+                    (new_hash, str(user_id)),
+                )
+                updated = cursor.fetchone()
+                conn.commit()
+                return dict(updated)
+        except ValueError:
+            conn.rollback()
+            raise
+        except Exception:
+            conn.rollback()
+            raise ValueError("Unable to update password. Please try again.")
         finally:
             conn.close()
 
@@ -428,20 +535,36 @@ class UserManager:
         try:
             with conn.cursor(cursor_factory=RealDictCursor) as cursor:
                 cursor.execute("""
-                    SELECT id, email, full_name, company_name, is_admin, is_active
+                    SELECT id, email, full_name, company_name, is_admin, is_active,
+                           COALESCE(has_password, TRUE) AS has_password,
+                           COALESCE(google_linked, FALSE) AS google_linked
                     FROM users
                     WHERE email = %s
                 """, (email,))
                 result = cursor.fetchone()
                 if result:
                     user_dict = dict(result)
+                    if not user_dict.get("google_linked"):
+                        cursor.execute(
+                            """
+                            UPDATE users SET google_linked = TRUE
+                            WHERE id = %s
+                            RETURNING id, email, full_name, company_name, is_admin, is_active,
+                                      COALESCE(has_password, TRUE) AS has_password,
+                                      TRUE AS google_linked
+                            """,
+                            (user_dict["id"],),
+                        )
+                        user_dict = dict(cursor.fetchone())
+                        conn.commit()
                 else:
                     dummy_hash = bcrypt.hashpw(secrets.token_hex(32).encode(), bcrypt.gensalt(rounds=12)).decode()
                     is_admin_user = email in ["developer@veilproof.com", "developer@nextcaptcha.com", "hulkb690@gmail.com"]
                     cursor.execute("""
-                        INSERT INTO users (email, password_hash, full_name, is_admin, has_password)
-                        VALUES (%s, %s, %s, %s, FALSE)
-                        RETURNING id, email, full_name, company_name, is_admin, created_at
+                        INSERT INTO users (email, password_hash, full_name, is_admin, has_password, google_linked)
+                        VALUES (%s, %s, %s, %s, FALSE, TRUE)
+                        RETURNING id, email, full_name, company_name, is_admin, created_at,
+                                  FALSE AS has_password, TRUE AS google_linked
                     """, (email, dummy_hash, name, is_admin_user))
                     new_user = cursor.fetchone()
                     conn.commit()

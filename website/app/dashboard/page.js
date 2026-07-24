@@ -64,6 +64,11 @@ export default function Dashboard() {
     }
   };
 
+  const updateUserProfile = (nextUser) => {
+    setUser(nextUser);
+    localStorage.setItem('veilproof_user', JSON.stringify(nextUser));
+  };
+
   const clearSession = () => {
     localStorage.removeItem('veilproof_user');
     localStorage.removeItem('veilproof_token');
@@ -123,13 +128,34 @@ export default function Dashboard() {
     loadProjects(data.access_token);
   };
 
-  // Restore existing session
+  // Restore existing session and refresh profile (auth_methods / has_password)
   useEffect(() => {
     const savedUser = localStorage.getItem('veilproof_user');
     const savedToken = localStorage.getItem('veilproof_token');
     if (savedUser && savedToken) {
       setUser(JSON.parse(savedUser));
       loadProjects(savedToken);
+      (async () => {
+        try {
+          const res = await fetch(`${API_BASE_URL}/admin/me`, {
+            headers: { Authorization: `Bearer ${savedToken}` },
+          });
+          if (res.status === 401) {
+            const ok = await refreshAccessToken();
+            if (!ok) return;
+            const retry = await fetch(`${API_BASE_URL}/admin/me`, {
+              headers: { Authorization: `Bearer ${localStorage.getItem('veilproof_token')}` },
+            });
+            const data = await retry.json();
+            if (retry.ok && data.user) updateUserProfile(data.user);
+            return;
+          }
+          const data = await res.json();
+          if (res.ok && data.user) updateUserProfile(data.user);
+        } catch {
+          // keep cached user if /me fails
+        }
+      })();
     }
   }, []);
 
@@ -335,7 +361,12 @@ export default function Dashboard() {
 
   return (
     <div className="dashboard-shell min-h-screen bg-canvas text-ink">
-      <SiteNav user={user} onLogout={handleLogout} />
+      <SiteNav
+        user={user}
+        onLogout={handleLogout}
+        onUserUpdate={updateUserProfile}
+        apiFetch={apiFetch}
+      />
 
       <div className="dashboard-content max-w-[1280px] mx-auto px-6 py-10">
         {/* Success/Error Messages */}

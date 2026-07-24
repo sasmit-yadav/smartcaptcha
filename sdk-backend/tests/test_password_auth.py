@@ -12,9 +12,11 @@ sys.path.insert(0, str(BACKEND))
 
 # auth.py requires SECRET_KEY at import time
 os.environ.setdefault("SECRET_KEY", "unit-test-secret-key-not-for-production-use-32b")
+os.environ.setdefault("DATABASE_URL", "postgresql://test:test@localhost:5432/veilproof_test")
 
 from core.password_policy import validate_email, validate_password, normalize_email  # noqa: E402
 from core import auth as auth_mod  # noqa: E402
+from api.routes import admin as admin_routes  # noqa: E402
 
 
 def test_email_normalization():
@@ -58,3 +60,24 @@ def test_access_token_has_iss_aud_typ():
     assert payload["typ"] == "access"
     assert payload["email"] == "a@b.com"
     assert payload["sub"] == "user-1"
+
+
+def test_public_user_auth_methods():
+    email_user = admin_routes._public_user(
+        {"id": "1", "email": "a@b.com", "has_password": True, "google_linked": False}
+    )
+    assert email_user["auth_methods"] == ["password"]
+    assert email_user["has_password"] is True
+
+    google_user = admin_routes._public_user(
+        {"id": "2", "email": "g@b.com", "has_password": False, "google_linked": False}
+    )
+    assert google_user["google_linked"] is True
+    assert "google" in google_user["auth_methods"]
+    assert "password" not in google_user["auth_methods"]
+
+    both = admin_routes._public_user(
+        {"id": "3", "email": "both@b.com", "has_password": True, "google_linked": True}
+    )
+    assert both["auth_methods"] == ["password", "google"]
+

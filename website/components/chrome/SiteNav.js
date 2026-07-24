@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import { CircleHelp, ExternalLink, LogOut, Menu, X } from 'lucide-react';
+import { CircleHelp, ExternalLink, Menu, X } from 'lucide-react';
 import SiteSearch from './SiteSearch';
+import AccountMenu from '../dashboard/AccountMenu';
 
-export default function SiteNav({ active, user, onLogout }) {
+export default function SiteNav({ active, user, onLogout, onUserUpdate, apiFetch }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const links = [
     { label: 'Features', href: '/#features' },
@@ -41,12 +42,12 @@ export default function SiteNav({ active, user, onLogout }) {
             <CircleHelp size={17} />
           </a>
           {user ? (
-            <>
-              <span className="vp-nav-user">{user.email}</span>
-              <button onClick={onLogout} className="vp-nav-cta">
-                <LogOut size={13} /> Sign out
-              </button>
-            </>
+            <AccountMenu
+              user={user}
+              onLogout={onLogout}
+              onUserUpdate={onUserUpdate}
+              apiFetch={apiFetch}
+            />
           ) : (
             <>
               <a href="/dashboard?mode=login" className="vp-login">Log in</a>
@@ -65,9 +66,18 @@ export default function SiteNav({ active, user, onLogout }) {
             <a key={link.label} href={link.href} onClick={() => setMenuOpen(false)}>{link.label}</a>
           ))}
           {user ? (
-            <button onClick={() => { setMenuOpen(false); onLogout?.(); }} className="vp-mobile-cta">
-              Sign out
-            </button>
+            <>
+              <div className="vp-mobile-account">
+                <strong>{user.full_name || user.email}</strong>
+                <span>{user.email}</span>
+              </div>
+              <button
+                onClick={() => { setMenuOpen(false); onLogout?.(); }}
+                className="vp-mobile-cta vp-mobile-signout"
+              >
+                Sign out
+              </button>
+            </>
           ) : (
             <>
               <a href="/dashboard?mode=login" onClick={() => setMenuOpen(false)}>Log in</a>

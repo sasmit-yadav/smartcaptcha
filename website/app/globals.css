@@ -636,6 +636,290 @@ footer {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Account menu (Stripe / Twilio style avatar dropdown) */
+.vp-account {
+  position: relative;
+}
+.vp-account-trigger {
+  height: 36px;
+  padding: 0 6px 0 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #c5cdc6;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  transition: border-color .15s ease, background .15s ease;
+}
+.vp-account-trigger:hover,
+.vp-account-trigger.is-open {
+  border-color: rgba(255,255,255,.12);
+  background: rgba(255,255,255,.04);
+}
+.vp-account-avatar {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #e8edf5;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  background: linear-gradient(145deg, #2f6dff 0%, #1a3f8c 100%);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.12);
+}
+.vp-account-avatar-lg {
+  width: 40px;
+  height: 40px;
+  font-size: 13px;
+  flex: 0 0 auto;
+}
+.vp-account-caret {
+  opacity: .7;
+  transition: transform .15s ease;
+}
+.vp-account-trigger.is-open .vp-account-caret {
+  transform: rotate(180deg);
+}
+.vp-account-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 200;
+  width: min(320px, calc(100vw - 24px));
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 12px;
+  background: #0c1322;
+  box-shadow: 0 18px 48px rgba(0,0,0,.45);
+}
+.vp-account-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 4px 4px 12px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  margin-bottom: 8px;
+}
+.vp-account-head-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.vp-account-head-text strong {
+  color: #f2f5f8;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.2;
+}
+.vp-account-email {
+  color: #8b949e;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vp-account-badge {
+  margin-top: 4px;
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  color: #9ec0ff;
+  font-size: 10px;
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1px solid rgba(53,120,255,.28);
+  background: rgba(53,120,255,.1);
+}
+.vp-account-section {
+  display: grid;
+  gap: 2px;
+  padding: 6px 0;
+}
+.vp-account-section-label {
+  margin: 0 0 2px;
+  padding: 0 8px;
+  color: #6b7480;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.vp-account-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  color: #c7cdd6;
+  text-align: left;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  transition: background .15s ease;
+}
+.vp-account-row:hover {
+  background: rgba(255,255,255,.05);
+  color: #fff;
+}
+.vp-account-row > svg:first-child {
+  flex: 0 0 auto;
+  color: #7f8a99;
+}
+.vp-account-row > span {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.vp-account-row em {
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 600;
+  color: #e8edf2;
+}
+.vp-account-row small {
+  color: #7a8491;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vp-account-row small.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+}
+.vp-account-row > svg:last-child {
+  flex: 0 0 auto;
+  color: #6b7480;
+}
+.vp-account-signout {
+  width: 100%;
+  margin-top: 6px;
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #ffb4b4;
+  font-size: 12px;
+  font-weight: 650;
+  border-radius: 8px;
+  border: 1px solid rgba(255,100,100,.18);
+  background: rgba(255,70,70,.08);
+}
+.vp-account-signout:hover {
+  background: rgba(255,70,70,.14);
+}
+.vp-account-toast {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.vp-account-toast.ok {
+  color: #b7f0c8;
+  background: rgba(40,160,90,.14);
+  border: 1px solid rgba(40,160,90,.25);
+}
+.vp-account-toast.err {
+  color: #ffc9c9;
+  background: rgba(180,50,50,.16);
+  border: 1px solid rgba(180,50,50,.28);
+}
+.vp-account-password {
+  display: grid;
+  gap: 10px;
+}
+.vp-account-password-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.vp-account-password-head strong {
+  color: #f2f5f8;
+  font-size: 13px;
+}
+.vp-account-close {
+  color: #8b949e;
+  padding: 4px;
+  border-radius: 6px;
+}
+.vp-account-close:hover {
+  color: #fff;
+  background: rgba(255,255,255,.06);
+}
+.vp-account-hint {
+  margin: 0;
+  color: #7a8491;
+  font-size: 11px;
+  line-height: 1.4;
+}
+.vp-account-password label {
+  display: grid;
+  gap: 6px;
+  color: #9aa3af;
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.vp-account-password input {
+  height: 40px;
+  padding: 0 12px;
+  color: #eef2f7;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(0,0,0,.28);
+  outline: none;
+}
+.vp-account-password input:focus {
+  border-color: rgba(53,120,255,.55);
+}
+.vp-account-save {
+  height: 40px;
+  margin-top: 2px;
+  color: #061018;
+  font-size: 12px;
+  font-weight: 750;
+  border-radius: 8px;
+  background: var(--lime);
+}
+.vp-account-save:disabled {
+  opacity: .55;
+}
+.vp-mobile-account {
+  display: grid;
+  gap: 2px;
+  padding: 8px 0 4px;
+}
+.vp-mobile-account strong {
+  color: #eef2f7;
+  font-size: 14px;
+}
+.vp-mobile-account span {
+  color: #8b949e;
+  font-size: 12px;
+  word-break: break-all;
+}
+.vp-mobile-signout {
+  background: rgba(255,70,70,.16) !important;
+  color: #ffb4b4 !important;
+  border: 1px solid rgba(255,100,100,.22);
+}
+
 .vp-menu-button { display: none; color: #fff; }
 .vp-mobile-menu { display: none; }
 
@@ -820,6 +1104,11 @@ footer {
   .vp-login,
   .vp-nav-user {
     display: none;
+  }
+
+  /* Keep avatar available on tablet/mobile — primary account entry point */
+  .vp-account {
+    display: block;
   }
 
   .vp-nav-actions {

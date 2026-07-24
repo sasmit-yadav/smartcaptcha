@@ -2,9 +2,11 @@
 
 Industry-style adversarial gate for bot-detection regressions.
 
-**Context (2026-07-24):** P0 stealth + strict signing are production gates.
-**P1** network Worker is live on `api.veilproof.tech`. **P2.1:** probes write
-labeled JSONL under `tools/redteam/out/` — see [`SCHEMA.md`](./SCHEMA.md).
+**Context (2026-07-24 EOD):** P0 stealth + strict signing are production gates.
+**P1** network Worker is live on `api.veilproof.tech`. **P2.1** JSONL labels
+collected; Camoufox retrain skipped. Hardest demo bots **BLOCKED** on CDN
+**1.1.10**. Product freeze (dashboard auth): CAPTCHA
+`docs/VeilProof_Product_Through_2026-07-24.md`.
 
 | Probe | Purpose | CI gate |
 |---|---|---|

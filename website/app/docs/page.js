@@ -215,7 +215,7 @@ export default function DocsPage() {
             <tbody className="text-mute">
               {[
                 ['action', '"allow" or "block" — the decision your app should enforce.'],
-                ['risk_score', 'Overall risk for the visit (0–100). Higher means more bot-like.'],
+                ['risk_score', 'Overall risk for the visit (0–100). Higher means higher risk.'],
                 ['confidence', 'How decisive the verdict is for this visit.'],
                 ['verification_token', 'Short-lived, single-use token for /api/siteverify.'],
               ].map(([f, m]) => (
@@ -243,7 +243,6 @@ export default function DocsPage() {
         <ul className="list-disc list-inside text-mute text-sm space-y-2">
           <li>Not a visible CAPTCHA / image challenge / Turnstile-style widget.</li>
           <li>Not “backend config only” — the SDK must run in the browser to issue a token.</li>
-          <li>Not a promise of zero false positives on very short or abrupt sessions.</li>
           <li>Not something you integrate by hand-posting JSON to predict — use the SDK.</li>
         </ul>
 
@@ -467,7 +466,7 @@ export default function DocsPage() {
               <tbody className="text-mute">
                 {[
                   ['action', '"allow" or "block" — enforce this after siteverify.'],
-                  ['risk_score', 'Overall risk 0–100. Higher is more bot-like.'],
+                  ['risk_score', 'Overall risk 0–100. Higher means higher risk.'],
                   ['behavior_score', 'Behavioral risk component (0–100).'],
                   ['fingerprint_score', 'Environment / automation risk component (0–100).'],
                   ['confidence', 'How decisive the verdict is for this visit.'],
@@ -598,12 +597,6 @@ export default function DocsPage() {
           Do not combine <code className="text-primary">data-veilproof</code> with a custom{' '}
           <code className="text-primary">getToken()</code> + <code className="text-primary">fetch</code> handler
           on the same form. Pick Pattern A or Pattern B.
-        </Mistake>
-
-        <Mistake title="Real humans sometimes blocked">
-          Ask users to interact briefly (mouse + typing) before submit. Extremely instant submits
-          look bot-like. If it persists, contact support with <code className="text-primary">session_id</code>{' '}
-          from the siteverify response.
         </Mistake>
 
         <H3>Quick diagnosis</H3>

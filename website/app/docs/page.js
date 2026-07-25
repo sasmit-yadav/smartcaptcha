@@ -154,82 +154,70 @@ export default function DocsPage() {
     how: (
       <Section title="How It Works">
         <P>
-          This section explains what happens under the hood so you know what each score means,
-          why both a browser SDK and server verify step are required, and what VeilProof does
-          <em> not</em> do (no CAPTCHA puzzles, no challenge widgets).
+          VeilProof is invisible bot protection: the browser SDK scores a visit, your server
+          verifies the result, and you decide whether to allow the action. No CAPTCHA puzzles,
+          no challenge widgets.
         </P>
 
-        <H3>End-to-end request flow</H3>
+        <H3>End-to-end flow</H3>
         <div className="card p-5 space-y-3 text-sm text-mute leading-relaxed">
-          <p><strong className="text-ink">1. Page load</strong> — SDK starts with your site key and begins collecting interaction signals (mouse, keyboard, scroll, environment probes).</p>
-          <p><strong className="text-ink">2. Signing register</strong> — SDK creates a browser session key and registers it at <code className="text-primary">/api/signing/register</code>. Later predict calls are ECDSA-signed so bodies cannot be trivially replayed or spliced.</p>
-          <p><strong className="text-ink">3. Predict</strong> — On submit / <code className="text-primary">getToken()</code>, the SDK POSTs a signed feature payload to <code className="text-primary">/api/predict</code>. The API returns <code className="text-primary">action</code>, component scores, and a short-lived <code className="text-primary">verification_token</code>.</p>
-          <p><strong className="text-ink">4. Your server</strong> — You send that token to <code className="text-primary">/api/siteverify</code> with your secret key. Only then should you trust allow vs block.</p>
-          <p><strong className="text-ink">5. Your app</strong> — If <code className="text-primary">success</code> and <code className="text-primary">action !== &quot;block&quot;</code>, run signup / checkout / etc.</p>
+          <p><strong className="text-ink">1. Page load</strong> — The SDK starts with your site key and quietly watches the session.</p>
+          <p><strong className="text-ink">2. Token</strong> — On submit / <code className="text-primary">getToken()</code>, the SDK returns a short-lived <code className="text-primary">verification_token</code> plus an allow or block hint.</p>
+          <p><strong className="text-ink">3. Your server</strong> — POST that token to <code className="text-primary">/api/siteverify</code> with your secret key. Only trust the decision after this step.</p>
+          <p><strong className="text-ink">4. Your app</strong> — If <code className="text-primary">success</code> and <code className="text-primary">action !== &quot;block&quot;</code>, continue with signup / checkout / etc.</p>
         </div>
 
-        <H3>What the SDK collects (browser)</H3>
+        <H3>What protection covers</H3>
         <div className="grid md:grid-cols-2 gap-4">
           <div className="card p-5">
-            <div className="font-semibold text-ink text-sm mb-2">Behavioral signals</div>
+            <div className="font-semibold text-ink text-sm mb-2">Behavioral protection</div>
             <p className="text-mute text-sm">
-              Timing and motion features from real interaction: mouse velocity/curvature/jerk,
-              keystroke intervals, click spacing, session length, event density, and
-              computer-use / teleport-style kinematics when present.
+              Scores how the visitor interacts with the page — timing, motion, and related
+              session patterns that separate humans from scripted traffic.
             </p>
           </div>
           <div className="card p-5">
-            <div className="font-semibold text-ink text-sm mb-2">Environment / automation</div>
+            <div className="font-semibold text-ink text-sm mb-2">Environment protection</div>
             <p className="text-mute text-sm">
-              Automation probes (for example webdriver tells), UA/platform coherence checks,
-              and related fingerprint inputs. These feed <code className="text-primary">fingerprint_score</code>.
+              Checks for automation and inconsistent browser environments so headless or
+              spoofed clients raise risk.
             </p>
           </div>
           <div className="card p-5">
             <div className="font-semibold text-ink text-sm mb-2">Request integrity</div>
             <p className="text-mute text-sm">
-              Per-session ECDSA signatures + nonce + freshness on <code className="text-primary">/api/predict</code>.
-              Unsigned or tampered predicts are rejected in strict mode (production).
+              Tokens are bound to a real SDK session. Hand-built or replayed predict calls
+              are rejected — use the official SDK, not raw API crafting.
             </p>
           </div>
           <div className="card p-5">
-            <div className="font-semibold text-ink text-sm mb-2">Network context (edge)</div>
+            <div className="font-semibold text-ink text-sm mb-2">Network protection</div>
             <p className="text-mute text-sm">
-              Production sits behind Cloudflare. A Worker forwards ASN / org / TLS / HTTP hints
-              to origin so datacenter exits can raise network risk without trusting client-spoofable headers.
+              Server-side network context is included in risk so datacenter and suspicious
+              exits can raise risk beyond what the browser alone reports.
             </p>
           </div>
         </div>
 
-        <H3>How the API decides allow vs block</H3>
+        <H3>What you get back</H3>
         <P>
-          Predict combines several independent risk axes into one overall score. The default
-          product rule is binary:
+          Every scored visit ends in a clear verdict. Component fields may appear in responses
+          for debugging; enforce only <code className="text-primary">action</code> after siteverify.
         </P>
-        <CodeBlock code={`overall_risk = max(
-  behavior_score,      // ML + deterministic behavior rules
-  fingerprint_score,   // automation / environment
-  anomaly_score,       // off-manifold vs human training (when available)
-  network_score,       // IP / ASN / edge signals
-  duplicate_score      // near-identical feature replay across sessions
-)
-// block if overall_risk >= 50, else allow`} />
         <div className="overflow-x-auto card">
           <table className="w-full text-sm">
             <thead className="bg-surfaceSoft text-mute">
               <tr>
-                <th className="text-left p-3 font-bold">Score</th>
-                <th className="text-left p-3 font-bold">What it reflects</th>
+                <th className="text-left p-3 font-bold">Field</th>
+                <th className="text-left p-3 font-bold">Meaning</th>
               </tr>
             </thead>
             <tbody className="text-mute">
               {[
-                ['behavior_score', 'How bot-like the interaction looks (model + rules).'],
-                ['fingerprint_score', 'How bot-like the browser/environment looks.'],
-                ['risk_score', 'The fused overall risk used for the verdict (0–100).'],
-                ['action', '"allow" or "block" only — there is no mid-band challenge UI.'],
-                ['confidence', 'How far risk_score sits from the 50 boundary (not a statistical CI).'],
-                ['verification_token', 'JWT-like token: 120s TTL, single-use, redeemed at siteverify.'],
+                ['action', '"allow" or "block" — the decision your app should enforce.'],
+                ['risk_score', 'Overall risk for the visit (0–100). Higher means more bot-like.'],
+                ['confidence', 'How decisive the verdict is for this visit.'],
+                ['verification_token', 'Short-lived, single-use token for /api/siteverify.'],
               ].map(([f, m]) => (
                 <tr key={f} className="border-t border-hairline">
                   <td className="p-3"><code className="text-primary">{f}</code></td>
@@ -240,32 +228,30 @@ export default function DocsPage() {
           </table>
         </div>
 
-        <H3>Why siteverify exists (trust boundary)</H3>
+        <H3>Why siteverify exists</H3>
         <Callout variant="info">
-          Anything returned to the browser can be ignored or forged by a sophisticated bot.
-          <code className="text-primary"> /api/predict</code> is for collecting a scored token.
-          <code className="text-primary"> /api/siteverify</code> (secret key, server-only) proves that
-          token is authentic, unexpired, and not replayed — and returns the same allow/block
-          decision for your backend to enforce.
+          Anything returned only to the browser can be ignored by a bot. Use
+          <code className="text-primary"> /api/siteverify</code> with your secret key so your
+          backend confirms the token is real, unexpired, and not replayed before you trust allow vs block.
         </Callout>
         <P>
-          <code className="text-primary">success: true</code> means “this token is real.”
-          <code className="text-primary"> action</code> means “human vs bot verdict.” You need both checks.
+          <code className="text-primary">success: true</code> means the token is authentic.
+          <code className="text-primary"> action</code> is the human vs bot verdict. Check both.
         </P>
 
         <H3>What VeilProof is not</H3>
         <ul className="list-disc list-inside text-mute text-sm space-y-2">
-          <li>Not a visible CAPTCHA / image challenge / Turnstile widget.</li>
-          <li>Not “backend config only” — without the SDK there is no behavioral token to verify.</li>
-          <li>Not a guarantee of zero false positives; short/abrupt sessions can look automation-like.</li>
-          <li>Not something you should reimplement by POSTing handmade JSON to <code className="text-primary">/api/predict</code> (signing will reject it).</li>
+          <li>Not a visible CAPTCHA / image challenge / Turnstile-style widget.</li>
+          <li>Not “backend config only” — the SDK must run in the browser to issue a token.</li>
+          <li>Not a promise of zero false positives on very short or abrupt sessions.</li>
+          <li>Not something you integrate by hand-posting JSON to predict — use the SDK.</li>
         </ul>
 
-        <H3>Privacy &amp; data posture (high level)</H3>
+        <H3>Privacy</H3>
         <P>
-          The SDK is designed to send derived behavioral features and environment signals needed
-          for risk scoring — not your form field contents (email, message text, passwords). Your
-          app still posts its own business fields to <em>your</em> server separately from VeilProof.
+          The SDK sends signals needed for bot risk scoring — not your form field contents
+          (email, message text, passwords). Your app still posts business fields to your own
+          server separately from VeilProof.
         </P>
       </Section>
     ),
@@ -480,12 +466,12 @@ export default function DocsPage() {
               </thead>
               <tbody className="text-mute">
                 {[
-                  ['action', '"allow" or "block" only (no challenge mode).'],
-                  ['risk_score', '0–100 combined risk. ≥ 50 blocks by default.'],
-                  ['behavior_score', 'Behavioral risk 0–100.'],
-                  ['fingerprint_score', 'Device / automation risk 0–100.'],
-                  ['confidence', 'Distance from the 50-point boundary (not a statistical CI).'],
-                  ['verification_token', 'Redeem within 120s at /api/siteverify (single-use).'],
+                  ['action', '"allow" or "block" — enforce this after siteverify.'],
+                  ['risk_score', 'Overall risk 0–100. Higher is more bot-like.'],
+                  ['behavior_score', 'Behavioral risk component (0–100).'],
+                  ['fingerprint_score', 'Environment / automation risk component (0–100).'],
+                  ['confidence', 'How decisive the verdict is for this visit.'],
+                  ['verification_token', 'Short-lived, single-use token for /api/siteverify.'],
                 ].map(([f, m]) => (
                   <tr key={f} className="border-t border-hairline">
                     <td className="p-2"><code className="text-primary">{f}</code></td>

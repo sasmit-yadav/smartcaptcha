@@ -50,8 +50,8 @@ function P({ children }) {
 function Checklist({ items }) {
   return (
     <ol className="space-y-3 list-decimal list-inside text-mute text-sm leading-relaxed">
-      {items.map((item) => (
-        <li key={item} className="pl-1">{item}</li>
+      {items.map((item, index) => (
+        <li key={index} className="pl-1">{item}</li>
       ))}
     </ol>
   );
@@ -93,6 +93,36 @@ export default function DocsPage() {
           signals and returns a short-lived token. Your <strong className="text-ink">server</strong> redeems
           that token with a secret key and decides allow vs block. The browser alone is never trusted.
         </P>
+
+        <H3>Step 0 — create your account and get your keys</H3>
+        <P>
+          Never used VeilProof before? Start here, before any code.
+        </P>
+        <Checklist
+          items={[
+            <>
+              Go to the <a className="text-primary underline" href="/dashboard">dashboard</a> and sign up with
+              an email + password, or continue with Google.
+            </>,
+            <>
+              If you signed up with email, check your inbox for a verification email and click the link.
+              Keys stay locked until the account is verified (Google sign-in counts as verified automatically).
+            </>,
+            <>
+              Click <strong className="text-ink">New project</strong>, give it any name (usually your site's
+              name), and save.
+            </>,
+            <>
+              Open the project and click <strong className="text-ink">Generate API keys</strong>. The dashboard
+              creates both keys for you, a <code className="text-primary">vp_site_…</code> key and a{' '}
+              <code className="text-primary">vp_secret_…</code> key. You never type or invent these yourself.
+            </>,
+            <>
+              Copy both somewhere safe now. The secret key is only shown in full once, right after you
+              generate it.
+            </>,
+          ]}
+        />
 
         <div className="grid md:grid-cols-3 gap-4">
           <div className="card p-5">

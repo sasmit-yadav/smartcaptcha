@@ -109,11 +109,11 @@ export default function DocsPage() {
               Keys stay locked until the account is verified (Google sign-in counts as verified automatically).
             </>,
             <>
-              Click <strong className="text-ink">New project</strong>, give it any name (usually your site's
+              Click <strong className="text-ink">Create Project</strong>, give it any name (usually your site's
               name), and save.
             </>,
             <>
-              Open the project and click <strong className="text-ink">Generate API keys</strong>. The dashboard
+              Open the project and click <strong className="text-ink">Generate API Key Pair</strong>. The dashboard
               creates both keys for you, a <code className="text-primary">vp_site_…</code> key and a{' '}
               <code className="text-primary">vp_secret_…</code> key. You never type or invent these yourself.
             </>,

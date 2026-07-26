@@ -1,12 +1,22 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CircleHelp, ExternalLink, Menu, X } from 'lucide-react';
 import SiteSearch from './SiteSearch';
 import AccountMenu from '../dashboard/AccountMenu';
 
 export default function SiteNav({ active, user, onLogout, onUserUpdate, apiFetch }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  // Public pages (home, docs) don't track full auth state like the dashboard
+  // does — they just need to know whether *some* session already exists, so
+  // they can show "Dashboard" instead of "Log in" / "Get started". Pages that
+  // manage real auth (the dashboard itself) pass `user` explicitly and this
+  // is skipped.
+  const [hasSession, setHasSession] = useState(false);
+  useEffect(() => {
+    if (user) return;
+    setHasSession(!!localStorage.getItem('veilproof_token'));
+  }, [user]);
   const links = [
     { label: 'Features', href: '/#features' },
     { label: 'Platform', href: '/#platform' },
@@ -48,6 +58,8 @@ export default function SiteNav({ active, user, onLogout, onUserUpdate, apiFetch
               onUserUpdate={onUserUpdate}
               apiFetch={apiFetch}
             />
+          ) : hasSession ? (
+            <a href="/dashboard" className="vp-nav-cta">Dashboard</a>
           ) : (
             <>
               <a href="/dashboard?mode=login" className="vp-login">Log in</a>
@@ -78,6 +90,8 @@ export default function SiteNav({ active, user, onLogout, onUserUpdate, apiFetch
                 Sign out
               </button>
             </>
+          ) : hasSession ? (
+            <a href="/dashboard" onClick={() => setMenuOpen(false)} className="vp-mobile-cta">Dashboard</a>
           ) : (
             <>
               <a href="/dashboard?mode=login" onClick={() => setMenuOpen(false)}>Log in</a>
